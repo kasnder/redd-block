@@ -42,187 +42,43 @@ import {
     releaseNotesHasContent,
     filterReleaseNotesForPlatform,
 } from './changelog.js';
-// Compatibility layer wrapping Tauri APIs
-const tauriAPI = {
-    // Core data operations
-    loadData: () => invoke('load_data'),
-    saveData: (data) => invoke('save_data', { data }),
-    getAppVersion: () => invoke('get_app_version'),
-    isMicrosoftStorePackage: () => invoke('is_microsoft_store_package'),
-    downloadAndRunUpdate: (version) => invoke('download_and_run_update', { version }),
-
-    // Window operations
-    setWindowSize: (width, height) => invoke('set_window_size', { width, height }),
-    minimizeWindow: () => getCurrentWindow().minimize(),
-    maximizeWindow: async () => {
-        const win = getCurrentWindow();
-        if (await win.isMaximized()) {
-            return win.unmaximize();
-        }
-        return win.maximize();
-    },
-    // Routes through the Rust `hide_main_window` command so the macOS
-    // activation policy can flip back to Accessory at the same time
-    // (Dock icon + global menu bar disappear when the window closes).
-    closeWindow: () => invoke('hide_main_window').catch(() => getCurrentWindow().hide()),
-
-    // Helper daemon operations
-    checkHelperStatus: () => invoke('check_helper_status').catch(() => ({ installed: false, running: false })),
-    checkHelper: async () => {
-        const status = await invoke('check_helper_status').catch(() => ({ installed: false, running: false }));
-        return status.running === true;
-    },
-    installHelper: () => invoke('install_helper'),
-    uninstallHelper: () => invoke('uninstall_helper'),
-    startBlockViaHelper: (data) => invoke('start_block_via_helper', { ...data }),
-    // Tauri maps Rust snake_case params to camelCase in JS; use blocklistId not blocklist_id
-    clearBlockViaHelper: (blocklistId) => invoke('clear_block_via_helper', blocklistId != null ? { blocklistId } : {}),
-    cleanHostsFile: () => invoke('clean_hosts_file'),
-    getHelperDiagnostics: () => invoke('get_helper_diagnostics'),
-    setBlocksViaHelper: (blocks) => invoke('set_blocks_via_helper', { blocks }),
-
-    // App operations
-    openAppPicker: () => invoke('open_app_picker'),
-    listInstalledApps: () => invoke('list_installed_apps'),
-    blockWebsites: (domains) => invoke('block_websites', { domains }),
-
-    // App blocking via helper daemon (persistent, survives app close)
-    setBlockedAppsViaHelper: (apps, newlyAdded) =>
-        invoke('set_blocked_apps_via_helper', { apps, newly_added: newlyAdded ?? [] }),
-
-    // Schedule management via helper daemon (persistent, handles transitions autonomously)
-    setSchedulesViaHelper: (schedules) => invoke('set_schedules_via_helper', { schedules }),
-
-    // Screen Time API (iOS only - provided by tauri-plugin-screentime)
-    screentimeRequestAuth: () => invoke('plugin:screentime|request_authorization'),
-    screentimeCheckAuth: () => invoke('plugin:screentime|check_authorization'),
-    screentimeBlockWebsites: (domains) => invoke('plugin:screentime|block_websites', { domains }),
-    screentimeUnblockWebsites: () => invoke('plugin:screentime|unblock_websites'),
-    screentimeStartBlock: (payload) =>
-        invoke('plugin:screentime|screentime_start_block', { payload }),
-    screentimeClearBlock: () => invoke('plugin:screentime|screentime_clear_block'),
-    showActivityPicker: (payload = {}) => invoke('plugin:screentime|show_activity_picker', payload),
-    setSchedulesPlugin: (schedules) => invoke('plugin:screentime|set_schedules', { schedules }),
-    screentimeRegisterOneOffActivity: (activityName, startTimestampMs) =>
-        invoke('plugin:screentime|register_one_off_activity', { activityName, startTimestampMs }),
-    screentimeSetResumePayload: (payload) =>
-        invoke('plugin:screentime|set_resume_payload', payload),
-    screentimeSetBlockEndState: (payload) =>
-        invoke('plugin:screentime|set_block_end_state', payload),
-
-    // Android blocking API (Android only - provided by tauri-plugin-android-blocker).
-    // All blocking logic runs in Kotlin (AccessibilityService + WorkManager);
-    // these just marshal to it. See tauri-plugin-android-blocker/src/commands.rs.
-    androidCheckPermissions: () => invoke('plugin:android-blocker|check_blocker_permissions'),
-    androidOpenAccessibilitySettings: () => invoke('plugin:android-blocker|open_accessibility_settings'),
-    androidSetSchedules: (schedules) => invoke('plugin:android-blocker|set_schedules', { schedules }),
-    androidStartManualBlock: (id, endTimestampMs) =>
-        invoke('plugin:android-blocker|start_manual_block', { id, endTimestampMs }),
-    androidStopManualBlock: (id) => invoke('plugin:android-blocker|stop_manual_block', { id }),
-    androidReadNativeSchedules: () => invoke('plugin:android-blocker|read_native_schedules'),
-    androidGetInstalledApps: () => invoke('plugin:android-blocker|get_installed_apps'),
-    androidSetEventHandler: (handler) => invoke('plugin:android-blocker|set_event_handler', { handler }),
-
-    // Event listening
-    onBlocksUpdated: (callback) => listen('blocks-updated', callback),
-    onMenuZoomIn: (callback) => listen('menu-zoom-in', callback),
-    onMenuZoomOut: (callback) => listen('menu-zoom-out', callback),
-    onMenuZoomReset: (callback) => listen('menu-zoom-reset', callback),
-    onMenuHelpReportIssue: (callback) => listen('menu-help-report-issue', callback),
-    onMenuHelpContactUs: (callback) => listen('menu-help-contact-us', callback),
-    onMenuHelpWhoWeAre: (callback) => listen('menu-help-who-we-are', callback),
-
-    // Enforcer events (desktop only)
-    onEnforcerGraceUpdate: (callback) => listen('enforcer://grace-update', callback),
-    onEnforcerGraceResolved: (callback) => listen('enforcer://grace-resolved', callback),
-    onEnforcerBrowserClosed: (callback) => listen('enforcer://browser-closed', callback),
-
-    // Website automation (macOS only): JOMO-style Safari/Chromium
-    // blocking via Apple Events. The watcher fires permission-needed when
-    // a browser denies the Automation grant; resolved when it's granted.
-    onWebAutomationPermissionNeeded: (callback) => listen('web-automation://permission-needed', callback),
-    onWebAutomationPermissionResolved: (callback) => listen('web-automation://permission-resolved', callback),
-    webAutomationStart: () => invoke('web_automation_start'),
-    webAutomationPermissionStatus: (opts) => invoke('web_automation_permission_status', {
-        launchProbe: opts?.launchProbe ?? false,
-        launchProbeBrowser: opts?.launchProbeBrowser ?? null,
-        launchProbeBrowsers: opts?.launchProbeBrowsers ?? null,
-    }),
-    getBlockingMethods: () => invoke('get_blocking_methods'),
-    setBlockingMethod: (browser, method) => invoke('set_blocking_method', { browser, method }),
-    requestAutomationPermission: (browser) => invoke('request_automation_permission', { browser }),
-    openAutomationSettings: () => invoke('open_automation_settings'),
-
-    // App blocking: force-quit warning overlay (desktop)
-    onAppBlockingWarningShow: (callback) => listen('app-blocking://warning-show', callback),
-    onAppBlockingWarningHide: (callback) => listen('app-blocking://warning-hide', callback),
-    onUpdateDownloadProgress: (callback) => listen('update-download-progress', callback),
-    appBlockingBringForwardThenQuitAgain: (pids) =>
-        invoke('app_blocking_bring_forward_then_quit_again', { pids }),
-    /// User clicked "Let's go!" on the app-blocking warning — the
-    /// watcher transitions every awaiting PID to the 30-second
-    /// PreQuit phase before sending the polite Cmd-Q.
-    letsGoAcknowledge: () => invoke('lets_go_acknowledge'),
-    /// Dismiss the warning overlay without starting the PreQuit countdown
-    /// (schedule-block snooze).
-    snoozeBlockingWarning: () => invoke('snooze_blocking_warning'),
-    /// Restore compact-window warning chrome after a snooze expires.
-    reshowBlockingWarning: (pids) => invoke('reshow_blocking_warning', { pids }),
-    reconcileBlockingWarningShell: () => invoke('reconcile_blocking_warning_shell'),
-
-    saveOverlayImageAsset: (blocklistId, assetId, sourcePath) =>
-        invoke('save_overlay_image_asset', { blocklistId, assetId, sourcePath }),
-    saveOverlayImageAssetBytes: (blocklistId, assetId, extension, data) =>
-        invoke('save_overlay_image_asset_bytes', { blocklistId, assetId, extension, data: [...data] }),
-    saveOverlayVoiceAsset: (blocklistId, assetId, extension, data) =>
-        invoke('save_overlay_voice_asset', { blocklistId, assetId, extension, data: [...data] }),
-    resolveOverlayAssetPath: (relativePath) =>
-        invoke('resolve_overlay_asset_path', { relativePath }),
-    deleteOverlayAsset: (relativePath) =>
-        invoke('delete_overlay_asset', { relativePath }),
-    readOverlaySourceBytes: (sourcePath) =>
-        invoke('read_overlay_source_bytes', { sourcePath }),
-
-    // macOS-only in-app uninstall. Disables launch-at-login, scrubs
-    // browser native-messaging manifests, and schedules a delayed
-    // self-delete of /Applications/ReDD Blocker.app. Caller is responsible
-    // for confirming with the user and refusing to invoke while blocks
-    // are running. See src-tauri/src/commands/uninstall.rs.
-    uninstallSelfMacos: (deleteUserData = false) =>
-        invoke('uninstall_self_macos', { deleteUserData }),
-};
-
-async function openUrl(url, openWith) {
-    return invoke('plugin:opener|open_url', {
-        url,
-        with: openWith,
-    });
-}
-
+// Compatibility layer wrapping Tauri APIs — extracted to tauri-api.js
+import { tauriAPI, openUrl } from './tauri-api.js';
+import { state } from './state.js';
+import {
+    ALWAYS_ON_END_TIME,
+    PROTECTED_APP_NAMES,
+    PROTECTED_DOMAINS,
+    isProtectedApp,
+    isProtectedDomain,
+    isBlockAlwaysOn,
+    isScreenTimeSummaryEntry,
+    parseLegacyScreenTimeSummary,
+    normalizeIOSScreenTimeSelection,
+    cloneIOSScreenTimeSelection,
+    hasUsableIOSScreenTimeSelection,
+    formatIOSScreenTimeSelectionLabel,
+    getBlocklistRegularApps,
+    getBlocklistIOSScreenTimeSelection,
+    getBlocklistModalLockedApps,
+    getBlocklistIOSPayload,
+    blocklistNeedsIOSSelectionRefresh,
+    ensureIOSBlocklistSelectionReady,
+    normalizeBlocklist,
+    collectActiveIOSManualBlockPayload,
+} from './blocklist-utils.js';
+import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
+import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, LANGUAGE_NATIVE_LABELS, languageNativeLabel } from './i18n.js';
 /** Windows Settings → Apps → Installed apps (Apps & features). */
 const WINDOWS_APPS_SETTINGS_URI = 'ms-settings:appsfeatures';
 
-// State
-let appData = {
-    blocklists: [],
-    activeBlocks: [],
-    schedules: [],
-    startOverlays: [],
-    settings: {}
-};
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
-    get appData() { return appData; },
-    set appData(val) { appData = val; }
+    get appData() { return state.appData; },
+    set appData(val) { state.appData = val; }
 };
 
-let selectedBlocklistId = null;
-/** Session flag set when the user actively deselects (click-outside / ESC).
- *  Read by the sole-blocklist auto-selector so it stops fighting an
- *  intentional deselect — cleared again when the user picks anything via
- *  the dropdown or creates a new blocklist. */
-let userExplicitlyDeselected = false;
 let editingBlocklistId = null;
 let blocklistModalPreviewSnapshot = null;
 /** Blocklist modal undo: session-scoped stack and "last" values for recording previous state. */
@@ -247,21 +103,10 @@ let overrideBlocklistIdForHelper = null;
 let challengeText = '';
 let lastBlockedDomains = new Set(); // Track what's currently blocked to avoid re-prompting
 let activatedBlockIds = new Set(); // Track blocks that have already triggered host updates
-let helperAvailable = false; // Track if the privileged helper daemon is running
 const HELPER_STATUS_CACHE_TTL_MS = 3000;
 let lastDesktopHelperStatus = null;
 let lastDesktopHelperStatusAt = 0;
 let draggedBlocklistId = null; // Track which blocklist is being dragged
-let isIOS = false; // Track if running on iOS
-let isAndroid = false; // Track if running on Android
-// True on macOS desktop (i.e. Mac platform AND not the iOS Tauri
-// runtime). Set in `detectPlatform`. Used to gate macOS-only Tauri
-// commands and onboarding copy.
-let isMacOSDesktop = false;
-/** MSIX / Microsoft Store install — updates come from the Store, not GitHub. */
-let isMicrosoftStorePackage = null;
-let screentimeAuthorized = false; // Track if Screen Time is authorized (iOS)
-let androidPermissionsGranted = false; // Track if Accessibility is granted (Android)
 let startupInitializationPromise = null; // Prevent duplicate post-onboarding startup runs
 let startupInitializationComplete = false; // Track whether post-onboarding startup already ran
 let pauseBlockId = null; // Track which block is being paused
@@ -364,153 +209,6 @@ let isAlwaysOnMode = false; // false = timed block, true = always-on (permanent)
 let scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
 let expandedScheduleSegmentIndex = 0; // Which segment shows the full editor when multiple exist (-1 = all collapsed)
 
-// Far-future timestamp used for "always on" blocks (year 9999)
-const ALWAYS_ON_END_TIME = new Date(9999, 11, 31, 23, 59, 59, 999).getTime();
-
-// Protected app names — ReDD Blocker must never block itself
-const PROTECTED_APP_NAMES = ['redd block', 'redd blocker', 'redd-block', 'redd-block-helper', 'fristed'];
-
-// Protected domains — blocking these would break networking or the app itself
-const PROTECTED_DOMAINS = [
-    'localhost', 'localhost.localdomain',
-    '127.0.0.1', '0.0.0.0', '::1',
-    'broadcasthost', 'local',
-    'reddfocus.org', 'www.reddfocus.org',
-    'ulyngs.github.io'
-];
-
-/**
- * Check if an app name matches a protected app (case-insensitive).
- * Returns true if the app should NOT be added to a blocklist.
- */
-function isProtectedApp(name) {
-    if (!name) return false;
-    const lower = name.trim().toLowerCase();
-    return PROTECTED_APP_NAMES.some(p => lower === p);
-}
-
-/**
- * Check if a domain is protected (case-insensitive).
- * Returns true if the domain should NOT be added to a blocklist.
- */
-function isProtectedDomain(domain) {
-    if (!domain) return false;
-    const lower = domain.trim().toLowerCase();
-    return PROTECTED_DOMAINS.some(p => lower === p);
-}
-
-// Helper: detect always-on blocks by flag OR far-future end time
-function isBlockAlwaysOn(block) {
-    return block.isAlwaysOn === true || block.endTime >= ALWAYS_ON_END_TIME;
-}
-
-function isScreenTimeSummaryEntry(appName) {
-    return typeof appName === 'string' && appName.includes('selected (Screen Time)');
-}
-
-function parseLegacyScreenTimeSummary(entries) {
-    if (!Array.isArray(entries) || entries.length === 0) return null;
-    const summaryLabel = entries.join(', ');
-    let applicationCount = 0;
-    let categoryCount = 0;
-    for (const entry of entries) {
-        const appMatch = entry.match(/(\d+)\s+app/);
-        const categoryMatch = entry.match(/(\d+)\s+categor(?:y|ies)/);
-        if (appMatch) applicationCount += Number.parseInt(appMatch[1], 10);
-        if (categoryMatch) categoryCount += Number.parseInt(categoryMatch[1], 10);
-    }
-    return {
-        applicationTokens: [],
-        categoryTokens: [],
-        applicationCount,
-        categoryCount,
-        summaryLabel,
-        requiresReselection: true
-    };
-}
-
-function normalizeIOSScreenTimeSelection(selection, legacySummaryEntries = []) {
-    if (!selection && legacySummaryEntries.length === 0) return null;
-
-    const normalized = {
-        applicationTokens: Array.isArray(selection?.applicationTokens) ? [...selection.applicationTokens] : [],
-        categoryTokens: Array.isArray(selection?.categoryTokens) ? [...selection.categoryTokens] : [],
-        applicationCount: Number.isFinite(selection?.applicationCount) ? selection.applicationCount : null,
-        categoryCount: Number.isFinite(selection?.categoryCount) ? selection.categoryCount : null,
-        summaryLabel: typeof selection?.summaryLabel === 'string' ? selection.summaryLabel : '',
-        requiresReselection: selection?.requiresReselection === true
-    };
-
-    if (normalized.applicationCount == null) {
-        normalized.applicationCount = normalized.applicationTokens.length;
-    }
-    if (normalized.categoryCount == null) {
-        normalized.categoryCount = normalized.categoryTokens.length;
-    }
-
-    if (!selection && legacySummaryEntries.length > 0) {
-        return parseLegacyScreenTimeSummary(legacySummaryEntries);
-    }
-
-    if (
-        !normalized.summaryLabel &&
-        (normalized.applicationCount > 0 || normalized.categoryCount > 0) &&
-        normalized.applicationTokens.length === 0 &&
-        normalized.categoryTokens.length === 0
-    ) {
-        const legacySelection = parseLegacyScreenTimeSummary(legacySummaryEntries);
-        if (legacySelection?.summaryLabel) {
-            normalized.summaryLabel = legacySelection.summaryLabel;
-        }
-        normalized.requiresReselection = true;
-    }
-
-    const hasAnySelection =
-        normalized.applicationTokens.length > 0 ||
-        normalized.categoryTokens.length > 0 ||
-        normalized.applicationCount > 0 ||
-        normalized.categoryCount > 0 ||
-        !!normalized.summaryLabel;
-
-    return hasAnySelection ? normalized : null;
-}
-
-function cloneIOSScreenTimeSelection(selection) {
-    const normalized = normalizeIOSScreenTimeSelection(selection);
-    return normalized ? { ...normalized } : null;
-}
-
-function hasUsableIOSScreenTimeSelection(selection) {
-    const normalized = normalizeIOSScreenTimeSelection(selection);
-    return !!normalized && (
-        normalized.applicationTokens.length > 0 ||
-        normalized.categoryTokens.length > 0
-    );
-}
-
-function formatIOSScreenTimeSelectionLabel(selection) {
-    const normalized = normalizeIOSScreenTimeSelection(selection);
-    if (!normalized) return '';
-    if (normalized.summaryLabel) return normalized.summaryLabel;
-
-    const parts = [];
-    if (normalized.applicationCount > 0) parts.push(`${normalized.applicationCount} app${normalized.applicationCount > 1 ? 's' : ''}`);
-    if (normalized.categoryCount > 0) parts.push(`${normalized.categoryCount} categor${normalized.categoryCount > 1 ? 'ies' : 'y'}`);
-    return parts.length > 0 ? `${parts.join(', ')} selected (Screen Time)` : '';
-}
-
-function getBlocklistRegularApps(blocklist) {
-    if (!Array.isArray(blocklist?.apps)) return [];
-    return blocklist.apps.filter(app => typeof app === 'string' && !isScreenTimeSummaryEntry(app));
-}
-
-function getBlocklistIOSScreenTimeSelection(blocklist) {
-    const legacySummaryEntries = Array.isArray(blocklist?.apps)
-        ? blocklist.apps.filter(isScreenTimeSummaryEntry)
-        : [];
-    return normalizeIOSScreenTimeSelection(blocklist?.iosScreenTimeSelection, legacySummaryEntries);
-}
-
 function getBlocklistDisplayApps(blocklist) {
     const apps = getBlocklistRegularApps(blocklist).map(displayNameForBlockedApp);
     const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getBlocklistIOSScreenTimeSelection(blocklist));
@@ -519,92 +217,6 @@ function getBlocklistDisplayApps(blocklist) {
     }
     return apps;
 }
-
-function getBlocklistModalLockedApps(blocklist) {
-    const locked = [...getBlocklistRegularApps(blocklist)];
-    const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getBlocklistIOSScreenTimeSelection(blocklist));
-    if (screenTimeLabel) locked.push(screenTimeLabel);
-    return locked;
-}
-
-function getBlocklistIOSPayload(blocklist) {
-    const selection = getBlocklistIOSScreenTimeSelection(blocklist);
-    return {
-        appTokenData: selection?.applicationTokens || [],
-        categoryTokenData: selection?.categoryTokens || []
-    };
-}
-
-function blocklistNeedsIOSSelectionRefresh(blocklist) {
-    const selection = getBlocklistIOSScreenTimeSelection(blocklist);
-    return !!selection && selection.requiresReselection === true && !hasUsableIOSScreenTimeSelection(selection);
-}
-
-function ensureIOSBlocklistSelectionReady(blocklist, actionLabel) {
-    if (!isIOS || !blocklistNeedsIOSSelectionRefresh(blocklist)) {
-        return true;
-    }
-
-    const blocklistName = blocklist?.name || 'This blocklist';
-    alert(`${blocklistName} has an old Screen Time app selection that iOS can no longer enforce reliably. Please edit the blocklist and re-select its apps before ${actionLabel}.`);
-    return false;
-}
-
-function normalizeBlocklist(blocklist) {
-    const normalizedBlocklist = { ...blocklist };
-    normalizedBlocklist.apps = getBlocklistRegularApps(blocklist);
-    normalizedBlocklist.iosScreenTimeSelection = getBlocklistIOSScreenTimeSelection(blocklist);
-    return normalizedBlocklist;
-}
-
-function collectActiveIOSManualBlockPayload(now = Date.now()) {
-    const allDomains = new Set();
-    const appTokenData = new Set();
-    const categoryTokenData = new Set();
-
-    let displayWinner = null;
-
-    for (const block of appData.activeBlocks || []) {
-        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
-        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
-        if (!blocklist) continue;
-
-        const bid = String(block.blocklistId ?? '');
-        if (
-            displayWinner == null
-            || block.startTime < displayWinner.block.startTime
-            || (block.startTime === displayWinner.block.startTime
-                && bid < String(displayWinner.block.blocklistId ?? ''))
-        ) {
-            displayWinner = { block, blocklist };
-        }
-
-        for (const domain of blocklist.websites || []) {
-            if (!isProtectedDomain(domain)) allDomains.add(domain);
-        }
-
-        const iosPayload = getBlocklistIOSPayload(blocklist);
-        for (const token of iosPayload.appTokenData) appTokenData.add(token);
-        for (const token of iosPayload.categoryTokenData) categoryTokenData.add(token);
-    }
-
-    const out = {
-        domains: Array.from(allDomains).sort(),
-        appTokenData: Array.from(appTokenData),
-        categoryTokenData: Array.from(categoryTokenData)
-    };
-    if (displayWinner) {
-        const { block, blocklist } = displayWinner;
-        out.blocklistEmoji = blocklist.emoji ?? null;
-        out.blocklistName = blocklist.name ?? null;
-        const c = blocklist.color;
-        out.blocklistColorHex = typeof c === 'string' && c.length > 0 ? c : null;
-        out.blockStartMs = block.startTime;
-        out.blockEndMs = block.endTime;
-    }
-    return out;
-}
-
 function isNonRepeatingSchedule(schedule) {
     return !!schedule && schedule.repeatType !== 'forever' && !(schedule.repeatType === 'date' && schedule.repeatDate);
 }
@@ -726,12 +338,12 @@ function getSingleOccurrenceSegmentDates(schedule, segment) {
 }
 
 async function syncSchedulesToHelper() {
-    if (isIOS) {
+    if (state.isIOS) {
         try {
             const flatEntries = [];
-            for (const schedule of appData.schedules || []) {
+            for (const schedule of state.appData.schedules || []) {
                 if (!schedule.segments || schedule.segments.length === 0) continue;
-                const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+                const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
                 const domains = blocklist?.websites || [];
                 const iosPayload = getBlocklistIOSPayload(blocklist);
                 const blocklistEmoji = blocklist?.emoji ?? null;
@@ -812,13 +424,13 @@ async function syncSchedulesToHelper() {
         }
         return;
     }
-    if (isAndroid) {
+    if (state.isAndroid) {
         try {
             const flatEntries = [];
             const now = Date.now();
-            for (const schedule of appData.schedules || []) {
+            for (const schedule of state.appData.schedules || []) {
                 if (!schedule.segments || schedule.segments.length === 0) continue;
-                const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+                const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
                 const blockedApps = blocklist?.apps || [];
                 const blockedWebsites = blocklist?.websites || [];
                 const difficulty = blocklist?.overrideDifficulty;
@@ -834,7 +446,7 @@ async function syncSchedulesToHelper() {
                 // One-shot (non-repeating) schedules become entries with an
                 // absolute [activeFrom, activeUntil) window, same as iOS.
                 // Kotlin checks the window instead of time-of-day + days;
-                // runExpiryOnce removes them from appData once past, and the
+                // runExpiryOnce removes them from state.appData once past, and the
                 // next sync deletes the Kotlin entity.
                 if (isNonRepeatingSchedule(schedule)) {
                     const occurrences = resolveOneShotOccurrences(schedule);
@@ -888,9 +500,9 @@ async function syncSchedulesToHelper() {
             // entity; proceedWithBlock() separately calls
             // androidStartManualBlock to actually start the session (and
             // arm the auto-stop timer for non-always-on blocks).
-            for (const block of appData.activeBlocks || []) {
+            for (const block of state.appData.activeBlocks || []) {
                 if (block.endTime <= now) continue;
-                const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+                const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
                 if (!blocklist) continue;
                 const difficulty = blocklist.overrideDifficulty;
                 const frictionWordCount = (difficulty && difficulty.type !== 'custom' && difficulty.count) ? difficulty.count : 15;
@@ -927,8 +539,8 @@ async function syncSchedulesToHelper() {
         }
 
         // Build schedule payloads with pre-resolved domains and apps
-        const helperSchedules = (appData.schedules || []).map(schedule => {
-            const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        const helperSchedules = (state.appData.schedules || []).map(schedule => {
+            const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
             const helperSegments = isNonRepeatingSchedule(schedule)
                 ? resolveOneShotOccurrences(schedule).map(occurrence => ({
                     startHour: occurrence.start.getHours(),
@@ -967,25 +579,25 @@ async function syncSchedulesToHelper() {
 }
 
 async function syncActiveBlocksToHelper() {
-    if (isIOS || isAndroid) return;
+    if (state.isIOS || state.isAndroid) return;
     try {
         const status = await tauriAPI.checkHelperStatus();
         if (!status.running || !status.version_ok) return;
         const now = Date.now();
-        console.log('[syncActiveBlocksToHelper] Total activeBlocks:', appData.activeBlocks.length,
-            'blocks:', appData.activeBlocks.map(b => ({
+        console.log('[syncActiveBlocksToHelper] Total activeBlocks:', state.appData.activeBlocks.length,
+            'blocks:', state.appData.activeBlocks.map(b => ({
                 id: b.id, blocklistId: b.blocklistId, startTime: b.startTime, endTime: b.endTime,
                 isPaused: b.isPaused, isAlwaysOn: b.isAlwaysOn,
                 startOk: b.startTime <= now, endOk: b.endTime > now, pauseOk: !b.isPaused
             })));
-        const activeBlocks = appData.activeBlocks.filter(block => block.startTime <= now && block.endTime > now);
+        const activeBlocks = state.appData.activeBlocks.filter(block => block.startTime <= now && block.endTime > now);
         console.log('[syncActiveBlocksToHelper] Filtered activeBlocks:', activeBlocks.length);
 
         // Build the blocks array for the atomic set-blocks command.
         // Paused blocks are included so the helper can auto-resume them when the pause expires,
         // even if the frontend isn't running.
         const helperBlocks = activeBlocks.map(block => {
-            const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+            const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
             return {
                 domains: blocklist?.websites || [],
                 endTime: block.endTime,
@@ -1018,9 +630,9 @@ function isSchedulePausedNow(schedule, now = Date.now()) {
 }
 
 function hasAnyEnforcedBlocks(now = Date.now(), nowDate = new Date(now)) {
-    const hasActiveOneOff = appData.activeBlocks.some(block => isOneOffBlockEnforced(block, now));
+    const hasActiveOneOff = state.appData.activeBlocks.some(block => isOneOffBlockEnforced(block, now));
     if (hasActiveOneOff) return true;
-    return !!appData.schedules?.some(schedule => isScheduleSegmentActiveNow(schedule, nowDate));
+    return !!state.appData.schedules?.some(schedule => isScheduleSegmentActiveNow(schedule, nowDate));
 }
 
 function scheduleHasFutureRecurringOccurrence(schedule, nowDate = new Date()) {
@@ -1156,7 +768,7 @@ function computeNextRepeatingOccurrenceMs(schedule, floorMs) {
  */
 function pickEarliestUpcomingScheduledBlock(nowMs = Date.now()) {
     let best = null;
-    for (const schedule of appData.schedules || []) {
+    for (const schedule of state.appData.schedules || []) {
         if (!schedule.segments || schedule.segments.length === 0) continue;
         if (!scheduleCanStillBecomeActive(schedule, new Date(nowMs))) continue;
         // Indefinitely paused (no pauseEndTime): no upcoming start to show.
@@ -1173,7 +785,7 @@ function pickEarliestUpcomingScheduledBlock(nowMs = Date.now()) {
 
         if (nextMs == null) continue;
 
-        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (!blocklist) continue;
 
         if (best === null || nextMs < best.startMs) {
@@ -1195,26 +807,26 @@ function formatTitleBarScheduleStartWhen(date, nowMs = Date.now()) {
 }
 
 function hasAnyBlockingStateToClear(now = Date.now(), nowDate = new Date(now)) {
-    const hasOneOffState = appData.activeBlocks.some(block => isOneOffBlockStillActive(block, now));
+    const hasOneOffState = state.appData.activeBlocks.some(block => isOneOffBlockStillActive(block, now));
     if (hasOneOffState) return true;
-    return !!appData.schedules?.some(schedule => scheduleCanStillBecomeActive(schedule, nowDate));
+    return !!state.appData.schedules?.some(schedule => scheduleCanStillBecomeActive(schedule, nowDate));
 }
 
 async function refreshDesktopHelperStatus() {
-    if (isIOS || isAndroid) {
+    if (state.isIOS || state.isAndroid) {
         return { installed: false, running: false, version: null, version_ok: false, helperReady: false };
     }
     try {
         const status = await tauriAPI.checkHelperStatus();
         const helperReady = !!(status.running && status.version_ok);
         const nextStatus = { ...status, helperReady };
-        helperAvailable = helperReady;
+        state.helperAvailable = helperReady;
         lastDesktopHelperStatus = nextStatus;
         lastDesktopHelperStatusAt = Date.now();
         return nextStatus;
     } catch (err) {
         console.error('Error checking helper status:', err);
-        helperAvailable = false;
+        state.helperAvailable = false;
         lastDesktopHelperStatus = {
             installed: false,
             running: false,
@@ -1317,7 +929,7 @@ function stopHelperUiRefreshLoop() {
 }
 
 async function refreshOpenHelperUi() {
-    if (helperUiRefreshInFlight || isIOS || isAndroid) return;
+    if (helperUiRefreshInFlight || state.isIOS || state.isAndroid) return;
 
     const settingsVisible = isModalVisible('settings-modal');
     if (!settingsVisible) {
@@ -1337,7 +949,7 @@ async function refreshOpenHelperUi() {
 }
 
 function startHelperUiRefreshLoop() {
-    if (isIOS || isAndroid || helperUiRefreshTimer != null) return;
+    if (state.isIOS || state.isAndroid || helperUiRefreshTimer != null) return;
     helperUiRefreshTimer = setInterval(() => {
         void refreshOpenHelperUi();
     }, HELPER_UI_REFRESH_MS);
@@ -1368,7 +980,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadData();
     await resetDevOnlyEulaAcceptance();
     setupMobileExternalLinkOpens();
-    if (isAndroid) {
+    if (state.isAndroid) {
         listenForAndroidFrictionGate();
         setupAndroidBackButtonHandling();
     }
@@ -1389,13 +1001,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupMacAutomationIntroModal();
     setupGraceSetting();
     setupSettingsEnforcementSection();
-    if (!isIOS && !isAndroid) {
+    if (!state.isIOS && !state.isAndroid) {
         void wireEnforcementToggle();
     }
     await runInitialOnboardingSequence();
-    if (isIOS && hasAcceptedEula()) {
+    if (state.isIOS && hasAcceptedEula()) {
         await checkScreentimeAuth();
-    } else if (isAndroid && hasAcceptedEula()) {
+    } else if (state.isAndroid && hasAcceptedEula()) {
         await checkAndroidPermissions();
     }
 
@@ -1488,13 +1100,13 @@ function isLocalDevRun() {
 async function resetDevOnlyEulaAcceptance() {
     // Mobile debug builds run through Vite too, but they should behave like
     // installed apps here: once the EULA is accepted, keep respecting it.
-    forceShowEulaThisSession = !isIOS && !isAndroid && isLocalDevRun();
+    forceShowEulaThisSession = !state.isIOS && !state.isAndroid && isLocalDevRun();
 }
 
 
 
 function getAcceptedEulaRevision() {
-    const rawRevision = appData?.settings?.eulaAcceptedRevision;
+    const rawRevision = state.appData?.settings?.eulaAcceptedRevision;
     if (Number.isInteger(rawRevision) && rawRevision > 0) {
         return rawRevision;
     }
@@ -1504,46 +1116,46 @@ function getAcceptedEulaRevision() {
             return parsedRevision;
         }
     }
-    if (appData?.settings?.eulaAccepted === true) {
+    if (state.appData?.settings?.eulaAccepted === true) {
         return CURRENT_EULA_REVISION;
     }
     return null;
 }
 
 function normalizeLoadedEulaState() {
-    if (!appData.settings) {
-        appData.settings = {};
+    if (!state.appData.settings) {
+        state.appData.settings = {};
     }
 
     let changed = false;
     const acceptedRevision = getAcceptedEulaRevision();
 
     if (acceptedRevision == null) {
-        if (appData.settings.eulaAcceptedRevision != null) {
-            delete appData.settings.eulaAcceptedRevision;
+        if (state.appData.settings.eulaAcceptedRevision != null) {
+            delete state.appData.settings.eulaAcceptedRevision;
             changed = true;
         }
-    } else if (appData.settings.eulaAcceptedRevision !== acceptedRevision) {
-        appData.settings.eulaAcceptedRevision = acceptedRevision;
+    } else if (state.appData.settings.eulaAcceptedRevision !== acceptedRevision) {
+        state.appData.settings.eulaAcceptedRevision = acceptedRevision;
         changed = true;
     }
 
-    const rawAcceptedAt = appData.settings.eulaAcceptedAt;
+    const rawAcceptedAt = state.appData.settings.eulaAcceptedAt;
     if (rawAcceptedAt != null) {
         const parsedAcceptedAt = Number(rawAcceptedAt);
         if (Number.isFinite(parsedAcceptedAt) && parsedAcceptedAt > 0) {
-            if (appData.settings.eulaAcceptedAt !== parsedAcceptedAt) {
-                appData.settings.eulaAcceptedAt = parsedAcceptedAt;
+            if (state.appData.settings.eulaAcceptedAt !== parsedAcceptedAt) {
+                state.appData.settings.eulaAcceptedAt = parsedAcceptedAt;
                 changed = true;
             }
         } else {
-            delete appData.settings.eulaAcceptedAt;
+            delete state.appData.settings.eulaAcceptedAt;
             changed = true;
         }
     }
 
-    if ('eulaAccepted' in appData.settings) {
-        delete appData.settings.eulaAccepted;
+    if ('eulaAccepted' in state.appData.settings) {
+        delete state.appData.settings.eulaAccepted;
         changed = true;
     }
 
@@ -1563,12 +1175,12 @@ async function runPostAcceptanceStartup() {
 
     startupInitializationPromise = (async () => {
         await runExpiryOnce(); // Align in-memory state with Screen Time / helper (e.g. after app was closed)
-        if (isIOS) {
+        if (state.isIOS) {
             await checkScreentimeAuth();
-            if (screentimeAuthorized) {
+            if (state.screentimeAuthorized) {
                 await initializeIOSBlockingState();
             }
-        } else if (isAndroid) {
+        } else if (state.isAndroid) {
             await checkAndroidPermissions();
             // Not gated on the accessibility grant: migration must run
             // before ANY set_schedules call, because Kotlin stores the
@@ -1587,7 +1199,7 @@ async function runPostAcceptanceStartup() {
             await ensureInstalledAppsCache();
             await runDesktopOnboarding();
             await checkHelperStatus();
-            console.log('[startup-sync] Desktop startup helperAvailable:', helperAvailable);
+            console.log('[startup-sync] Desktop startup helperAvailable:', state.helperAvailable);
             // Reconcile manual blocks first so paused one-offs are removed from helper state after reinstall.
             await syncActiveBlocksToHelper();
             // Then sync schedules to helper so both enforcement sources are aligned.
@@ -1613,7 +1225,7 @@ async function runPostAcceptanceStartup() {
         startTickInterval();
 
         // Check for app updates (non-blocking, desktop only)
-        if (!isIOS && !isAndroid) {
+        if (!state.isIOS && !state.isAndroid) {
             checkForAppUpdate();
         }
         startupInitializationComplete = true;
@@ -1629,20 +1241,20 @@ async function runPostAcceptanceStartup() {
 }
 
 async function resolveMicrosoftStorePackage() {
-    if (isMicrosoftStorePackage !== null) {
-        return isMicrosoftStorePackage;
+    if (state.isMicrosoftStorePackage !== null) {
+        return state.isMicrosoftStorePackage;
     }
     if (!document.body.classList.contains('windows')) {
-        isMicrosoftStorePackage = false;
+        state.isMicrosoftStorePackage = false;
         return false;
     }
     try {
-        isMicrosoftStorePackage = !!(await tauriAPI.isMicrosoftStorePackage());
+        state.isMicrosoftStorePackage = !!(await tauriAPI.isMicrosoftStorePackage());
     } catch (e) {
         console.warn('[Update] is_microsoft_store_package failed:', e);
-        isMicrosoftStorePackage = false;
+        state.isMicrosoftStorePackage = false;
     }
-    return isMicrosoftStorePackage;
+    return state.isMicrosoftStorePackage;
 }
 
 function updateBannerWhatsNewButtonHtml() {
@@ -1726,7 +1338,7 @@ async function startUpdateDownload(latestVersion) {
         await tauriAPI.downloadAndRunUpdate(version);
         setUpdateDownloadButtonState('opening');
         resetUpdateDownloadButtonState();
-        if (isMacOSDesktop) {
+        if (state.isMacOSDesktop) {
             try {
                 await message(tSettings('updateBannerInstallerOpened'), {
                     title: tSettings('updateBannerInstallerOpenedTitle'),
@@ -1901,16 +1513,16 @@ if (import.meta.env.DEV) {
 // Sets context (open-source, who built it) before legal acceptance
 // and the macOS Automation / Firefox extension setup overview.
 //
-// Persistence: `appData.settings.welcomeOnboardingShown` (boolean).
+// Persistence: `state.appData.settings.welcomeOnboardingShown` (boolean).
 // Wiped by `scripts/dev-reset-fda-onboarding.sh` (incl. --nuke; shared
 // storage at /var/lib/redd-block is cleared too).
 function hasWelcomeOnboardingBeenShown() {
-    return appData?.settings?.welcomeOnboardingShown === true;
+    return state.appData?.settings?.welcomeOnboardingShown === true;
 }
 
 async function persistWelcomeOnboardingShown() {
-    if (!appData.settings) appData.settings = {};
-    appData.settings.welcomeOnboardingShown = true;
+    if (!state.appData.settings) state.appData.settings = {};
+    state.appData.settings.welcomeOnboardingShown = true;
     try {
         await saveData();
     } catch (e) {
@@ -1919,7 +1531,7 @@ async function persistWelcomeOnboardingShown() {
 }
 
 async function runInitialOnboardingSequence() {
-    if (!isIOS && !hasWelcomeOnboardingBeenShown()) {
+    if (!state.isIOS && !hasWelcomeOnboardingBeenShown()) {
         await presentWelcomeOnboarding();
         await persistWelcomeOnboardingShown();
     }
@@ -1958,7 +1570,7 @@ function syncSetupBannerHeadline() {
     if (!headlineEl) return;
     const browsers = lastOnboardingState?.browsers;
     if (!browsers) {
-        headlineEl.textContent = tSettings(isMacOSDesktop ? 'setupBrowsersBannerHeadlineMac' : 'setupBrowsersBannerHeadline');
+        headlineEl.textContent = tSettings(state.isMacOSDesktop ? 'setupBrowsersBannerHeadlineMac' : 'setupBrowsersBannerHeadline');
         return;
     }
     const detectedKeys = Object.keys(BROWSER_STORE_LINKS).filter(k => browsers[k] && browsers[k].installed);
@@ -2002,7 +1614,7 @@ function continueFirstRunOnboardingFromWelcome() {
 let welcomeFirefoxInstalled = false;
 
 async function detectWelcomeFirefoxInstalled() {
-    if (!isMacOSDesktop) return false;
+    if (!state.isMacOSDesktop) return false;
     try {
         return !!(await invoke('is_firefox_installed'));
     } catch (e) {
@@ -2021,7 +1633,7 @@ function firefoxInstalledFromState(state) {
 }
 
 async function resolveEnforcementCopyFirefoxInstalled(state) {
-    if (!isMacOSDesktop) return false;
+    if (!state.isMacOSDesktop) return false;
     const fromState = firefoxInstalledFromState(state);
     if (fromState !== null) {
         enforcementCopyFirefoxInstalled = fromState;
@@ -2032,7 +1644,7 @@ async function resolveEnforcementCopyFirefoxInstalled(state) {
 }
 
 function migrationEnforcementDescHtml(firefoxInstalled = enforcementCopyFirefoxInstalled) {
-    if (!isMacOSDesktop) {
+    if (!state.isMacOSDesktop) {
         return tSettings('migrationEnforcementDescExtension');
     }
     return tSettings(firefoxInstalled
@@ -2041,7 +1653,7 @@ function migrationEnforcementDescHtml(firefoxInstalled = enforcementCopyFirefoxI
 }
 
 function settingsEnforcementHintHtml(firefoxInstalled = enforcementCopyFirefoxInstalled) {
-    if (!isMacOSDesktop) {
+    if (!state.isMacOSDesktop) {
         return tSettings('settingsEnforcementRowHintExtension');
     }
     return tSettings(firefoxInstalled
@@ -2119,7 +1731,7 @@ const MIGRATION_POLL_MS = 2500;
 const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
 
 async function runDesktopOnboarding() {
-    if (isIOS || isAndroid) return;
+    if (state.isIOS || state.isAndroid) return;
     try {
         const pendingAtLaunch = await invoke('migration_pending');
         const wasUpgrade = await invoke('migration_was_pending_at_launch');
@@ -2161,13 +1773,13 @@ async function runDesktopOnboarding() {
 }
 
 function hasMacAutomationIntroBeenShown() {
-    return appData?.settings?.macAutomationIntroShown === true;
+    return state.appData?.settings?.macAutomationIntroShown === true;
 }
 
 async function persistMacAutomationIntroShown() {
-    if (!appData.settings) appData.settings = {};
-    if (appData.settings.macAutomationIntroShown) return;
-    appData.settings.macAutomationIntroShown = true;
+    if (!state.appData.settings) state.appData.settings = {};
+    if (state.appData.settings.macAutomationIntroShown) return;
+    state.appData.settings.macAutomationIntroShown = true;
     try {
         await saveData();
     } catch (e) {
@@ -2176,9 +1788,9 @@ async function persistMacAutomationIntroShown() {
 }
 
 async function persistOnboardingComplete() {
-    if (!appData.settings) appData.settings = {};
-    if (appData.settings.onboardingComplete) return;
-    appData.settings.onboardingComplete = true;
+    if (!state.appData.settings) state.appData.settings = {};
+    if (state.appData.settings.onboardingComplete) return;
+    state.appData.settings.onboardingComplete = true;
     try {
         await saveData();
     } catch (e) {
@@ -2253,11 +1865,11 @@ function hadLegacyAutomationBrowserExtension(state) {
 }
 
 async function shouldShowMacAutomationIntro(state) {
-    if (!isMacOSDesktop || !hasAcceptedEula() || !hasWelcomeOnboardingBeenShown()) return false;
+    if (!state.isMacOSDesktop || !hasAcceptedEula() || !hasWelcomeOnboardingBeenShown()) return false;
     if (hasMacAutomationIntroBeenShown() || migrationOnboardingActive) return false;
 
     const extDismissed = !!localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
-    const returningUser = appData?.settings?.onboardingComplete === true || extDismissed;
+    const returningUser = state.appData?.settings?.onboardingComplete === true || extDismissed;
     if (!returningUser) return false;
 
     // Fresh first-run path after EULA — browser-setup overlay covers it.
@@ -2284,7 +1896,7 @@ async function shouldShowMacAutomationIntro(state) {
     // Prefer the legacy-extension signal for ambiguous cases; anyone who
     // already finished onboarding is treated as an upgrader.
     if (!hadLegacyAutomationBrowserExtension(state)
-        && appData?.settings?.onboardingComplete !== true) {
+        && state.appData?.settings?.onboardingComplete !== true) {
         return false;
     }
 
@@ -2318,7 +1930,7 @@ function setupMacAutomationIntroModal() {
 }
 
 async function ensureExtensionSetupOnboardingShown() {
-    if (isIOS || isAndroid || migrationOnboardingActive) return;
+    if (state.isIOS || state.isAndroid || migrationOnboardingActive) return;
     if (safariUsesExtensionMode()) {
         await ensureSafariExtensionFdaBeforeSetup();
     }
@@ -2536,7 +2148,7 @@ function wireMigrationPostPhase(state) {
     // macOS: the first paint shows Automation rows as 'unknown' because
     // the native status query is async. Fetch it, then re-render so the
     // rows settle to their real Allowed / needs-permission state.
-    if (isMacOSDesktop) {
+    if (state.isMacOSDesktop) {
         refreshAutomationPermissionStatus().then(() => {
             if (migrationOnboardingActive) renderBrowserInstallButtons(state, { force: true });
         });
@@ -2692,7 +2304,7 @@ async function onEnforcementToggleChange(changedToggle) {
 }
 
 async function wireEnforcementToggle() {
-    if (isIOS) return;
+    if (state.isIOS) return;
     const toggles = getEnforcementToggleInputs();
     if (!toggles.length) return;
 
@@ -2718,7 +2330,7 @@ let blockingMethodSettingsWired = false;
 let lastSettingsBlockingMethodBrowsers = null;
 
 function syncBlockingMethodRowVisibility(browsers = {}) {
-    if (!isMacOSDesktop) return;
+    if (!state.isMacOSDesktop) return;
     lastSettingsBlockingMethodBrowsers = browsers;
     const installed = new Set(installedMacBlockingMethodKeys(browsers));
     for (const key of MAC_BLOCKING_METHOD_KEYS) {
@@ -2748,7 +2360,7 @@ function syncBlockingMethodSelects(methods = getBlockingMethodsMap()) {
 }
 
 async function wireBlockingMethodSettings() {
-    if (!isMacOSDesktop) return;
+    if (!state.isMacOSDesktop) return;
 
     let browsers = lastOnboardingState?.browsers || lastMigrationBrowserState?.browsers || {};
     try {
@@ -2762,8 +2374,8 @@ async function wireBlockingMethodSettings() {
     let methods = getBlockingMethodsMap();
     try {
         methods = await tauriAPI.getBlockingMethods();
-        if (!appData.settings) appData.settings = {};
-        appData.settings.blockingMethods = methods;
+        if (!state.appData.settings) state.appData.settings = {};
+        state.appData.settings.blockingMethods = methods;
     } catch (e) {
         console.warn('[blocking-method] read failed:', e);
     }
@@ -2798,7 +2410,7 @@ async function wireBlockingMethodSettings() {
 }
 
 function safariUsesExtensionMode() {
-    return isMacOSDesktop && browserBlockingMethod('safari') === 'extension';
+    return state.isMacOSDesktop && browserBlockingMethod('safari') === 'extension';
 }
 
 let activeSafariFdaOnboardingSession = null;
@@ -3027,8 +2639,8 @@ async function onBlockingMethodChange(key, select) {
     select.disabled = true;
     try {
         const methods = await tauriAPI.setBlockingMethod(key, desired);
-        if (!appData.settings) appData.settings = {};
-        appData.settings.blockingMethods = methods;
+        if (!state.appData.settings) state.appData.settings = {};
+        state.appData.settings.blockingMethods = methods;
         syncBlockingMethodSelects(methods);
         await refreshAutomationPermissionStatus({ force: true });
         if (migrationOnboardingActive || isModalVisible('migration-onboarding')) {
@@ -3143,19 +2755,19 @@ function installedMacBlockingMethodKeys(browsers = {}) {
 }
 
 function getBlockingMethodsMap() {
-    return appData?.settings?.blockingMethods || {};
+    return state.appData?.settings?.blockingMethods || {};
 }
 
 function browserBlockingMethod(key) {
-    if (!isMacOSDesktop || !MAC_BLOCKING_METHOD_KEYS.includes(key)) {
-        if (isMacOSDesktop && key === 'firefox') return 'extension';
+    if (!state.isMacOSDesktop || !MAC_BLOCKING_METHOD_KEYS.includes(key)) {
+        if (state.isMacOSDesktop && key === 'firefox') return 'extension';
         return 'extension';
     }
     return getBlockingMethodsMap()[key] || 'automation';
 }
 
 function browserUsesAutomation(key) {
-    if (!isMacOSDesktop) return false;
+    if (!state.isMacOSDesktop) return false;
     if (key === 'firefox') return false;
     if (MAC_BLOCKING_METHOD_KEYS.includes(key)) {
         return browserBlockingMethod(key) === 'automation';
@@ -3191,7 +2803,7 @@ async function refreshAutomationPermissionStatus({
     launchProbeBrowser = null,
     launchProbeBrowsers = null,
 } = {}) {
-    if (!isMacOSDesktop) return lastAutomationPermissionByKey;
+    if (!state.isMacOSDesktop) return lastAutomationPermissionByKey;
     const now = Date.now();
     if (!force && now - lastAutomationPermissionFetchAt < AUTOMATION_PERMISSION_FETCH_MIN_MS) {
         return lastAutomationPermissionByKey;
@@ -3215,7 +2827,7 @@ async function refreshAutomationPermissionStatus({
         }
         lastAutomationPermissionByKey = map;
         lastAutomationRunningByKey = runningMap;
-        if (isMacOSDesktop) automationPermissionStatusReady = true;
+        if (state.isMacOSDesktop) automationPermissionStatusReady = true;
     } catch (e) {
         console.warn('[automation] permission status fetch failed:', e);
     }
@@ -3280,7 +2892,7 @@ function browserComplianceStatus(key, b) {
     if (enabled === false) return 'needs-enable';
     const priv = def.privateBrowsing;
     if (priv !== true) return 'needs-private';
-    if (key === 'firefox' && isMacOSDesktop && b.nativeHostReady === false) {
+    if (key === 'firefox' && state.isMacOSDesktop && b.nativeHostReady === false) {
         return 'needs-native-host';
     }
     return 'compliant';
@@ -3536,7 +3148,7 @@ function migrationBrowserKeys(state) {
 // subtitle is built from live state. Other platforms keep the
 // extension-everywhere copy.
 function migrationExtHeaderCopy(state) {
-    if (!isMacOSDesktop) return null;
+    if (!state.isMacOSDesktop) return null;
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
     const browsers = state?.browsers || lastMigrationBrowserState?.browsers || {};
@@ -3561,7 +3173,7 @@ function invalidateMigrationMacCopyCache() {
 }
 
 function syncMigrationMacHowto(state) {
-    if (!isMacOSDesktop) return;
+    if (!state.isMacOSDesktop) return;
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
     const browsers = state?.browsers || lastMigrationBrowserState?.browsers || {};
@@ -3593,7 +3205,7 @@ function migrationSetupAllCompliant(state) {
 }
 
 function isMacFreshMigrationPost() {
-    return isMacOSDesktop && isMigrationFreshPostPhase();
+    return state.isMacOSDesktop && isMigrationFreshPostPhase();
 }
 
 function syncMigrationPostHeader(state) {
@@ -3643,7 +3255,7 @@ function syncMigrationPostHeader(state) {
 function migrationExtLinesHtml(state) {
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
-    if (isMacOSDesktop) {
+    if (state.isMacOSDesktop) {
         if (isMacFreshMigrationPost()) {
             return '';
         }
@@ -3916,7 +3528,7 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
     // Keep the header subtitle in sync with the live scan (the macOS
     // copy depends on whether Firefox is installed).
     syncMigrationPostHeader(state);
-    if (isMacOSDesktop) syncMigrationMacHowto(state);
+    if (state.isMacOSDesktop) syncMigrationMacHowto(state);
     const extLines = document.getElementById('migration-checklist-ext-lines');
     if (extLines) extLines.innerHTML = migrationExtLinesHtml(state);
     const sig = migrationBrowserRenderSignature(state);
@@ -4019,12 +3631,12 @@ function renderBrowserInstallButtons(state, { force = false } = {}) {
             afterHint.className = 'migration-browser-hint migration-browser-after-hint';
             const privNoun = privateModeNoun(key);
             if (key === 'firefox') {
-                afterHint.innerHTML = isMacOSDesktop
+                afterHint.innerHTML = state.isMacOSDesktop
                     ? tSettings('migrationPostInstallFirefoxMacHtml')
                     : tSettings('migrationPostInstallFirefoxHtml');
             } else if (key === 'safari') {
                 afterHint.innerHTML = tSettings('migrationPostInstallSafariHtml');
-            } else if (isMacOSDesktop) {
+            } else if (state.isMacOSDesktop) {
                 const tpl = tSettings('migrationPostInstallChromiumMacHtml');
                 afterHint.innerHTML = tpl
                     .replace('{URL_CHIP}', extensionsUrlChipHtml(key))
@@ -4307,7 +3919,7 @@ function onAppForeground() {
 }
 
 function setupAppForegroundRefresh() {
-    if (isIOS || isAndroid) return;
+    if (state.isIOS || state.isAndroid) return;
     window.addEventListener('focus', onAppForeground);
     document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') onAppForeground();
@@ -4373,7 +3985,7 @@ async function updateBehaviourChangeBanner(state) {
 
     lastOnboardingState = state;
 
-    if (isMacOSDesktop) await refreshAutomationPermissionStatus({ force: true, launchProbe: false });
+    if (state.isMacOSDesktop) await refreshAutomationPermissionStatus({ force: true, launchProbe: false });
 
     let enforcementEnabled = false;
     try {
@@ -4438,7 +4050,7 @@ async function updateBehaviourChangeBanner(state) {
 }
 
 function bannerHeadlineKey(browsers, detectedKeys) {
-    if (!isMacOSDesktop) {
+    if (!state.isMacOSDesktop) {
         return 'setupBrowsersBannerHeadline';
     }
 
@@ -4553,7 +4165,7 @@ async function continueOnboardingReplayFromWelcome() {
 }
 
 async function restartOnboardingFromSettings() {
-    if (isIOS || isAndroid) return;
+    if (state.isIOS || state.isAndroid) return;
     document.getElementById('settings-modal')?.classList.add('hidden');
     setLanguagePickerOpen(false);
 
@@ -4576,14 +4188,14 @@ async function restartOnboardingFromSettings() {
 let lastBannerRefreshAt = 0;
 const BANNER_REFRESH_THROTTLE_MS = 5_000;
 async function refreshBehaviourBannerIfStale({ force = false } = {}) {
-    if (isIOS || isAndroid) return;
+    if (state.isIOS || state.isAndroid) return;
     if (migrationOnboardingActive) return; // overlay is the source of truth
     if (!startupInitializationComplete) return;
     const now = Date.now();
     if (!force && now - lastBannerRefreshAt < BANNER_REFRESH_THROTTLE_MS) return;
     lastBannerRefreshAt = now;
     try {
-        if (isMacOSDesktop) await refreshAutomationPermissionStatus({ force });
+        if (state.isMacOSDesktop) await refreshAutomationPermissionStatus({ force });
         const fresh = await invoke('onboarding_state');
         await updateBehaviourChangeBanner(fresh);
         await syncEnforcerClosedBannersWithCompliance(fresh);
@@ -4635,7 +4247,7 @@ async function syncEnforcerClosedBannersWithCompliance(state) {
             return;
         }
     }
-    if (isMacOSDesktop) await refreshAutomationPermissionStatus({ force: true, launchProbe: false });
+    if (state.isMacOSDesktop) await refreshAutomationPermissionStatus({ force: true, launchProbe: false });
     const browsers = state.browsers || {};
     let changed = false;
     for (const key of [...enforcerClosedBannerStates.keys()]) {
@@ -4653,7 +4265,7 @@ async function syncEnforcerClosedBannersWithCompliance(state) {
 }
 
 function setupEnforcerUiAlerts() {
-    if (isIOS || isAndroid || enforcerUiAlertsAttached) return;
+    if (state.isIOS || state.isAndroid || enforcerUiAlertsAttached) return;
     enforcerUiAlertsAttached = true;
     tauriAPI.onEnforcerGraceUpdate((event) => {
         const payload = event?.payload || {};
@@ -4706,7 +4318,7 @@ const webAutomationPendingBrowsers = new Map(); // label -> true
 let webAutomationUiAlertsAttached = false;
 
 async function startWebAutomationWatcher() {
-    if (!isMacOSDesktop) return;
+    if (!state.isMacOSDesktop) return;
     try {
         await tauriAPI.webAutomationStart();
     } catch (e) {
@@ -4715,7 +4327,7 @@ async function startWebAutomationWatcher() {
 }
 
 function setupWebAutomationUiAlerts() {
-    if (!isMacOSDesktop || webAutomationUiAlertsAttached) return;
+    if (!state.isMacOSDesktop || webAutomationUiAlertsAttached) return;
     webAutomationUiAlertsAttached = true;
     tauriAPI.onWebAutomationPermissionNeeded(async (event) => {
         const label = event?.payload?.label || event?.payload?.browser;
@@ -6245,9 +5857,9 @@ function resetAppBlockingWarningSnoozeState() {
 
 function collectManualBlockedApps(now = Date.now()) {
     const set = new Set();
-    for (const block of appData.activeBlocks || []) {
+    for (const block of state.appData.activeBlocks || []) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
-        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        const blocklist = state.appData.blocklists.find((bl) => bl.id === block.blocklistId);
         for (const app of blocklist?.apps || []) {
             if (!isProtectedApp(app)) set.add(app);
         }
@@ -6258,11 +5870,11 @@ function collectManualBlockedApps(now = Date.now()) {
 function collectScheduleBlockedApps(now = Date.now()) {
     const set = new Set();
     const nowDate = new Date(now);
-    for (const schedule of appData.schedules || []) {
+    for (const schedule of state.appData.schedules || []) {
         if (!schedule.segments) continue;
         if (isSchedulePausedNow(schedule, now)) continue;
         if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
-        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        const blocklist = state.appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
         for (const app of blocklist?.apps || []) {
             if (!isProtectedApp(app)) set.add(app);
         }
@@ -6273,9 +5885,9 @@ function collectScheduleBlockedApps(now = Date.now()) {
 function findManualBlocklistIdForApp(appName, now = Date.now()) {
     const target = String(appName || '').trim().toLowerCase();
     if (!target) return null;
-    for (const block of appData.activeBlocks || []) {
+    for (const block of state.appData.activeBlocks || []) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
-        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        const blocklist = state.appData.blocklists.find((bl) => bl.id === block.blocklistId);
         if (blocklist?.apps?.some((a) => String(a).trim().toLowerCase() === target)) {
             return blocklist.id;
         }
@@ -6286,11 +5898,11 @@ function findManualBlocklistIdForApp(appName, now = Date.now()) {
 function findScheduleBlocklistIdForApp(appName, now = Date.now(), nowDate = new Date(now)) {
     const target = String(appName || '').trim().toLowerCase();
     if (!target) return null;
-    for (const schedule of appData.schedules || []) {
+    for (const schedule of state.appData.schedules || []) {
         if (!schedule.segments) continue;
         if (isSchedulePausedNow(schedule, now)) continue;
         if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
-        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        const blocklist = state.appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
         if (blocklist?.apps?.some((a) => String(a).trim().toLowerCase() === target)) {
             return blocklist.id;
         }
@@ -6354,7 +5966,7 @@ function onAppBlockingSnoozeExpired() {
 }
 
 function setupAppBlockingWarningOverlay() {
-    if (isIOS || isAndroid || appBlockingWarningUiAttached) return;
+    if (state.isIOS || state.isAndroid || appBlockingWarningUiAttached) return;
     appBlockingWarningUiAttached = true;
 
     const snoozeIconEl = document.querySelector('#app-blocking-snooze-btn .app-blocking-snooze-icon');
@@ -6366,7 +5978,7 @@ function setupAppBlockingWarningOverlay() {
             renderAppBlockingWarningOverlay();
             renderAppBlockingClosedownBanner();
         }
-        if (typeof renderBlocklists === 'function' && appData?.blocklists?.length) {
+        if (typeof renderBlocklists === 'function' && state.appData?.blocklists?.length) {
             renderBlocklists();
         }
     });
@@ -6453,19 +6065,19 @@ function findActiveBlocklistForBlockedAppName(appName) {
     const now = Date.now();
     const nowDate = new Date(now);
 
-    for (const schedule of appData.schedules || []) {
+    for (const schedule of state.appData.schedules || []) {
         if (!schedule.segments) continue;
         if (isSchedulePausedNow(schedule, now)) continue;
         if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
-        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        const blocklist = state.appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
         if (blocklist?.apps?.some((a) => String(a).trim().toLowerCase() === target)) {
             return blocklist;
         }
     }
 
-    for (const block of appData.activeBlocks || []) {
+    for (const block of state.appData.activeBlocks || []) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
-        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        const blocklist = state.appData.blocklists.find((bl) => bl.id === block.blocklistId);
         if (blocklist?.apps?.some((a) => String(a).trim().toLowerCase() === target)) {
             return blocklist;
         }
@@ -6479,7 +6091,7 @@ function findResponsibleBlocklistForWarningApps(appNames) {
     for (const appName of appNames) {
         const meta = appBlockingNewlyAddedMeta.get(appName);
         if (meta?.blocklistId) {
-            const blocklist = appData.blocklists.find((bl) => bl.id === meta.blocklistId);
+            const blocklist = state.appData.blocklists.find((bl) => bl.id === meta.blocklistId);
             if (blocklist) return blocklist;
         }
     }
@@ -6500,7 +6112,7 @@ function findBlocklistForBlockedAppName(appName) {
     if (!appName) return null;
     const target = String(appName).trim().toLowerCase();
     if (!target) return null;
-    const blocklists = appData?.blocklists || [];
+    const blocklists = state.appData?.blocklists || [];
     for (const bl of blocklists) {
         const apps = bl.apps || [];
         if (apps.some((a) => String(a).trim().toLowerCase() === target)) {
@@ -6591,7 +6203,7 @@ function renderAppBlockingWarningOverlay() {
 // function is purely DOM-side: overlay visibility, body class for the
 // compact-mode CSS, and resize-observer setup.
 function applyWarningOverlayPresence() {
-    if (isIOS || isAndroid) return;
+    if (state.isIOS || state.isAndroid) return;
     const overlay = document.getElementById('app-blocking-warning-overlay');
     if (!overlay) return;
 
@@ -6614,12 +6226,12 @@ function applyWarningOverlayPresence() {
 }
 
 function restoreBlockingWarningShellIfIdle() {
-    if (isIOS || isAndroid) return Promise.resolve();
+    if (state.isIOS || state.isAndroid) return Promise.resolve();
     return tauriAPI.reconcileBlockingWarningShell().catch(() => {});
 }
 
 async function reconcileBlockingWarningShell() {
-    if (isIOS || isAndroid) return;
+    if (state.isIOS || state.isAndroid) return;
     applyWarningOverlayPresence();
 }
 
@@ -6698,9 +6310,9 @@ function displayNameForBlockedApp(processName) {
 
 async function ensureInstalledAppsCache() {
     if (installedAppsCache) return;
-    if (isIOS) return;
+    if (state.isIOS) return;
     try {
-        if (isAndroid) {
+        if (state.isAndroid) {
             const result = await tauriAPI.androidGetInstalledApps();
             installedAppsCache = (result?.apps || []).map((app) => ({
                 display_name: app.label || app.packageName,
@@ -6752,7 +6364,7 @@ function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
 
 // Check if the helper daemon is available (desktop only)
 async function checkHelperStatus() {
-    if (isIOS || isAndroid) return; // Mobile uses platform blockers, not helper daemon.
+    if (state.isIOS || state.isAndroid) return; // Mobile uses platform blockers, not helper daemon.
     const status = await refreshDesktopHelperStatus();
     console.log('Helper status:', status);
 
@@ -6783,14 +6395,14 @@ function isHelperConnectionError(errorMsg) {
 async function checkScreentimeAuth() {
     try {
         const result = await tauriAPI.screentimeCheckAuth();
-        screentimeAuthorized = result.granted;
+        state.screentimeAuthorized = result.granted;
         console.log('Screen Time auth status:', result.status);
-        if (!screentimeAuthorized) {
+        if (!state.screentimeAuthorized) {
             console.log('Screen Time not authorized - will prompt on first block');
         }
     } catch (err) {
         console.error('Error checking Screen Time auth:', err);
-        screentimeAuthorized = false;
+        state.screentimeAuthorized = false;
     }
     updateOnboardingVisibility();
 }
@@ -6799,12 +6411,12 @@ async function checkScreentimeAuth() {
 async function requestScreentimeAuth() {
     try {
         const result = await tauriAPI.screentimeRequestAuth();
-        screentimeAuthorized = result.granted;
+        state.screentimeAuthorized = result.granted;
         console.log('Screen Time auth result:', result);
         return result;
     } catch (err) {
         console.error('Error requesting Screen Time auth:', err);
-        screentimeAuthorized = false;
+        state.screentimeAuthorized = false;
         return { granted: false, status: 'error', error: err.toString() };
     }
 }
@@ -6816,11 +6428,11 @@ async function requestScreentimeAuth() {
 async function checkAndroidPermissions() {
     try {
         const result = await tauriAPI.androidCheckPermissions();
-        androidPermissionsGranted = !!result.accessibilityEnabled;
+        state.androidPermissionsGranted = !!result.accessibilityEnabled;
         console.log('Android permissions:', result);
     } catch (err) {
         console.error('Error checking Android permissions:', err);
-        androidPermissionsGranted = false;
+        state.androidPermissionsGranted = false;
     }
     updateOnboardingVisibility();
 }
@@ -6842,8 +6454,8 @@ const ANDROID_DAY_TO_MON0 = {
 // model. Runs once; the flag is only set after a successful save+sync so
 // a crash mid-migration doesn't leave a half-imported state.
 async function migrateAndroidNativeSchedules() {
-    if (!isAndroid) return;
-    if (appData.settings?.androidMigrationDone) return;
+    if (!state.isAndroid) return;
+    if (state.appData.settings?.androidMigrationDone) return;
 
     try {
         const { routinesJson } = await tauriAPI.androidReadNativeSchedules();
@@ -6854,7 +6466,7 @@ async function migrateAndroidNativeSchedules() {
                 const timing = legacy.schedule || {};
 
                 const blocklistId = generateId();
-                appData.blocklists.push({
+                state.appData.blocklists.push({
                     id: blocklistId,
                     name: legacy.name || 'Imported Schedule',
                     websites: legacy.blockedWebsites || [],
@@ -6888,7 +6500,7 @@ async function migrateAndroidNativeSchedules() {
                 const isPaused = !legacy.isEnabled && (!disabledUntil || disabledUntil > nowMs);
                 const pauseEndTime = (isPaused && disabledUntil) ? disabledUntil : undefined;
 
-                appData.schedules.push({
+                state.appData.schedules.push({
                     id: generateId(),
                     blocklistId,
                     isPaused,
@@ -6910,8 +6522,8 @@ async function migrateAndroidNativeSchedules() {
             }
         }
 
-        if (!appData.settings) appData.settings = {};
-        appData.settings.androidMigrationDone = true;
+        if (!state.appData.settings) state.appData.settings = {};
+        state.appData.settings.androidMigrationDone = true;
         await saveData();
         console.log('[migrateAndroidNativeSchedules] Imported', legacySchedules.length, 'legacy schedules');
     } catch (e) {
@@ -6947,10 +6559,10 @@ function listenForAndroidFrictionGate() {
 }
 
 async function onAndroidResumed() {
-    if (androidPermissionsGranted) return;
-    const wasGranted = androidPermissionsGranted;
+    if (state.androidPermissionsGranted) return;
+    const wasGranted = state.androidPermissionsGranted;
     await checkAndroidPermissions();
-    if (!wasGranted && androidPermissionsGranted) {
+    if (!wasGranted && state.androidPermissionsGranted) {
         try {
             await initializeAndroidBlockingState();
             render();
@@ -7029,12 +6641,12 @@ function setupAndroidBackButtonHandling() {
 }
 
 function findAndroidBlockingTarget(nativeScheduleId) {
-    const activeBlock = appData.activeBlocks?.find(block => block.id === nativeScheduleId);
+    const activeBlock = state.appData.activeBlocks?.find(block => block.id === nativeScheduleId);
     if (activeBlock) {
         return { type: 'block', block: activeBlock };
     }
 
-    for (const schedule of appData.schedules || []) {
+    for (const schedule of state.appData.schedules || []) {
         // Kotlin ids are the schedule id plus a flattened suffix:
         // `<id>-<segIdx>` for repeating segments, `<id>-<segIdx>-<occIdx>`
         // for one-shot occurrences. Schedule ids are UUIDs, so prefix
@@ -7059,7 +6671,7 @@ function openAndroidFrictionGateModal(event) {
 
     const target = findAndroidBlockingTarget(event.scheduleId);
     if (!target) {
-        // Every Kotlin schedule is created from appData via set_schedules
+        // Every Kotlin schedule is created from state.appData via set_schedules
         // (or imported by migrateAndroidNativeSchedules), so an unknown id
         // means the two stores are out of sync. Don't show a challenge we
         // can't act on; the next syncSchedulesToHelper reconciles Kotlin.
@@ -7072,11 +6684,11 @@ function openAndroidFrictionGateModal(event) {
 
     if (target.type === 'block') {
         overrideBlockId = target.block.id;
-        blocklist = appData.blocklists.find(bl => bl.id === target.block.blocklistId);
+        blocklist = state.appData.blocklists.find(bl => bl.id === target.block.blocklistId);
         actionLabel = tSettings('stopBlock');
     } else {
         window.overrideScheduleId = target.schedule.id || target.schedule.blocklistId;
-        blocklist = appData.blocklists.find(bl => bl.id === target.schedule.blocklistId);
+        blocklist = state.appData.blocklists.find(bl => bl.id === target.schedule.blocklistId);
         actionLabel = tSettings('stopSchedule');
     }
 
@@ -7108,10 +6720,10 @@ async function initializeIOSBlockingState() {
     // Sync lastBlockedDomains from active (non-paused) blocks so pause/resume works after restart
     const now = Date.now();
     const activeDomains = new Set();
-    appData.activeBlocks
+    state.appData.activeBlocks
         .filter(b => b.startTime <= now && b.endTime > now && !b.isPaused)
         .forEach(b => {
-            const bl = appData.blocklists.find(bl => bl.id === b.blocklistId);
+            const bl = state.appData.blocklists.find(bl => bl.id === b.blocklistId);
             if (bl && bl.websites) bl.websites.forEach(d => activeDomains.add(d));
         });
     lastBlockedDomains = activeDomains;
@@ -7128,10 +6740,10 @@ function updateOnboardingVisibility() {
     const androidOverlay = document.getElementById('android-permissions-onboarding');
     const main = document.getElementById('main-content');
     const showEula = !hasAcceptedEula();
-    const showScreentime = isIOS && !showEula && !screentimeAuthorized;
-    const showAndroidPermissions = isAndroid && !showEula && !androidPermissionsGranted;
-    const keepEulaVisibleForPendingSetup = !isIOS
-        && !isAndroid
+    const showScreentime = state.isIOS && !showEula && !state.screentimeAuthorized;
+    const showAndroidPermissions = state.isAndroid && !showEula && !state.androidPermissionsGranted;
+    const keepEulaVisibleForPendingSetup = !state.isIOS
+        && !state.isAndroid
         && isFirstRunOnboardingInProgress()
         && !migrationOnboardingActive;
     const showEulaScreen = showEula || keepEulaVisibleForPendingSetup;
@@ -7139,14 +6751,14 @@ function updateOnboardingVisibility() {
         || showScreentime
         || showAndroidPermissions
         || migrationOnboardingActive
-        || (!isIOS && !isAndroid && isFirstRunOnboardingInProgress());
+        || (!state.isIOS && !state.isAndroid && isFirstRunOnboardingInProgress());
 
     eulaOverlay?.classList.toggle('hidden', !showEulaScreen);
     screentimeOverlay?.classList.toggle('hidden', !showScreentime);
     androidOverlay?.classList.toggle('hidden', !showAndroidPermissions);
     main?.classList.toggle('hidden', blockMainUi);
     if (showAndroidPermissions) {
-        document.getElementById('android-accessibility-status')?.classList.toggle('hidden', androidPermissionsGranted);
+        document.getElementById('android-accessibility-status')?.classList.toggle('hidden', state.androidPermissionsGranted);
     }
 
     // Hide the BLOCKING NOW title-bar row on onboarding screens
@@ -7181,22 +6793,22 @@ function showExclusiveOnboardingScreen(activeId) {
 }
 
 async function acceptEula() {
-    if (!appData.settings) {
-        appData.settings = {};
+    if (!state.appData.settings) {
+        state.appData.settings = {};
     }
     const alreadyAccepted = getAcceptedEulaRevision() === CURRENT_EULA_REVISION;
     forceShowEulaThisSession = false;
     if (!alreadyAccepted) {
-        appData.settings.eulaAcceptedRevision = CURRENT_EULA_REVISION;
-        appData.settings.eulaAcceptedAt = Date.now();
+        state.appData.settings.eulaAcceptedRevision = CURRENT_EULA_REVISION;
+        state.appData.settings.eulaAcceptedAt = Date.now();
         await saveData();
     }
-    if (isIOS) {
+    if (state.isIOS) {
         await checkScreentimeAuth();
-    } else if (isAndroid) {
+    } else if (state.isAndroid) {
         await checkAndroidPermissions();
     } else {
-        if (!appData.settings.onboardingComplete) {
+        if (!state.appData.settings.onboardingComplete) {
             firstRunExtensionSetupPending = true;
         }
         updateOnboardingVisibility();
@@ -7219,7 +6831,7 @@ async function openExternal(target) {
         await openUrl(target);
     } catch (err) {
         console.warn('[openExternal] opener plugin failed:', err);
-        if (!isIOS && !isAndroid) {
+        if (!state.isIOS && !state.isAndroid) {
             window.open(target, '_blank', 'noopener,noreferrer');
         }
     }
@@ -7227,7 +6839,7 @@ async function openExternal(target) {
 
 /** Mobile webviews do not reliably open target=_blank links in the system browser; route via opener plugin. */
 function setupMobileExternalLinkOpens() {
-    if (!isIOS && !isAndroid) return;
+    if (!state.isIOS && !state.isAndroid) return;
     document.addEventListener('click', (event) => {
         const anchor = event.target.closest('a[href]');
         if (!anchor) return;
@@ -7241,10 +6853,10 @@ function setupMobileExternalLinkOpens() {
 
 // Load data from main process
 async function loadData() {
-    appData = await tauriAPI.loadData();
+    state.appData = await tauriAPI.loadData();
     let shouldSave = false;
-    if (!appData || !appData.blocklists) {
-        appData = {
+    if (!state.appData || !state.appData.blocklists) {
+        state.appData = {
             blocklists: [],
             activeBlocks: [],
             schedules: [],
@@ -7252,15 +6864,15 @@ async function loadData() {
         };
     }
     // Ensure schedules array exists for older data
-    if (!appData.schedules) {
-        appData.schedules = [];
+    if (!state.appData.schedules) {
+        state.appData.schedules = [];
     }
     // A pre-fix bug could insert a duplicate schedule for the same blocklist when
     // saving edits (both the start-flow and edit-flow proceed handlers fired). If
     // that left two entries, keep the one with the most segments and drop the rest.
-    if (appData.schedules.length > 1) {
+    if (state.appData.schedules.length > 1) {
         const byBlocklist = new Map();
-        for (const s of appData.schedules) {
+        for (const s of state.appData.schedules) {
             const existing = byBlocklist.get(s.blocklistId);
             const segCount = Array.isArray(s.segments) ? s.segments.length : 0;
             const existingCount = existing && Array.isArray(existing.segments) ? existing.segments.length : -1;
@@ -7268,19 +6880,19 @@ async function loadData() {
                 byBlocklist.set(s.blocklistId, s);
             }
         }
-        if (byBlocklist.size < appData.schedules.length) {
-            appData.schedules = [...byBlocklist.values()];
+        if (byBlocklist.size < state.appData.schedules.length) {
+            state.appData.schedules = [...byBlocklist.values()];
             shouldSave = true;
         }
     }
     // Ensure settings exists
-    if (!appData.settings) {
-        appData.settings = {};
+    if (!state.appData.settings) {
+        state.appData.settings = {};
     }
     if (normalizeLoadedEulaState()) {
         shouldSave = true;
     }
-    appData.blocklists = (appData.blocklists || []).map(normalizeBlocklist);
+    state.appData.blocklists = (state.appData.blocklists || []).map(normalizeBlocklist);
     if (migrateBlocklistStartOverlaysToGlobal()) {
         shouldSave = true;
     }
@@ -7290,8 +6902,8 @@ async function loadData() {
 
 
     // Create default blocklist on first launch (no blocklists yet)
-    if (appData.blocklists.length === 0) {
-        appData.blocklists.push({
+    if (state.appData.blocklists.length === 0) {
+        state.appData.blocklists.push({
             id: generateId(),
             name: 'Distractions',
             mode: 'blocklist',
@@ -7303,7 +6915,7 @@ async function loadData() {
             iosScreenTimeSelection: null,
             overrideDifficulty: {
                 type: 'random-words',
-                count: (isIOS) ? 25 : 50
+                count: (state.isIOS) ? 25 : 50
             }
         });
         shouldSave = true;
@@ -7316,7 +6928,7 @@ async function loadData() {
 
 // Save data to main process
 async function saveData() {
-    await tauriAPI.saveData(appData);
+    await tauriAPI.saveData(state.appData);
 }
 
 /// Run expiry once (e.g. on app load) so in-memory state matches Screen Time / helper.
@@ -7326,7 +6938,7 @@ async function runExpiryOnce() {
     let changed = false;
 
     // Clear expired pause on blocks
-    for (const block of appData.activeBlocks) {
+    for (const block of state.appData.activeBlocks) {
         if (block.isPaused && block.pauseEndTime && block.pauseEndTime <= now) {
             delete block.isPaused;
             delete block.pauseEndTime;
@@ -7334,8 +6946,8 @@ async function runExpiryOnce() {
         }
     }
     // Clear expired pause on schedules
-    if (appData.schedules) {
-        for (const schedule of appData.schedules) {
+    if (state.appData.schedules) {
+        for (const schedule of state.appData.schedules) {
             if (schedule.isPaused && schedule.pauseEndTime && schedule.pauseEndTime <= now) {
                 delete schedule.isPaused;
                 delete schedule.pauseEndTime;
@@ -7344,15 +6956,15 @@ async function runExpiryOnce() {
         }
     }
     // Remove expired blocks
-    const prevCount = appData.activeBlocks.length;
-    appData.activeBlocks = appData.activeBlocks.filter(b => b.endTime > now);
-    if (appData.activeBlocks.length !== prevCount) changed = true;
+    const prevCount = state.appData.activeBlocks.length;
+    state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.endTime > now);
+    if (state.appData.activeBlocks.length !== prevCount) changed = true;
 
     // Remove expired schedules (date-limited or non-repeating past end)
-    if (appData.schedules && appData.schedules.length > 0) {
+    if (state.appData.schedules && state.appData.schedules.length > 0) {
         const nowDate = new Date(now);
         const expiredIds = [];
-        for (const schedule of appData.schedules) {
+        for (const schedule of state.appData.schedules) {
             if (schedule.repeatType === 'forever') continue;
             if (schedule.repeatType === 'date' && schedule.repeatDate) {
                 const endDate = new Date(schedule.repeatDate);
@@ -7365,7 +6977,7 @@ async function runExpiryOnce() {
             }
         }
         if (expiredIds.length > 0) {
-            appData.schedules = appData.schedules.filter(s => !expiredIds.includes(s.id));
+            state.appData.schedules = state.appData.schedules.filter(s => !expiredIds.includes(s.id));
             changed = true;
         }
     }
@@ -7392,17 +7004,17 @@ function isVersionHigher(versionA, versionB) {
 }
 
 function usesMobileWordCountForOverrideType(type) {
-    return !!((isIOS || isAndroid) && (type === 'random-words' || type === 'gibberish'));
+    return !!((state.isIOS || state.isAndroid) && (type === 'random-words' || type === 'gibberish'));
 }
 
 function isMobileOverrideChallengePlatform() {
-    return isIOS || isAndroid;
+    return state.isIOS || state.isAndroid;
 }
 
 /** Key in latest-versions.json — iOS uses its own release line, not desktop macos. */
 function getLatestVersionPlatformKey() {
-    if (isIOS) return 'ios';
-    if (isAndroid) return 'android';
+    if (state.isIOS) return 'ios';
+    if (state.isAndroid) return 'android';
     const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
     return isMac ? 'macos' : 'windows';
 }
@@ -7557,7 +7169,7 @@ function detectPlatform() {
         (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 
     if (isIOSDevice) {
-        isIOS = true;
+        state.isIOS = true;
         document.body.classList.add('ios');
         // iPhone / iPod (anything not iPad): used for layout (e.g. hide week calendar)
         const isIPad = /iPad/.test(navigator.userAgent) ||
@@ -7590,7 +7202,7 @@ function detectPlatform() {
 
         /* Browse buttons in #blocklist-modal: layout + captions from CSS (body.ios …) and applySettingsLanguage(). */
     } else if (/Android/.test(navigator.userAgent)) {
-        isAndroid = true;
+        state.isAndroid = true;
         document.body.classList.add('android');
         document.body.classList.add('handset-device');
         // Hide desktop-only UI on Android — same fullscreen-webview
@@ -7606,7 +7218,7 @@ function detectPlatform() {
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
         if (isMac) {
             document.body.classList.add('mac');
-            isMacOSDesktop = true;
+            state.isMacOSDesktop = true;
             // Hide controls on macOS - native traffic lights are used
             document.getElementById('window-controls')?.classList.add('hidden');
         } else {
@@ -7867,7 +7479,7 @@ function setupEventListeners() {
         }
     });
 
-    if (isAndroid) {
+    if (state.isAndroid) {
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') {
                 void onAndroidResumed();
@@ -7907,7 +7519,7 @@ function setupEventListeners() {
         }
 
         // Deselect blocklist if one is selected
-        if (selectedBlocklistId) {
+        if (state.selectedBlocklistId) {
             deselectBlocklist();
         }
     });
@@ -7926,7 +7538,7 @@ function setupEventListeners() {
             e.preventDefault();
             return;
         }
-        if (selectedBlocklistId) {
+        if (state.selectedBlocklistId) {
             deselectBlocklist();
             e.preventDefault();
         }
@@ -8569,7 +8181,7 @@ function setupModalListeners() {
     }
 
     // Mobile: Name → websites. iOS shows plain Return (no default advance).
-    if (isIOS) {
+    if (state.isIOS) {
         const nameInput = document.getElementById('blocklist-name');
         nameInput.setAttribute('enterkeyhint', 'next');
         nameInput.addEventListener('keydown', (e) => {
@@ -8743,7 +8355,7 @@ function setupModalListeners() {
 
     // Browse button for modal
     const modalBrowseBtn = document.getElementById('modal-browse-apps-btn');
-    if (isIOS && modalBrowseBtn) {
+    if (state.isIOS && modalBrowseBtn) {
         modalBrowseBtn.addEventListener('click', async () => {
             try {
                 const result = await tauriAPI.showActivityPicker({
@@ -9131,7 +8743,7 @@ function setupModalListeners() {
         // Preserve the blocklist's existing schedule visibility (toggled via the chips above the
         // schedule); default to true for new blocklists.
         const existingBlocklistForSave = editingBlocklistId
-            ? appData.blocklists.find(bl => bl.id === editingBlocklistId)
+            ? state.appData.blocklists.find(bl => bl.id === editingBlocklistId)
             : null;
         const alwaysShowInSchedule = existingBlocklistForSave?.alwaysShowInSchedule !== false;
 
@@ -9165,22 +8777,22 @@ function setupModalListeners() {
         };
 
         if (editingBlocklistId) {
-            const idx = appData.blocklists.findIndex(bl => bl.id === editingBlocklistId);
+            const idx = state.appData.blocklists.findIndex(bl => bl.id === editingBlocklistId);
             if (idx !== -1) {
-                appData.blocklists[idx] = blocklist;
+                state.appData.blocklists[idx] = blocklist;
             }
         } else {
-            appData.blocklists.push(blocklist);
+            state.appData.blocklists.push(blocklist);
         }
 
         saveData();
 
         // If this blocklist is active (block or schedule), update blocking rules immediately
         const now = Date.now();
-        const hasActiveBlock = appData.activeBlocks.some(
+        const hasActiveBlock = state.appData.activeBlocks.some(
             b => b.blocklistId === blocklist.id && b.startTime <= now && b.endTime > now
         );
-        const hasActiveSchedule = appData.schedules?.some(
+        const hasActiveSchedule = state.appData.schedules?.some(
             s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0
         );
 
@@ -9213,10 +8825,10 @@ function setupModalListeners() {
         if (!editingBlocklistId) autoSelectSoleBlocklist({ force: true });
 
         // Re-trigger blocklist selection to update button text (name may have changed)
-        if (selectedBlocklistId) {
+        if (state.selectedBlocklistId) {
             const dropdown = document.getElementById('blocklist-select');
             if (dropdown) {
-                dropdown.value = selectedBlocklistId;
+                dropdown.value = state.selectedBlocklistId;
                 handleBlocklistSelect({ target: dropdown });
             }
         }
@@ -9412,17 +9024,17 @@ function setupOverrideModalListeners() {
 
     // Pause block button
     document.getElementById('pause-block-btn').addEventListener('click', () => {
-        if (!selectedBlocklistId) return;
+        if (!state.selectedBlocklistId) return;
         const now = Date.now();
 
         // Try one-off block first
-        const activeBlock = appData.activeBlocks.find(b =>
-            b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
+        const activeBlock = state.appData.activeBlocks.find(b =>
+            b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now
         );
         if (activeBlock) {
             if (activeBlock.isPaused) {
                 // Resume — show confirmation dialog
-                openResumeConfirmation(selectedBlocklistId, 'block', activeBlock.id);
+                openResumeConfirmation(state.selectedBlocklistId, 'block', activeBlock.id);
             } else {
                 // Pause
                 pauseScheduleData = null;
@@ -9432,15 +9044,15 @@ function setupOverrideModalListeners() {
         }
 
         // Try schedule — find the currently active segment
-        const schedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
+        const schedule = state.appData.schedules?.find(s => s.blocklistId === state.selectedBlocklistId);
         if (schedule) {
             if (isSchedulePausedNow(schedule, now)) {
                 // Resume — show confirmation dialog
-                openResumeConfirmation(selectedBlocklistId, 'schedule', null);
+                openResumeConfirmation(state.selectedBlocklistId, 'schedule', null);
                 return;
             }
             pauseScheduleData = {
-                blocklistId: selectedBlocklistId,
+                blocklistId: state.selectedBlocklistId,
                 isActiveNow: isScheduleSegmentActiveNow(schedule)
             };
             openPauseModal(null); // null blockId signals schedule pause
@@ -9573,17 +9185,17 @@ function setupOverrideModalListeners() {
             }
 
             if (overrideBlockId && overrideBlockId !== 'helper-removal') {
-                const overriddenBlock = appData.activeBlocks.find(b => b.id === overrideBlockId);
+                const overriddenBlock = state.appData.activeBlocks.find(b => b.id === overrideBlockId);
                 const blocklistIdToClear = overrideBlocklistIdForHelper ?? (overriddenBlock ? overriddenBlock.blocklistId : null);
-                appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== overrideBlockId);
+                state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== overrideBlockId);
                 await saveData();
 
-                if (isIOS) {
+                if (state.isIOS) {
                     await tauriAPI.screentimeClearBlock();
                     lastBlockedDomains = new Set();
                     await updateHostsFile();
                     await syncSchedulesToHelper();
-                } else if (isAndroid) {
+                } else if (state.isAndroid) {
                     try {
                         await tauriAPI.androidStopManualBlock(overrideBlockId);
                     } catch (err) {
@@ -9611,7 +9223,7 @@ function setupOverrideModalListeners() {
                 // entire schedule (no per-instance skip). Segments are re-loaded into the
                 // editor so the user can re-start them later without re-typing them.
                 const scheduleId = window.overrideScheduleId;
-                const scheduleToStop = appData.schedules.find(s =>
+                const scheduleToStop = state.appData.schedules.find(s =>
                     s.id === scheduleId || s.blocklistId === scheduleId
                 );
 
@@ -9620,16 +9232,16 @@ function setupOverrideModalListeners() {
                     activeScheduleSegmentCount = 0; // No segments are locked anymore
 
                     // Save these segments as pending so they persist when clicking off/on
-                    if (!appData.settings) appData.settings = {};
-                    if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
-                    appData.settings.pendingScheduleSegments[scheduleToStop.blocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                    if (!state.appData.settings) state.appData.settings = {};
+                    if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
+                    state.appData.settings.pendingScheduleSegments[scheduleToStop.blocklistId] = scheduleSegments.map(seg => ({ ...seg }));
 
-                    appData.schedules = appData.schedules.filter(s =>
+                    state.appData.schedules = state.appData.schedules.filter(s =>
                         s.id !== scheduleId && s.blocklistId !== scheduleId
                     );
 
                     // Rebuild UI to show all segments as editable if we're viewing this blocklist
-                    if (selectedBlocklistId === scheduleToStop.blocklistId && isScheduleMode) {
+                    if (state.selectedBlocklistId === scheduleToStop.blocklistId && isScheduleMode) {
                         rebuildScheduleSegments();
                         disableScheduleControls(false);
                     }
@@ -9639,7 +9251,7 @@ function setupOverrideModalListeners() {
 
                 // On iOS, clear both Screen Time stores so the overridden schedule's blocks are removed
                 // immediately; updateHostsFile and syncSchedulesToHelper will then re-apply correct state.
-                if (isIOS) {
+                if (state.isIOS) {
                     await tauriAPI.screentimeClearBlock();
                     lastBlockedDomains = new Set();
                 }
@@ -9827,8 +9439,8 @@ function disableScheduleControls(disabled) {
     const dateWrapper = document.getElementById('repeat-date-wrapper');
     const dateInput = document.getElementById('repeat-date-input');
     if (dateWrapper && dateInput) {
-        const activeSchedule = selectedBlocklistId && appData.schedules
-            ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+        const activeSchedule = state.selectedBlocklistId && state.appData.schedules
+            ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
             : null;
         const isDateRepeatActive = !!(activeSchedule && activeSchedule.repeatType === 'date');
         const shouldDisableDateSelector = disabled && (isDateRepeatActive || scheduleRepeatType === 'date');
@@ -9889,11 +9501,11 @@ function initializeTimeInputs() {
     userEditedEndTime = false;
 
     // Restore always-on mode preference for this blocklist
-    const savedAlwaysOn = selectedBlocklistId && appData.settings?.alwaysOnMode?.[selectedBlocklistId];
+    const savedAlwaysOn = state.selectedBlocklistId && state.appData.settings?.alwaysOnMode?.[state.selectedBlocklistId];
     setAlwaysOnMode(savedAlwaysOn !== undefined ? !!savedAlwaysOn : false);
 
-    if (selectedBlocklistId && appData.settings?.instantBlockDuration?.[selectedBlocklistId] !== undefined) {
-        targetDurationMinutes = appData.settings.instantBlockDuration[selectedBlocklistId];
+    if (state.selectedBlocklistId && state.appData.settings?.instantBlockDuration?.[state.selectedBlocklistId] !== undefined) {
+        targetDurationMinutes = state.appData.settings.instantBlockDuration[state.selectedBlocklistId];
     } else {
         targetDurationMinutes = 60;
     }
@@ -10302,11 +9914,11 @@ function setAlwaysOnMode(alwaysOn) {
     updateDurationQuickBtns(targetDurationMinutes);
 
     // Save preference per blocklist
-    if (selectedBlocklistId) {
-        if (!appData.settings) appData.settings = {};
-        if (!appData.settings.alwaysOnMode) appData.settings.alwaysOnMode = {};
-        if (appData.settings.alwaysOnMode[selectedBlocklistId] !== alwaysOn) {
-            appData.settings.alwaysOnMode[selectedBlocklistId] = alwaysOn;
+    if (state.selectedBlocklistId) {
+        if (!state.appData.settings) state.appData.settings = {};
+        if (!state.appData.settings.alwaysOnMode) state.appData.settings.alwaysOnMode = {};
+        if (state.appData.settings.alwaysOnMode[state.selectedBlocklistId] !== alwaysOn) {
+            state.appData.settings.alwaysOnMode[state.selectedBlocklistId] = alwaysOn;
             saveData();
         }
     }
@@ -10323,10 +9935,10 @@ function setScheduleMode(isSchedule) {
     isScheduleMode = isSchedule;
 
     // Persist this tab choice per blocklist so it restores when switching back
-    if (selectedBlocklistId && appData.settings) {
-        if (!appData.settings.preferredStartMode) appData.settings.preferredStartMode = {};
-        if (appData.settings.preferredStartMode[selectedBlocklistId] !== isSchedule) {
-            appData.settings.preferredStartMode[selectedBlocklistId] = isSchedule;
+    if (state.selectedBlocklistId && state.appData.settings) {
+        if (!state.appData.settings.preferredStartMode) state.appData.settings.preferredStartMode = {};
+        if (state.appData.settings.preferredStartMode[state.selectedBlocklistId] !== isSchedule) {
+            state.appData.settings.preferredStartMode[state.selectedBlocklistId] = isSchedule;
             saveData();
         }
     }
@@ -10349,8 +9961,8 @@ function setScheduleMode(isSchedule) {
 
     if (isSchedule) {
         // Check if selected blocklist has an existing schedule
-        const existingSchedule = selectedBlocklistId && appData.schedules
-            ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+        const existingSchedule = state.selectedBlocklistId && state.appData.schedules
+            ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
             : null;
 
         if (existingSchedule && existingSchedule.segments) {
@@ -10361,7 +9973,7 @@ function setScheduleMode(isSchedule) {
             scheduleRepeatDate = existingSchedule.repeatDate;
 
             // Also load any pending (new) segments that were added but not yet committed
-            const pendingSegments = appData.settings?.pendingScheduleSegments?.[selectedBlocklistId];
+            const pendingSegments = state.appData.settings?.pendingScheduleSegments?.[state.selectedBlocklistId];
             if (pendingSegments && pendingSegments.length > 0) {
                 const cleanedPendingSegments = pendingSegments.filter(seg =>
                     !existingSchedule.segments.some(existingSeg => areSegmentsEqual(existingSeg, seg))
@@ -10369,25 +9981,25 @@ function setScheduleMode(isSchedule) {
                 if (cleanedPendingSegments.length > 0) {
                     // Append pending segments to the existing locked segments
                     scheduleSegments.push(...cleanedPendingSegments.map(seg => ({ ...seg })));
-                    const currentPending = JSON.stringify(appData.settings.pendingScheduleSegments[selectedBlocklistId] || []);
+                    const currentPending = JSON.stringify(state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] || []);
                     const nextPending = JSON.stringify(cleanedPendingSegments);
                     if (currentPending !== nextPending) {
-                        appData.settings.pendingScheduleSegments[selectedBlocklistId] = cleanedPendingSegments.map(seg => ({ ...seg }));
+                        state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = cleanedPendingSegments.map(seg => ({ ...seg }));
                         saveData();
                     }
                 } else {
-                    if (appData.settings.pendingScheduleSegments?.[selectedBlocklistId]) {
-                        clearPendingScheduleDraft(selectedBlocklistId);
+                    if (state.appData.settings.pendingScheduleSegments?.[state.selectedBlocklistId]) {
+                        clearPendingScheduleDraft(state.selectedBlocklistId);
                         saveData();
                     }
                 }
             }
         } else {
             // Check for pending (unsaved) segments for this blocklist
-            const pendingSegments = appData.settings?.pendingScheduleSegments?.[selectedBlocklistId];
+            const pendingSegments = state.appData.settings?.pendingScheduleSegments?.[state.selectedBlocklistId];
             if (pendingSegments && pendingSegments.length > 0) {
                 scheduleSegments = pendingSegments.map(seg => ({ ...seg }));
-                const repeatOpts = appData.settings?.pendingScheduleRepeatOptions?.[selectedBlocklistId];
+                const repeatOpts = state.appData.settings?.pendingScheduleRepeatOptions?.[state.selectedBlocklistId];
                 if (repeatOpts && typeof repeatOpts.repeatType === 'string') {
                     scheduleRepeatType = repeatOpts.repeatType;
                     scheduleRepeatDate =
@@ -10412,7 +10024,7 @@ function setScheduleMode(isSchedule) {
         instantPanel.classList.add('hidden');
         schedulePanel.classList.remove('hidden');
         startBlockBtn.classList.add('hidden');
-        if (selectedBlocklistId) {
+        if (state.selectedBlocklistId) {
             startScheduleBtn.classList.remove('hidden');
             updateScheduleButtonState();
         }
@@ -10420,15 +10032,15 @@ function setScheduleMode(isSchedule) {
         instantPanel.classList.remove('hidden');
         schedulePanel.classList.add('hidden');
         startScheduleBtn.classList.add('hidden');
-        if (selectedBlocklistId) {
+        if (state.selectedBlocklistId) {
             startBlockBtn.classList.remove('hidden');
-            const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+            const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
 
             // Re-evaluate pause button visibility for Now mode
             const pauseBtn = document.getElementById('pause-block-btn');
             const now = Date.now();
-            const activeBlock = appData.activeBlocks.find(b =>
-                b.blocklistId === selectedBlocklistId &&
+            const activeBlock = state.appData.activeBlocks.find(b =>
+                b.blocklistId === state.selectedBlocklistId &&
                 b.startTime <= now &&
                 b.endTime > now
             );
@@ -10664,16 +10276,16 @@ function updateScheduleButtonState() {
     if (!startScheduleBtn) return;
 
     // Check if selected blocklist has an active schedule
-    const activeSchedule = selectedBlocklistId && appData.schedules
-        ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+    const activeSchedule = state.selectedBlocklistId && state.appData.schedules
+        ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
         : null;
     const now = Date.now();
     const scheduleIsPaused = isSchedulePausedNow(activeSchedule, now);
     const scheduleIsActiveNow = !!(activeSchedule && isScheduleSegmentActiveNow(activeSchedule));
     const scheduleIsFunctionallyActive = scheduleIsPaused || scheduleIsActiveNow;
 
-    const blocklist = selectedBlocklistId
-        ? appData.blocklists.find(bl => bl.id === selectedBlocklistId)
+    const blocklist = state.selectedBlocklistId
+        ? state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId)
         : null;
 
     const btnLabel = startScheduleBtn.querySelector('.btn-label');
@@ -10730,7 +10342,7 @@ function updateScheduleButtonState() {
     }
 
     // Enable button if blocklist is selected
-    const isValid = selectedBlocklistId;
+    const isValid = state.selectedBlocklistId;
     startScheduleBtn.disabled = !isValid;
 
     // Show pending-changes bar only when an active schedule has unsaved new segments
@@ -10762,10 +10374,10 @@ function updateSchedulePendingBar(visible, activeSchedule) {
 
 // Commit any unsaved new segments to the active schedule (Save changes from pending bar).
 async function saveSchedulePendingChanges() {
-    if (!selectedBlocklistId) return;
-    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
-    const activeSchedule = appData.schedules
-        ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+    if (!state.selectedBlocklistId) return;
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
+    const activeSchedule = state.appData.schedules
+        ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
         : null;
     if (!blocklist || !activeSchedule) return;
 
@@ -10782,9 +10394,9 @@ async function saveSchedulePendingChanges() {
 
 // Discard any unsaved new segments and revert the panel to the committed schedule.
 function discardSchedulePendingChanges() {
-    if (!selectedBlocklistId) return;
-    const activeSchedule = appData.schedules
-        ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+    if (!state.selectedBlocklistId) return;
+    const activeSchedule = state.appData.schedules
+        ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
         : null;
     if (!activeSchedule) return;
 
@@ -10795,7 +10407,7 @@ function discardSchedulePendingChanges() {
     scheduleSegments = scheduleSegments.slice(0, committedCount).map(seg => ({ ...seg }));
 
     // Clear persisted pending draft so a reload doesn't resurrect them
-    clearPendingScheduleDraft(selectedBlocklistId);
+    clearPendingScheduleDraft(state.selectedBlocklistId);
     saveData();
 
     rebuildScheduleSegments();
@@ -11538,13 +11150,13 @@ function showScheduleTimePopover(field, type, isStart, segmentIndex) {
 // behaves identically whether or not pending edits exist (those are committed/discarded
 // via the pending-changes bar, never via this button).
 async function startSchedule() {
-    if (!selectedBlocklistId) return;
+    if (!state.selectedBlocklistId) return;
 
-    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
     if (!blocklist) return;
 
-    const activeSchedule = appData.schedules
-        ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+    const activeSchedule = state.appData.schedules
+        ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
         : null;
 
     if (activeSchedule) {
@@ -11569,10 +11181,10 @@ async function startSchedule() {
 const GLOBAL_OVERLAY_ASSET_NAMESPACE = 'global';
 
 function ensureGlobalStartOverlays() {
-    if (!Array.isArray(appData.startOverlays)) {
-        appData.startOverlays = [];
+    if (!Array.isArray(state.appData.startOverlays)) {
+        state.appData.startOverlays = [];
     }
-    return appData.startOverlays;
+    return state.appData.startOverlays;
 }
 
 function getGlobalStartOverlays() {
@@ -11631,16 +11243,16 @@ async function deleteGlobalStartOverlay(presetId) {
     if (preset.imageAsset) await removeScheduleOverlayAsset(preset.imageAsset);
     if (preset.voiceAsset) await removeScheduleOverlayAsset(preset.voiceAsset);
 
-    appData.startOverlays = getGlobalStartOverlays().filter((item) => item.id !== presetId);
+    state.appData.startOverlays = getGlobalStartOverlays().filter((item) => item.id !== presetId);
 
-    for (const schedule of appData.schedules || []) {
+    for (const schedule of state.appData.schedules || []) {
         if (schedule.startOverlayId === presetId) {
             schedule.startOverlayId = null;
         }
     }
 
-    if (appData.settings?.lastScheduleStartOverlayId === presetId) {
-        delete appData.settings.lastScheduleStartOverlayId;
+    if (state.appData.settings?.lastScheduleStartOverlayId === presetId) {
+        delete state.appData.settings.lastScheduleStartOverlayId;
     }
 
     if (pendingScheduleStartOverlayId === presetId) {
@@ -11652,25 +11264,25 @@ async function deleteGlobalStartOverlay(presetId) {
 }
 
 function getLastScheduleStartOverlayId() {
-    const stored = appData.settings?.lastScheduleStartOverlayId;
+    const stored = state.appData.settings?.lastScheduleStartOverlayId;
     if (!stored) return null;
     return getNamedStartOverlayById(stored) ? stored : null;
 }
 
 function rememberLastScheduleStartOverlayId(overlayId) {
-    if (!appData.settings) appData.settings = {};
+    if (!state.appData.settings) state.appData.settings = {};
     const normalized = overlayId || null;
     if (normalized && !getNamedStartOverlayById(normalized)) return;
-    if (normalized) appData.settings.lastScheduleStartOverlayId = normalized;
-    else delete appData.settings.lastScheduleStartOverlayId;
+    if (normalized) state.appData.settings.lastScheduleStartOverlayId = normalized;
+    else delete state.appData.settings.lastScheduleStartOverlayId;
 }
 
 function migrateBlocklistStartOverlaysToGlobal() {
     let changed = false;
     ensureGlobalStartOverlays();
-    const knownIds = new Set(appData.startOverlays.map((preset) => preset.id));
+    const knownIds = new Set(state.appData.startOverlays.map((preset) => preset.id));
 
-    for (const blocklist of appData.blocklists || []) {
+    for (const blocklist of state.appData.blocklists || []) {
         const legacyPresets = blocklist.startOverlays;
         if (!Array.isArray(legacyPresets) || legacyPresets.length === 0) {
             if (legacyPresets != null) {
@@ -11682,7 +11294,7 @@ function migrateBlocklistStartOverlaysToGlobal() {
 
         for (const preset of legacyPresets) {
             if (!preset?.id || knownIds.has(preset.id)) continue;
-            appData.startOverlays.push({ ...preset });
+            state.appData.startOverlays.push({ ...preset });
             knownIds.add(preset.id);
             changed = true;
         }
@@ -11736,7 +11348,7 @@ function resolveScheduleStartOverlay(schedule) {
 
 function migrateLegacyScheduleStartOverlays() {
     let changed = false;
-    for (const schedule of appData.schedules || []) {
+    for (const schedule of state.appData.schedules || []) {
         if (schedule.startOverlayId || !schedule.startOverlay?.custom) continue;
         const presetId = crypto.randomUUID();
         upsertGlobalStartOverlay({
@@ -11797,7 +11409,7 @@ function normalizeScheduleStartOverlay(overlay) {
 }
 
 function getScheduleStartOverlayForBlocklistId(blocklistId) {
-    const schedule = appData.schedules?.find((s) => s.blocklistId === blocklistId);
+    const schedule = state.appData.schedules?.find((s) => s.blocklistId === blocklistId);
     if (!schedule) return null;
     return resolveScheduleStartOverlay(schedule);
 }
@@ -11855,7 +11467,7 @@ function revokeOverlayAssetBlobUrls() {
 }
 
 async function resolveOverlayImageAssetUrl(relativePath) {
-    if (!relativePath || isIOS || isAndroid) return null;
+    if (!relativePath || state.isIOS || state.isAndroid) return null;
     try {
         const fullPath = await tauriAPI.resolveOverlayAssetPath(relativePath);
         const ext = relativePath.split('.').pop()?.toLowerCase() || 'png';
@@ -11878,7 +11490,7 @@ async function resolveOverlayImageAssetUrl(relativePath) {
 }
 
 async function resolveOverlayAudioAssetUrl(relativePath) {
-    if (!relativePath || isIOS || isAndroid) return null;
+    if (!relativePath || state.isIOS || state.isAndroid) return null;
     try {
         const fullPath = await tauriAPI.resolveOverlayAssetPath(relativePath);
         const ext = relativePath.split('.').pop()?.toLowerCase() || 'webm';
@@ -11894,7 +11506,7 @@ async function resolveOverlayAudioAssetUrl(relativePath) {
 }
 
 async function resolveOverlayAssetUrl(relativePath) {
-    if (!relativePath || isIOS || isAndroid) return null;
+    if (!relativePath || state.isIOS || state.isAndroid) return null;
     if (/\.(png|jpe?g|gif|webp)$/i.test(relativePath)) {
         return resolveOverlayImageAssetUrl(relativePath);
     }
@@ -12212,7 +11824,7 @@ async function applyScheduleStartOverlayPresentation({
 }
 
 async function playAppBlockingLetsGoVoice() {
-    if (!appBlockingActiveStartOverlay?.voiceAsset || isIOS || isAndroid) return;
+    if (!appBlockingActiveStartOverlay?.voiceAsset || state.isIOS || state.isAndroid) return;
     try {
         const url = await resolveOverlayAssetUrl(appBlockingActiveStartOverlay.voiceAsset);
         if (!url) return;
@@ -12228,8 +11840,8 @@ async function playAppBlockingLetsGoVoice() {
 }
 
 function getActiveScheduleForSelectedBlocklist() {
-    if (!selectedBlocklistId || !appData.schedules) return null;
-    return appData.schedules.find((s) => s.blocklistId === selectedBlocklistId) || null;
+    if (!state.selectedBlocklistId || !state.appData.schedules) return null;
+    return state.appData.schedules.find((s) => s.blocklistId === state.selectedBlocklistId) || null;
 }
 
 function getEffectiveScheduleStartOverlayId() {
@@ -12493,7 +12105,7 @@ async function refreshScheduleOverlayCustomisePreview() {
 }
 
 async function removeScheduleOverlayAsset(relativePath) {
-    if (!relativePath || isIOS || isAndroid) return;
+    if (!relativePath || state.isIOS || state.isAndroid) return;
     try {
         await tauriAPI.deleteOverlayAsset(relativePath);
     } catch (err) {
@@ -12841,7 +12453,7 @@ function closeScheduleOverlayDeleteConfirmModal(confirmed) {
 }
 
 async function openScheduleOverlayCustomiseModal(blocklist) {
-    if (!blocklist || isIOS || isAndroid) return;
+    if (!blocklist || state.isIOS || state.isAndroid) return;
     scheduleOverlayCustomiseBlocklist = blocklist;
 
     let initialPresetId = getEffectiveScheduleStartOverlayId();
@@ -12929,13 +12541,13 @@ function setupScheduleOverlayCustomiseModal() {
 
     document.getElementById('schedule-confirm-overlay-customise-btn')
         ?.addEventListener('click', () => {
-            const blocklist = appData.blocklists.find((bl) => bl.id === selectedBlocklistId);
+            const blocklist = state.appData.blocklists.find((bl) => bl.id === state.selectedBlocklistId);
             if (blocklist) void openScheduleOverlayCustomiseModal(blocklist);
         });
 
     document.getElementById('schedule-panel-overlay-customise-btn')
         ?.addEventListener('click', () => {
-            const blocklist = appData.blocklists.find((bl) => bl.id === selectedBlocklistId);
+            const blocklist = state.appData.blocklists.find((bl) => bl.id === state.selectedBlocklistId);
             if (blocklist) void openScheduleOverlayCustomiseModal(blocklist);
         });
 
@@ -13747,7 +13359,7 @@ function closeScheduleConfirmModal() {
 function openScheduleOverrideModal(schedule) {
     window.overrideScheduleId = schedule.id || schedule.blocklistId;
 
-    const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
     if (!blocklist) return;
 
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
@@ -13763,7 +13375,7 @@ function openScheduleOverrideModal(schedule) {
 // The override flow is still reachable from the running-block actions; clicking a calendar
 // block now goes straight to editing.
 function openScheduledBlockEdit(schedule) {
-    const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
     if (!blocklist) return;
 
     const dropdown = document.getElementById('blocklist-select');
@@ -13771,7 +13383,7 @@ function openScheduledBlockEdit(schedule) {
         dropdown.value = blocklist.id;
         handleBlocklistSelect({ target: dropdown });
     } else {
-        selectedBlocklistId = blocklist.id;
+        state.selectedBlocklistId = blocklist.id;
     }
 
     openBlocklistModal(blocklist);
@@ -13845,7 +13457,7 @@ async function proceedWithScheduleEdit() {
     if (!editData) return;
 
     // Find the existing schedule
-    const schedule = appData.schedules.find(s =>
+    const schedule = state.appData.schedules.find(s =>
         s.id === editData.scheduleId || s.blocklistId === editData.scheduleId
     );
     if (!schedule) return;
@@ -13865,7 +13477,7 @@ async function proceedWithScheduleEdit() {
     activeScheduleSegmentCount = schedule.segments.length;
     scheduleSegments = schedule.segments.map(seg => ({ ...seg }));
 
-    clearPendingScheduleDraft(selectedBlocklistId);
+    clearPendingScheduleDraft(state.selectedBlocklistId);
 
     // Save
     await saveData();
@@ -13904,7 +13516,7 @@ async function proceedWithSchedule() {
     rememberLastScheduleStartOverlayId(startOverlayId);
     closeScheduleConfirmModal();
 
-    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
     if (!blocklist) return;
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
 
@@ -13915,7 +13527,7 @@ async function proceedWithSchedule() {
     // Create schedule object
     const schedule = {
         id: crypto.randomUUID(),
-        blocklistId: selectedBlocklistId,
+        blocklistId: state.selectedBlocklistId,
         segments: scheduleSegments.map(seg => ({
             startHour: seg.startHour,
             startMinute: seg.startMinute,
@@ -13929,10 +13541,10 @@ async function proceedWithSchedule() {
         startOverlayId,
     };
 
-    // Save to appData
-    appData.schedules.push(schedule);
+    // Save to state.appData
+    state.appData.schedules.push(schedule);
 
-    clearPendingScheduleDraft(selectedBlocklistId);
+    clearPendingScheduleDraft(state.selectedBlocklistId);
 
     await saveData();
 
@@ -13985,15 +13597,15 @@ function handleTimeChange() {
         renderSchedulePreview();
 
         // Save pending schedule segments for this blocklist
-        if (selectedBlocklistId) {
-            if (!appData.settings) appData.settings = {};
-            if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+        if (state.selectedBlocklistId) {
+            if (!state.appData.settings) state.appData.settings = {};
+            if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
 
-            const existingSchedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
+            const existingSchedule = state.appData.schedules?.find(s => s.blocklistId === state.selectedBlocklistId);
 
             if (!existingSchedule) {
                 // No active schedule - save draft segments + repeat together
-                const currentPending = JSON.stringify(appData.settings.pendingScheduleSegments[selectedBlocklistId] || []);
+                const currentPending = JSON.stringify(state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] || []);
                 const newPending = JSON.stringify(scheduleSegments);
                 const nextRepeat = {
                     repeatType: scheduleRepeatType,
@@ -14002,14 +13614,14 @@ function handleTimeChange() {
                             ? scheduleRepeatDate.getTime()
                             : null
                 };
-                const prevRepeat = JSON.stringify(appData.settings.pendingScheduleRepeatOptions?.[selectedBlocklistId] ?? null);
+                const prevRepeat = JSON.stringify(state.appData.settings.pendingScheduleRepeatOptions?.[state.selectedBlocklistId] ?? null);
                 const nextRepeatJson = JSON.stringify(nextRepeat);
                 if (currentPending !== newPending) {
-                    appData.settings.pendingScheduleSegments[selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                    state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
                 }
-                if (!appData.settings.pendingScheduleRepeatOptions) appData.settings.pendingScheduleRepeatOptions = {};
+                if (!state.appData.settings.pendingScheduleRepeatOptions) state.appData.settings.pendingScheduleRepeatOptions = {};
                 if (prevRepeat !== nextRepeatJson) {
-                    appData.settings.pendingScheduleRepeatOptions[selectedBlocklistId] = nextRepeat;
+                    state.appData.settings.pendingScheduleRepeatOptions[state.selectedBlocklistId] = nextRepeat;
                 }
                 if (currentPending !== newPending || prevRepeat !== nextRepeatJson) {
                     saveData();
@@ -14019,16 +13631,16 @@ function handleTimeChange() {
                 const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
                 if (scheduleSegments.length > committedSegmentCount) {
                     const newSegments = scheduleSegments.slice(committedSegmentCount);
-                    const currentPending = JSON.stringify(appData.settings.pendingScheduleSegments[selectedBlocklistId] || []);
+                    const currentPending = JSON.stringify(state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] || []);
                     const newPending = JSON.stringify(newSegments);
                     if (currentPending !== newPending) {
-                        appData.settings.pendingScheduleSegments[selectedBlocklistId] = newSegments.map(seg => ({ ...seg }));
+                        state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = newSegments.map(seg => ({ ...seg }));
                         saveData();
                     }
                 } else {
                     // No new segments - clear any pending segments
-                    if (appData.settings.pendingScheduleSegments?.[selectedBlocklistId]) {
-                        clearPendingScheduleDraft(selectedBlocklistId);
+                    if (state.appData.settings.pendingScheduleSegments?.[state.selectedBlocklistId]) {
+                        clearPendingScheduleDraft(state.selectedBlocklistId);
                         saveData();
                     }
                 }
@@ -14041,7 +13653,7 @@ function handleTimeChange() {
     // calendar, not as a bar inside the timeline. The chip is added by the call to
     // renderScheduleAlwaysOnRow() at the top of this function.
     if (isAlwaysOnMode) {
-        startBtn.disabled = !selectedBlocklistId;
+        startBtn.disabled = !state.selectedBlocklistId;
 
         if (nextDayIndicator) nextDayIndicator.classList.add('hidden');
 
@@ -14115,24 +13727,24 @@ function handleTimeChange() {
     updateDurationQuickBtns(durationMinutes);
 
     // Save duration to settings per-blocklist so it persists across blocklist selections
-    if (selectedBlocklistId) {
-        if (!appData.settings) appData.settings = {};
-        if (!appData.settings.instantBlockDuration) appData.settings.instantBlockDuration = {};
-        if (appData.settings.instantBlockDuration[selectedBlocklistId] !== durationMinutes) {
-            appData.settings.instantBlockDuration[selectedBlocklistId] = durationMinutes;
+    if (state.selectedBlocklistId) {
+        if (!state.appData.settings) state.appData.settings = {};
+        if (!state.appData.settings.instantBlockDuration) state.appData.settings.instantBlockDuration = {};
+        if (state.appData.settings.instantBlockDuration[state.selectedBlocklistId] !== durationMinutes) {
+            state.appData.settings.instantBlockDuration[state.selectedBlocklistId] = durationMinutes;
             saveData();
         }
     }
 
-    startBtn.disabled = !selectedBlocklistId;
+    startBtn.disabled = !state.selectedBlocklistId;
     if (noBlocksMsg) {
         noBlocksMsg.classList.add('hidden');
     }
 
     // Create preview block in week calendar (only if no active block for this blocklist)
-    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
     const now = Date.now();
-    const hasActiveBlock = blocklist && appData.activeBlocks.some(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
+    const hasActiveBlock = blocklist && state.appData.activeBlocks.some(b => b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now);
 
     if (blocklist && !hasActiveBlock) {
         renderInstantPreviewBlock(blockStart, blockEnd, blocklist);
@@ -14144,7 +13756,7 @@ function handleTimeChange() {
 // Re-draw in-flight Now/Schedule preview bars after renderWeekBlocks() clears day tracks
 // (e.g. window focus, blocklist colour change, or updateWeekCalendar rebuild).
 function refreshCalendarPreviews() {
-    if (!selectedBlocklistId) return;
+    if (!state.selectedBlocklistId) return;
 
     if (isScheduleMode) {
         renderSchedulePreview();
@@ -14153,12 +13765,12 @@ function refreshCalendarPreviews() {
 
     if (isAlwaysOnMode) return;
 
-    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
     if (!blocklist) return;
 
     const now = Date.now();
-    const hasActiveBlock = appData.activeBlocks.some(
-        b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
+    const hasActiveBlock = state.appData.activeBlocks.some(
+        b => b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now
     );
     if (hasActiveBlock) return;
 
@@ -14388,9 +14000,9 @@ function attachInstantPreviewResizeHandler(headEl, headTrack) {
 // for every weekday selected in the segment's `days`. For non-repeating drafts, only days
 // that have a one-shot occurrence still ahead of "now" are rendered.
 function renderSchedulePreview() {
-    if (!selectedBlocklistId) return;
+    if (!state.selectedBlocklistId) return;
 
-    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
     if (!blocklist) return;
 
     const draftCreatedAt = Date.now();
@@ -14783,11 +14395,11 @@ function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
 /** Start-a-block heading + Now/Schedule tabs — only meaningful once a blocklist is chosen. */
 function syncSchedulerChromeVisibility() {
     const gridTopRow = document.querySelector('.grid-top-row');
-    const hasLists = (appData.blocklists?.length || 0) > 0;
-    const show = hasLists && !!selectedBlocklistId;
+    const hasLists = (state.appData.blocklists?.length || 0) > 0;
+    const show = hasLists && !!state.selectedBlocklistId;
     if (gridTopRow) gridTopRow.classList.toggle('grid-top-row--blocklist-selected', show);
     if (show) {
-        const blocklist = appData.blocklists.find((bl) => bl.id === selectedBlocklistId);
+        const blocklist = state.appData.blocklists.find((bl) => bl.id === state.selectedBlocklistId);
         setSchedulerRoomChip(blocklist);
     }
     bindUiZoomLayoutObserver();
@@ -14800,17 +14412,17 @@ function handleBlocklistSelect(e) {
     const newBlocklistId = e.target.value || null;
 
     // Before switching, save pending changes for the current blocklist
-    if (selectedBlocklistId) {
+    if (state.selectedBlocklistId) {
         // Save pending schedule segments if in schedule mode
         if (isScheduleMode) {
-            const existingSchedule = appData.schedules?.find(s => s.blocklistId === selectedBlocklistId);
-            if (!appData.settings) appData.settings = {};
-            if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+            const existingSchedule = state.appData.schedules?.find(s => s.blocklistId === state.selectedBlocklistId);
+            if (!state.appData.settings) state.appData.settings = {};
+            if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
 
             if (!existingSchedule) {
                 // No active schedule - save all segments
                 if (scheduleSegments.length > 0) {
-                    appData.settings.pendingScheduleSegments[selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                    state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
                     saveData();
                 }
             } else {
@@ -14818,29 +14430,29 @@ function handleBlocklistSelect(e) {
                 const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
                 if (scheduleSegments.length > committedSegmentCount) {
                     const newSegments = scheduleSegments.slice(committedSegmentCount);
-                    appData.settings.pendingScheduleSegments[selectedBlocklistId] = newSegments.map(seg => ({ ...seg }));
+                    state.appData.settings.pendingScheduleSegments[state.selectedBlocklistId] = newSegments.map(seg => ({ ...seg }));
                     saveData();
                 } else {
                     // No new segments - clear any pending segments
-                    if (appData.settings.pendingScheduleSegments?.[selectedBlocklistId]) {
-                        clearPendingScheduleDraft(selectedBlocklistId);
+                    if (state.appData.settings.pendingScheduleSegments?.[state.selectedBlocklistId]) {
+                        clearPendingScheduleDraft(state.selectedBlocklistId);
                         saveData();
                     }
                 }
             }
         } else {
             // Save pending instant block duration if in instant mode
-            if (!appData.settings) appData.settings = {};
-            if (!appData.settings.instantBlockDuration) appData.settings.instantBlockDuration = {};
+            if (!state.appData.settings) state.appData.settings = {};
+            if (!state.appData.settings.instantBlockDuration) state.appData.settings.instantBlockDuration = {};
             if (targetDurationMinutes !== 60) { // Only save if different from default
-                appData.settings.instantBlockDuration[selectedBlocklistId] = targetDurationMinutes;
+                state.appData.settings.instantBlockDuration[state.selectedBlocklistId] = targetDurationMinutes;
                 saveData();
             }
         }
     }
 
-    selectedBlocklistId = newBlocklistId;
-    if (newBlocklistId) userExplicitlyDeselected = false;
+    state.selectedBlocklistId = newBlocklistId;
+    if (newBlocklistId) state.userExplicitlyDeselected = false;
 
     const timePicker = document.getElementById('time-picker-container');
     const passwordHint = document.getElementById('password-hint');
@@ -14848,19 +14460,19 @@ function handleBlocklistSelect(e) {
     const startBlockBtn = document.getElementById('start-block-btn');
     const startScheduleBtn = document.getElementById('start-schedule-btn');
 
-    if (selectedBlocklistId) {
+    if (state.selectedBlocklistId) {
         // Determine which mode to show based on active blocks/schedules
-        const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+        const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
         const now = Date.now();
 
         // Check if there's an active block (one-off)
-        const hasActiveBlock = blocklist && appData.activeBlocks.some(b =>
-            b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
+        const hasActiveBlock = blocklist && state.appData.activeBlocks.some(b =>
+            b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now
         );
 
         // Check if there's an active schedule
-        const existingSchedule = appData.schedules
-            ? appData.schedules.find(s => s.blocklistId === selectedBlocklistId)
+        const existingSchedule = state.appData.schedules
+            ? state.appData.schedules.find(s => s.blocklistId === state.selectedBlocklistId)
             : null;
         const hasActiveSchedule = existingSchedule && existingSchedule.segments && existingSchedule.segments.length > 0;
 
@@ -14873,7 +14485,7 @@ function handleBlocklistSelect(e) {
             setScheduleMode(false);
         } else {
             // No active block or schedule: restore this blocklist's last-viewed tab (instant vs schedule)
-            const preferredSchedule = appData.settings?.preferredStartMode?.[selectedBlocklistId];
+            const preferredSchedule = state.appData.settings?.preferredStartMode?.[state.selectedBlocklistId];
             setScheduleMode(preferredSchedule === true);
         }
 
@@ -14894,11 +14506,11 @@ function handleBlocklistSelect(e) {
             if (startBlockBtn) {
                 startBlockBtn.classList.remove('hidden');
 
-                const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+                const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
                 const now = Date.now();
                 // IMPORTANT: Only find active block for THIS specific blocklist
-                const activeBlock = appData.activeBlocks.find(b =>
-                    b.blocklistId === selectedBlocklistId &&
+                const activeBlock = state.appData.activeBlocks.find(b =>
+                    b.blocklistId === state.selectedBlocklistId &&
                     b.startTime <= now &&
                     b.endTime > now
                 );
@@ -14983,42 +14595,42 @@ function handleBlocklistSelect(e) {
 // Deselect current blocklist (same behavior as clicking on background).
 // Used by click-outside handler and ESC key.
 function deselectBlocklist() {
-    if (!selectedBlocklistId) return;
-    userExplicitlyDeselected = true;
-    const currentBlocklistId = selectedBlocklistId;
+    if (!state.selectedBlocklistId) return;
+    state.userExplicitlyDeselected = true;
+    const currentBlocklistId = state.selectedBlocklistId;
     if (isScheduleMode) {
-        const existingSchedule = appData.schedules?.find(s => s.blocklistId === currentBlocklistId);
-        if (!appData.settings) appData.settings = {};
-        if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
+        const existingSchedule = state.appData.schedules?.find(s => s.blocklistId === currentBlocklistId);
+        if (!state.appData.settings) state.appData.settings = {};
+        if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
 
         if (!existingSchedule) {
             if (scheduleSegments.length > 0) {
-                appData.settings.pendingScheduleSegments[currentBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
+                state.appData.settings.pendingScheduleSegments[currentBlocklistId] = scheduleSegments.map(seg => ({ ...seg }));
                 saveData();
             }
         } else {
             const committedSegmentCount = getCommittedScheduleSegmentCount(existingSchedule);
             if (scheduleSegments.length > committedSegmentCount) {
                 const newSegments = scheduleSegments.slice(committedSegmentCount);
-                appData.settings.pendingScheduleSegments[currentBlocklistId] = newSegments.map(seg => ({ ...seg }));
+                state.appData.settings.pendingScheduleSegments[currentBlocklistId] = newSegments.map(seg => ({ ...seg }));
                 saveData();
                 } else {
                     // No new segments - clear any pending segments
-                    if (appData.settings.pendingScheduleSegments?.[currentBlocklistId]) {
+                    if (state.appData.settings.pendingScheduleSegments?.[currentBlocklistId]) {
                         clearPendingScheduleDraft(currentBlocklistId);
                         saveData();
                     }
                 }
         }
     } else {
-        if (!appData.settings) appData.settings = {};
-        if (!appData.settings.instantBlockDuration) appData.settings.instantBlockDuration = {};
+        if (!state.appData.settings) state.appData.settings = {};
+        if (!state.appData.settings.instantBlockDuration) state.appData.settings.instantBlockDuration = {};
         if (targetDurationMinutes !== 60) {
-            appData.settings.instantBlockDuration[currentBlocklistId] = targetDurationMinutes;
+            state.appData.settings.instantBlockDuration[currentBlocklistId] = targetDurationMinutes;
             saveData();
         }
     }
-    selectedBlocklistId = null;
+    state.selectedBlocklistId = null;
     const blocklistSelect = document.getElementById('blocklist-select');
     blocklistSelect.value = '';
     handleBlocklistSelect({ target: blocklistSelect });
@@ -15026,18 +14638,18 @@ function deselectBlocklist() {
 
 // Show start block confirmation modal
 function startBlock() {
-    if (!selectedBlocklistId) return;
+    if (!state.selectedBlocklistId) return;
 
-    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
     if (!blocklist) return;
 
     // Check if this is a "Stop Block" action (button is in stop mode)
     const startBlockBtn = document.getElementById('start-block-btn');
     if (startBlockBtn && startBlockBtn.dataset.activeBlockId) {
         // Verify the activeBlockId belongs to the currently selected blocklist
-        const activeBlock = appData.activeBlocks.find(b =>
+        const activeBlock = state.appData.activeBlocks.find(b =>
             b.id === startBlockBtn.dataset.activeBlockId &&
-            b.blocklistId === selectedBlocklistId
+            b.blocklistId === state.selectedBlocklistId
         );
 
         if (activeBlock) {
@@ -15132,7 +14744,7 @@ async function proceedWithBlock() {
 
     const startBtn = document.getElementById('start-block-btn');
 
-    if (!selectedBlocklistId) return;
+    if (!state.selectedBlocklistId) return;
 
     // Get times from the custom time picker
     let blockStart = getStartTimeAsDate();
@@ -15153,7 +14765,7 @@ async function proceedWithBlock() {
     startBtn.disabled = true;
     startBtn.textContent = 'Starting...';
 
-    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
     if (!blocklist) {
         startBtn.disabled = false;
         startBtn.innerHTML = getStartBlockButtonHTML();
@@ -15167,7 +14779,7 @@ async function proceedWithBlock() {
 
     const block = {
         id: generateId(),
-        blocklistId: selectedBlocklistId,
+        blocklistId: state.selectedBlocklistId,
         startTime: blockStart.getTime(),
         endTime: blockEnd.getTime()
     };
@@ -15179,9 +14791,9 @@ async function proceedWithBlock() {
 
     let result;
 
-    if (isIOS) {
+    if (state.isIOS) {
         // iOS: Use Screen Time API via plugin
-        if (!screentimeAuthorized) {
+        if (!state.screentimeAuthorized) {
             const authResult = await requestScreentimeAuth();
             if (!authResult.granted) {
                 startBtn.disabled = false;
@@ -15201,11 +14813,11 @@ async function proceedWithBlock() {
 
         try {
             // Apply union of all active blocks + active schedule segments (not just this blocklist).
-            appData.activeBlocks.push(block);
+            state.appData.activeBlocks.push(block);
             activatedBlockIds.add(block.id);
             const updateResult = await updateHostsFile();
             if (!updateResult.success) {
-                appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== block.id);
+                state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
                 activatedBlockIds.delete(block.id);
                 result = { success: false, error: updateResult.error || 'Failed to update blocking' };
             } else {
@@ -15231,43 +14843,43 @@ async function proceedWithBlock() {
                 }
             }
         } catch (err) {
-            appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== block.id);
+            state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
             activatedBlockIds.delete(block.id);
             result = { success: false, error: err.toString() };
         }
-    } else if (isAndroid) {
+    } else if (state.isAndroid) {
         // Android: push locally, sync (creates the MANUAL Schedule entity
         // in Kotlin), then explicitly start the session — set_schedules
         // alone doesn't activate a MANUAL schedule, see syncSchedulesToHelper.
         try {
-            appData.activeBlocks.push(block);
+            state.appData.activeBlocks.push(block);
             await saveData();
             await syncSchedulesToHelper();
             const endTimestampMs = (block.isAlwaysOn || block.endTime >= ALWAYS_ON_END_TIME) ? null : block.endTime;
             const startResult = await tauriAPI.androidStartManualBlock(block.id, endTimestampMs);
             if (!startResult.success) {
-                appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== block.id);
+                state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
                 await saveData();
                 result = { success: false, error: startResult.error || 'Failed to start block' };
             } else {
                 result = { success: true };
             }
         } catch (err) {
-            appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== block.id);
+            state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
             await saveData();
             result = { success: false, error: err.toString() };
         }
     } else {
         // Desktop: persist the block locally first so save_data and the
-        // native-messaging host see it immediately (helperAvailable only
+        // native-messaging host see it immediately (state.helperAvailable only
         // gates legacy helper-daemon wiring, not v2 extension blocking).
-        appData.activeBlocks.push(block);
+        state.appData.activeBlocks.push(block);
         activatedBlockIds.add(block.id);
 
-        if (helperAvailable) {
+        if (state.helperAvailable) {
             const status = await tauriAPI.checkHelperStatus();
             if (!status.running || !status.version_ok) {
-                helperAvailable = false;
+                state.helperAvailable = false;
             }
         }
         // v2: the app process IS the helper. startBlockViaHelper is a
@@ -15275,13 +14887,13 @@ async function proceedWithBlock() {
         result = await tauriAPI.startBlockViaHelper({
             domains: blocklist.websites || [],
             endTime: blockEnd.getTime(),
-            blocklistId: selectedBlocklistId
+            blocklistId: state.selectedBlocklistId
         });
     }
 
     if (!result.success) {
-        if (!isIOS) {
-            appData.activeBlocks = appData.activeBlocks.filter(b => b.id !== block.id);
+        if (!state.isIOS) {
+            state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== block.id);
             activatedBlockIds.delete(block.id);
         }
         // Re-enable button
@@ -15291,7 +14903,7 @@ async function proceedWithBlock() {
         // Only show error if user didn't cancel
         if (!result.cancelled) {
             if (isHelperConnectionError(result.error)) {
-                helperAvailable = false;
+                state.helperAvailable = false;
                 alert('The block service isn\'t running. Please open Settings, remove the helper, then try starting a block again to reinstall it.');
             } else {
                 alert('Could not start block: ' + (result.error || 'Unknown error'));
@@ -15301,8 +14913,8 @@ async function proceedWithBlock() {
     }
 
     // Clear pending duration for this blocklist (it's now committed)
-    if (appData.settings?.instantBlockDuration?.[selectedBlocklistId]) {
-        delete appData.settings.instantBlockDuration[selectedBlocklistId];
+    if (state.appData.settings?.instantBlockDuration?.[state.selectedBlocklistId]) {
+        delete state.appData.settings.instantBlockDuration[state.selectedBlocklistId];
     }
 
     // Save data and reset UI
@@ -15321,7 +14933,7 @@ async function proceedWithBlock() {
 
     // Ensure the blocklist stays selected in dropdown and update UI to show Stop Block button
     const blocklistSelect = document.getElementById('blocklist-select');
-    blocklistSelect.value = selectedBlocklistId; // Make sure it's still set
+    blocklistSelect.value = state.selectedBlocklistId; // Make sure it's still set
     handleBlocklistSelect({ target: blocklistSelect });
 }
 
@@ -15401,7 +15013,7 @@ function syncStopBtnLabelFit(btn) {
     const isStop = btn.classList.contains('stop-block') || btn.classList.contains('stop-schedule');
     if (!isStop) return;
 
-    if (isIOS || isAndroid) {
+    if (state.isIOS || state.isAndroid) {
         btn.classList.add('stop-meta-collapsed');
         return;
     }
@@ -15419,7 +15031,7 @@ function syncStopBtnLabelFit(btn) {
         ? buttonRow.clientWidth - otherButtonsWidth - (Math.max(0, visibleButtons.length - 1) * rowGap)
         : btn.clientWidth;
     const expandedBtnWidth = measureStopBtnExpandedWidth(btn);
-    const fitSlackPx = isIOS ? IOS_STOP_BTN_META_COLLAPSE_SLACK_PX : 1;
+    const fitSlackPx = state.isIOS ? IOS_STOP_BTN_META_COLLAPSE_SLACK_PX : 1;
     const shouldCollapseForWidth = expandedBtnWidth > 0
         && expandedBtnWidth > availableBtnWidth - fitSlackPx;
 
@@ -15460,10 +15072,10 @@ async function updateHostsFile(silent = false) {
     const now = Date.now();
 
     // Only block domains for blocks that are currently active and not paused
-    appData.activeBlocks
+    state.appData.activeBlocks
         .filter(block => block.startTime <= now && block.endTime > now && !block.isPaused)
         .forEach(block => {
-            const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+            const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
             if (blocklist && blocklist.websites) {
                 blocklist.websites.forEach(domain => allDomains.add(domain));
             }
@@ -15472,15 +15084,15 @@ async function updateHostsFile(silent = false) {
     // Also check scheduled blocks - add domains if a schedule segment is currently active
     const nowDate = new Date();
 
-    if (appData.schedules) {
-        appData.schedules.forEach(schedule => {
+    if (state.appData.schedules) {
+        state.appData.schedules.forEach(schedule => {
             if (!schedule.segments) return;
 
             // Skip paused schedules
             if (isSchedulePausedNow(schedule)) return;
 
             if (isScheduleSegmentActiveNow(schedule, nowDate)) {
-                const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+                const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
                 if (blocklist && blocklist.websites) {
                     blocklist.websites.forEach(domain => allDomains.add(domain));
                 }
@@ -15498,13 +15110,13 @@ async function updateHostsFile(silent = false) {
     // iOS: Use Screen Time API instead of helper daemon / hosts file
     // Only clear when there are no active blocks; when there are active blocks, always apply
     // (even when domainsArray is empty — app-only blocklists must still shield apps).
-    if (isIOS) {
+    if (state.isIOS) {
         try {
             const manualPayload = collectActiveIOSManualBlockPayload(now);
-            const hasActiveBlocks = appData.activeBlocks.some(
+            const hasActiveBlocks = state.appData.activeBlocks.some(
                 block => block.startTime <= now && block.endTime > now && !block.isPaused
             );
-            const hasActiveScheduleSegments = (appData.schedules || []).some(schedule => {
+            const hasActiveScheduleSegments = (state.appData.schedules || []).some(schedule => {
                 if (!schedule || !schedule.segments || schedule.segments.length === 0) return false;
                 if (isSchedulePausedNow(schedule, now)) return false;
                 if (schedule.repeatType === 'date' && schedule.repeatDate) {
@@ -15546,7 +15158,7 @@ async function updateHostsFile(silent = false) {
     // androidStartManualBlock / androidStopManualBlock. There's no
     // hosts-file or helper-daemon concept here — those commands don't
     // exist on Android at all (see all_commands() in lib.rs).
-    if (isAndroid) {
+    if (state.isAndroid) {
         return { success: true };
     }
 
@@ -15557,7 +15169,7 @@ async function updateHostsFile(silent = false) {
     // Desktop v2+: websites are blocked via the extension/native host (Windows)
     // or Automation (macOS) — not hosts-file edits. save_data already ran;
     // the native host re-pushes when redd-block-data.json changes.
-    if (!isIOS) {
+    if (!state.isIOS) {
         lastBlockedDomains = allDomains;
         await updateBlockedApps();
         return { success: true };
@@ -15571,7 +15183,7 @@ async function updateHostsFile(silent = false) {
 
         if (status.running && status.version_ok) {
             console.log('[updateHostsFile] Helper running with correct version, using helper to update blocks');
-            helperAvailable = true;
+            state.helperAvailable = true;
             await syncActiveBlocksToHelper();
             await syncSchedulesToHelper();
             lastBlockedDomains = allDomains;
@@ -15620,11 +15232,11 @@ let appBlockingPreviousAppsSet = null;
 
 async function updateBlockedApps() {
     // iOS uses Screen Time API for app blocking
-    if (isIOS) return;
+    if (state.isIOS) return;
     // Android: app blocking is embedded in the schedule sync itself
     // (blockedApps on each Kotlin Schedule), not a separate helper-daemon
     // push — see syncSchedulesToHelper.
-    if (isAndroid) return;
+    if (state.isAndroid) return;
 
     const now = Date.now();
     const nowDate = new Date(now);
@@ -15666,7 +15278,7 @@ async function updateBlockedApps() {
     // Desktop v3: `set_blocked_apps_via_helper` routes to the in-process
     // app watcher — always push while the app is alive. The legacy
     // helper-daemon gate left schedule app blocking as a no-op whenever
-    // `helperAvailable` was still false at the first tick.
+    // `state.helperAvailable` was still false at the first tick.
     try {
         const result = await tauriAPI.setBlockedAppsViaHelper(appsArray, newlyAddedApps);
         if (result && result.success) {
@@ -15704,7 +15316,7 @@ function openBlocklistModal(blocklist = null) {
     blocklistModalPreviewSnapshot = null;
 
     if (editingBlocklistId) {
-        const original = appData.blocklists.find(b => b.id === editingBlocklistId);
+        const original = state.appData.blocklists.find(b => b.id === editingBlocklistId);
         if (original) {
             blocklistModalPreviewSnapshot = {
                 showItemDetails: original.showItemDetails
@@ -15757,7 +15369,7 @@ function openBlocklistModal(blocklist = null) {
 
     // If creating a new blocklist (or no color set), find the first unused color
     if (!colorToSelect) {
-        const usedColors = new Set(appData.blocklists.map(bl => bl.color));
+        const usedColors = new Set(state.appData.blocklists.map(bl => bl.color));
         const swatches = Array.from(document.querySelectorAll('.color-swatch:not(.custom-swatch)'));
 
         // Find first color from the palette that isn't used
@@ -15796,7 +15408,7 @@ function openBlocklistModal(blocklist = null) {
 
     // If creating a new blocklist (or no emoji set), find the first unused emoji
     if (!emojiToSelect) {
-        const usedEmojis = new Set(appData.blocklists.map(bl => bl.emoji));
+        const usedEmojis = new Set(state.appData.blocklists.map(bl => bl.emoji));
         const emojiSwatches = Array.from(document.querySelectorAll('.emoji-swatch:not(.custom-emoji-swatch)'));
 
         // Find first emoji from the palette that isn't used
@@ -15828,10 +15440,10 @@ function openBlocklistModal(blocklist = null) {
 
     // Check if active (block or schedule)
     const now = Date.now();
-    const hasActiveBlock = blocklist?.id && appData.activeBlocks.some(
+    const hasActiveBlock = blocklist?.id && state.appData.activeBlocks.some(
         b => b.blocklistId === blocklist.id && b.startTime <= now && b.endTime > now
     );
-    const hasActiveSchedule = blocklist?.id && appData.schedules?.some(
+    const hasActiveSchedule = blocklist?.id && state.appData.schedules?.some(
         s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0
     );
     const isActive = hasActiveBlock || hasActiveSchedule;
@@ -15930,7 +15542,7 @@ function openBlocklistModal(blocklist = null) {
         showItemDetailsCheckbox.checked = blocklist?.showItemDetails !== false;
         showItemDetailsCheckbox.onchange = () => {
             if (!editingBlocklistId) return;
-            const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
+            const bl = state.appData.blocklists.find(b => b.id === editingBlocklistId);
             if (!bl) return;
             bl.showItemDetails = showItemDetailsCheckbox.checked;
             renderBlocklists();
@@ -15964,7 +15576,7 @@ function closeBlocklistModal() {
 
     // Revert temporary live-preview edits if dialog closes without save.
     if (editingBlocklistId && blocklistModalPreviewSnapshot) {
-        const bl = appData.blocklists.find(b => b.id === editingBlocklistId);
+        const bl = state.appData.blocklists.find(b => b.id === editingBlocklistId);
         if (bl) {
             bl.showItemDetails = blocklistModalPreviewSnapshot.showItemDetails;
             renderWeekBlocks();
@@ -16025,10 +15637,10 @@ function formatBlocklistModalSummary(blocklist) {
 function openOverrideModal(blockId) {
     delete window.overrideScheduleId;
     overrideBlockId = blockId;
-    const block = appData.activeBlocks.find(b => b.id === blockId);
+    const block = state.appData.activeBlocks.find(b => b.id === blockId);
     overrideBlocklistIdForHelper = block ? block.blocklistId : null;
 
-    const blocklist = appData.blocklists.find(bl => bl.id === block?.blocklistId);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === block?.blocklistId);
 
     if (!blocklist) return;
 
@@ -16115,7 +15727,7 @@ function updatePauseButtonAppearance(isPaused) {
 let resumeData = null; // { blocklistId, type: 'block'|'schedule', blockId }
 
 function openResumeConfirmation(blocklistId, type, blockId) {
-    const blocklist = appData.blocklists.find(bl => bl.id === blocklistId);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === blocklistId);
     if (!blocklist) return;
 
     resumeData = { blocklistId, type, blockId };
@@ -16129,7 +15741,7 @@ function openResumeConfirmation(blocklistId, type, blockId) {
 
     const durationEl = document.getElementById('start-confirm-duration');
     if (type === 'block') {
-        const block = appData.activeBlocks.find(b => b.id === blockId);
+        const block = state.appData.activeBlocks.find(b => b.id === blockId);
         if (block && durationEl) {
             const remainingMs = block.endTime - Date.now();
             if (isBlockAlwaysOn(block)) {
@@ -16196,13 +15808,13 @@ async function proceedWithResume() {
     closeStartBlockConfirmModal();
 
     if (type === 'block') {
-        const block = appData.activeBlocks.find(b => b.id === blockId);
+        const block = state.appData.activeBlocks.find(b => b.id === blockId);
         if (block) {
             delete block.isPaused;
             delete block.pauseEndTime;
         }
     } else if (type === 'schedule') {
-        const schedule = appData.schedules?.find(s => s.blocklistId === blocklistId);
+        const schedule = state.appData.schedules?.find(s => s.blocklistId === blocklistId);
         if (schedule) {
             delete schedule.isPaused;
             delete schedule.pauseEndTime;
@@ -16232,11 +15844,11 @@ function openPauseModal(blockId) {
 
     if (blockId) {
         // One-off block pause
-        block = appData.activeBlocks.find(b => b.id === blockId);
-        blocklist = appData.blocklists.find(bl => bl.id === block?.blocklistId);
+        block = state.appData.activeBlocks.find(b => b.id === blockId);
+        blocklist = state.appData.blocklists.find(bl => bl.id === block?.blocklistId);
     } else if (pauseScheduleData) {
         // Schedule pause — create a synthetic block object
-        blocklist = appData.blocklists.find(bl => bl.id === pauseScheduleData.blocklistId);
+        blocklist = state.appData.blocklists.find(bl => bl.id === pauseScheduleData.blocklistId);
         block = {
             id: null,
             blocklistId: pauseScheduleData.blocklistId,
@@ -16569,14 +16181,14 @@ async function proceedWithPause() {
 
     if (pauseScheduleData) {
         // Schedule pause — set pause state on the schedule itself
-        const schedule = appData.schedules?.find(s => s.blocklistId === pauseScheduleData.blocklistId);
+        const schedule = state.appData.schedules?.find(s => s.blocklistId === pauseScheduleData.blocklistId);
         if (schedule) {
             schedule.isPaused = true;
             schedule.pauseEndTime = Date.now() + pauseDurationMs;
         }
     } else {
         // One-off block pause
-        const block = appData.activeBlocks.find(b => b.id === pauseBlockId);
+        const block = state.appData.activeBlocks.find(b => b.id === pauseBlockId);
         if (!block) {
             closePauseModal();
             return;
@@ -16598,9 +16210,9 @@ async function proceedWithPause() {
     await updateBlockedApps();
 
     // iOS: register one-off DeviceActivity so pause expiry re-evaluates background enforcement.
-    if (isIOS) {
+    if (state.isIOS) {
         if (pauseScheduleData) {
-            const schedule = appData.schedules?.find(s => s.blocklistId === pauseScheduleData.blocklistId);
+            const schedule = state.appData.schedules?.find(s => s.blocklistId === pauseScheduleData.blocklistId);
             if (schedule?.pauseEndTime) {
                 try {
                     const res = await tauriAPI.screentimeRegisterOneOffActivity(
@@ -16615,10 +16227,10 @@ async function proceedWithPause() {
                 }
             }
         } else if (pauseBlockId) {
-            const block = appData.activeBlocks.find(b => b.id === pauseBlockId);
+            const block = state.appData.activeBlocks.find(b => b.id === pauseBlockId);
             if (block && block.pauseEndTime) {
                 try {
-                    const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+                    const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
                     const iosPayload = getBlocklistIOSPayload(blocklist);
                     await tauriAPI.screentimeSetResumePayload({
                         blockId: pauseBlockId,
@@ -17008,7 +16620,7 @@ function collectUsedDuplicateSuffixSlots(base) {
     const used = new Set();
     const esc = base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const re = new RegExp(`^${esc} (copy|kopi)(?: (\\d+))?$`, 'i');
-    for (const bl of appData.blocklists) {
+    for (const bl of state.appData.blocklists) {
         const m = re.exec(bl.name);
         if (!m) continue;
         used.add(m[2] ? parseInt(m[2], 10) : 1);
@@ -17018,7 +16630,7 @@ function collectUsedDuplicateSuffixSlots(base) {
 
 /** Comparable string for content (websites, apps only). Only these + name affect duplicate copy-number chain. */
 function contentKey(blocklistId) {
-    const bl = appData.blocklists.find(b => b.id === blocklistId);
+    const bl = state.appData.blocklists.find(b => b.id === blocklistId);
     if (!bl) return '';
     const w = [...(bl.websites || [])].sort();
     const a = [...getBlocklistRegularApps(bl)].sort();
@@ -17049,7 +16661,7 @@ function getNextCopyName(blocklist) {
     const root = parseCopyRoot(name);
     let base = name;
     if (root !== null) {
-        const otherInChainSameContent = appData.blocklists.some(bl =>
+        const otherInChainSameContent = state.appData.blocklists.some(bl =>
             bl.id !== blocklist.id && nameInChain(bl.name, root) && sameBlocklistContent(bl.id, blocklist.id)
         );
         if (otherInChainSameContent) base = root;
@@ -17063,22 +16675,22 @@ function getNextCopyName(blocklist) {
 /** True if the blocklist has an active one-off block or a schedule currently in an active segment (and not paused). */
 function isBlocklistCurrentlyActive(blocklistId) {
     const now = Date.now();
-    const hasActiveBlock = appData.activeBlocks.some(
+    const hasActiveBlock = state.appData.activeBlocks.some(
         b => b.blocklistId === blocklistId && isOneOffBlockEnforced(b, now)
     );
     if (hasActiveBlock) return true;
-    const schedule = appData.schedules?.find(s => s.blocklistId === blocklistId);
+    const schedule = state.appData.schedules?.find(s => s.blocklistId === blocklistId);
     if (!schedule?.segments?.length) return false;
     return isScheduleSegmentActiveNow(schedule, new Date(now));
 }
 
 function clearPendingScheduleDraft(blocklistId) {
-    if (!blocklistId || !appData.settings) return;
-    if (appData.settings.pendingScheduleSegments?.[blocklistId]) {
-        delete appData.settings.pendingScheduleSegments[blocklistId];
+    if (!blocklistId || !state.appData.settings) return;
+    if (state.appData.settings.pendingScheduleSegments?.[blocklistId]) {
+        delete state.appData.settings.pendingScheduleSegments[blocklistId];
     }
-    if (appData.settings.pendingScheduleRepeatOptions?.[blocklistId]) {
-        delete appData.settings.pendingScheduleRepeatOptions[blocklistId];
+    if (state.appData.settings.pendingScheduleRepeatOptions?.[blocklistId]) {
+        delete state.appData.settings.pendingScheduleRepeatOptions[blocklistId];
     }
 }
 
@@ -17104,9 +16716,9 @@ function normalizeScheduleRepeatFromSchedule(schedule) {
 
 /** Committed or draft schedule config for a blocklist (segments + repeat, no active state). */
 function getBlocklistScheduleDraft(blocklistId) {
-    const existingSchedule = appData.schedules?.find((s) => s.blocklistId === blocklistId);
-    const pendingSegs = appData.settings?.pendingScheduleSegments?.[blocklistId];
-    const pendingRepeat = appData.settings?.pendingScheduleRepeatOptions?.[blocklistId];
+    const existingSchedule = state.appData.schedules?.find((s) => s.blocklistId === blocklistId);
+    const pendingSegs = state.appData.settings?.pendingScheduleSegments?.[blocklistId];
+    const pendingRepeat = state.appData.settings?.pendingScheduleRepeatOptions?.[blocklistId];
 
     if (existingSchedule?.segments?.length) {
         return {
@@ -17136,18 +16748,18 @@ function getBlocklistScheduleDraft(blocklistId) {
 
 function saveBlocklistScheduleDraft(blocklistId, draft) {
     if (!blocklistId || !draft?.segments?.length) return;
-    if (!appData.settings) appData.settings = {};
-    if (!appData.settings.pendingScheduleSegments) appData.settings.pendingScheduleSegments = {};
-    if (!appData.settings.pendingScheduleRepeatOptions) appData.settings.pendingScheduleRepeatOptions = {};
-    appData.settings.pendingScheduleSegments[blocklistId] = draft.segments.map(cloneScheduleSegment);
-    appData.settings.pendingScheduleRepeatOptions[blocklistId] = draft.repeat || {
+    if (!state.appData.settings) state.appData.settings = {};
+    if (!state.appData.settings.pendingScheduleSegments) state.appData.settings.pendingScheduleSegments = {};
+    if (!state.appData.settings.pendingScheduleRepeatOptions) state.appData.settings.pendingScheduleRepeatOptions = {};
+    state.appData.settings.pendingScheduleSegments[blocklistId] = draft.segments.map(cloneScheduleSegment);
+    state.appData.settings.pendingScheduleRepeatOptions[blocklistId] = draft.repeat || {
         repeatType: 'forever',
         repeatDate: null
     };
 }
 
 function duplicateBlocklist(id) {
-    const blocklist = appData.blocklists.find(bl => bl.id === id);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === id);
     if (!blocklist) return;
 
     const newId = generateId();
@@ -17167,7 +16779,7 @@ function duplicateBlocklist(id) {
         overrideDifficulty: cloneOverrideDifficulty(blocklist.overrideDifficulty)
     };
 
-    appData.blocklists.push(duplicate);
+    state.appData.blocklists.push(duplicate);
 
     const scheduleDraft = getBlocklistScheduleDraft(id);
     if (scheduleDraft) {
@@ -17179,7 +16791,7 @@ function duplicateBlocklist(id) {
 
     // Only keep selection on the original blocklist if it was already selected (user had focused it).
     // If they duplicated from the card menu without having clicked the card first, don't switch focus to it.
-    if (selectedBlocklistId === id) {
+    if (state.selectedBlocklistId === id) {
         const dropdown = document.getElementById('blocklist-select');
         if (dropdown) {
             dropdown.value = id;
@@ -17222,7 +16834,7 @@ function buildBlocklistsExportPayload() {
         format: BLOCKLIST_EXPORT_FORMAT,
         formatVersion: BLOCKLIST_EXPORT_FORMAT_VERSION,
         exportedAt: new Date().toISOString(),
-        blocklists: (appData.blocklists || []).map(serializeBlocklistForExport)
+        blocklists: (state.appData.blocklists || []).map(serializeBlocklistForExport)
     };
 }
 
@@ -17327,7 +16939,7 @@ function parseBlocklistsImportPayload(text) {
 
 function uniqueImportedBlocklistName(desiredName) {
     let name = truncateBlocklistName(String(desiredName || '').trim() || tSettings('importBlocklistDefaultName'));
-    if (!appData.blocklists.some((bl) => bl.name === name)) return name;
+    if (!state.appData.blocklists.some((bl) => bl.name === name)) return name;
     return getNextCopyName({
         id: generateId(),
         name,
@@ -17353,7 +16965,7 @@ function blocklistFromImportedEntry(entry) {
 }
 
 async function exportBlocklistsToFile() {
-    const blocklists = appData.blocklists || [];
+    const blocklists = state.appData.blocklists || [];
     if (blocklists.length === 0) {
         await message(tSettings('exportBlocklistsEmpty'), { title: tSettings('exportBlocklistsFailedTitle'), kind: 'info' });
         return;
@@ -17413,7 +17025,7 @@ async function importBlocklistsFromFile() {
 
         for (const entry of importedEntries) {
             const blocklist = blocklistFromImportedEntry(entry);
-            appData.blocklists.push(blocklist);
+            state.appData.blocklists.push(blocklist);
             if (entry.schedule) {
                 saveBlocklistScheduleDraft(blocklist.id, entry.schedule);
             }
@@ -17453,15 +17065,15 @@ function setupBlocklistsImportExportButtons() {
 let pendingDelete = null; // { blocklist, activeBlocks, timeoutId }
 
 async function deleteBlocklist(id) {
-    const blocklist = appData.blocklists.find(bl => bl.id === id);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === id);
     if (!blocklist) return;
 
     // Check if this blocklist has an active block or schedule running
     const now = Date.now();
-    const hasActiveBlock = appData.activeBlocks.some(
+    const hasActiveBlock = state.appData.activeBlocks.some(
         block => block.blocklistId === id && block.startTime <= now && block.endTime > now
     );
-    const hasActiveSchedule = appData.schedules?.some(
+    const hasActiveSchedule = state.appData.schedules?.some(
         s => s.blocklistId === id && s.segments && s.segments.length > 0
     );
 
@@ -17481,15 +17093,15 @@ async function deleteBlocklist(id) {
     }
 
     // Store the blocklist and any active blocks for potential undo
-    const activeBlocksToRemove = appData.activeBlocks.filter(b => b.blocklistId === id);
+    const activeBlocksToRemove = state.appData.activeBlocks.filter(b => b.blocklistId === id);
 
     // Remove from data (soft delete)
-    appData.blocklists = appData.blocklists.filter(bl => bl.id !== id);
-    appData.activeBlocks = appData.activeBlocks.filter(b => b.blocklistId !== id);
+    state.appData.blocklists = state.appData.blocklists.filter(bl => bl.id !== id);
+    state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.blocklistId !== id);
 
     // If the deleted blocklist was the selected one, reset the scheduler UI
-    if (selectedBlocklistId === id) {
-        selectedBlocklistId = null;
+    if (state.selectedBlocklistId === id) {
+        state.selectedBlocklistId = null;
         const blocklistSelect = document.getElementById('blocklist-select');
         blocklistSelect.value = '';
         handleBlocklistSelect({ target: blocklistSelect });
@@ -17540,9 +17152,9 @@ function undoDelete() {
     clearTimeout(pendingDelete.timeoutId);
 
     // Restore the blocklist and active blocks
-    appData.blocklists.push(pendingDelete.blocklist);
+    state.appData.blocklists.push(pendingDelete.blocklist);
     pendingDelete.activeBlocks.forEach(block => {
-        appData.activeBlocks.push(block);
+        state.appData.activeBlocks.push(block);
     });
 
     // Hide toast
@@ -17567,11 +17179,11 @@ function render() {
     //   - Exactly one blocklist exists → default-select it.
     //   - Otherwise, if nothing is selected, fall back to selecting
     //     the lone non-active blocklist if there's exactly one.
-    if (appData.blocklists.length === 1) {
+    if (state.appData.blocklists.length === 1) {
         autoSelectSoleBlocklist();
-    } else if (!selectedBlocklistId && !userExplicitlyDeselected) {
-        const activeIds = appData.activeBlocks.map(b => b.blocklistId);
-        const availableBlocklists = appData.blocklists.filter(bl => !activeIds.includes(bl.id));
+    } else if (!state.selectedBlocklistId && !state.userExplicitlyDeselected) {
+        const activeIds = state.appData.activeBlocks.map(b => b.blocklistId);
+        const availableBlocklists = state.appData.blocklists.filter(bl => !activeIds.includes(bl.id));
         if (availableBlocklists.length === 1) {
             const dropdown = document.getElementById('blocklist-select');
             dropdown.value = availableBlocklists[0].id;
@@ -17585,9 +17197,9 @@ function render() {
     // Hide "Select a blocklist" prompt if there are no blocklists
     const selectionPrompt = document.getElementById('selection-prompt');
     if (selectionPrompt) {
-        if (appData.blocklists.length === 0) {
+        if (state.appData.blocklists.length === 0) {
             selectionPrompt.classList.add('hidden');
-        } else if (!selectedBlocklistId) {
+        } else if (!state.selectedBlocklistId) {
             // Only show prompt if there are blocklists but none selected
             selectionPrompt.classList.remove('hidden');
         }
@@ -17602,7 +17214,7 @@ function render() {
 }
 
 function syncSelectedControlState() {
-    if (!selectedBlocklistId) {
+    if (!state.selectedBlocklistId) {
         updateOverrideAllButtonVisibility();
         updateCleanHostsBtnState();
         return;
@@ -17619,9 +17231,9 @@ function syncSelectedControlState() {
         updateCleanHostsBtnState();
         return;
     }
-    const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
     const now = Date.now();
-    const activeBlock = appData.activeBlocks.find(b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now);
+    const activeBlock = state.appData.activeBlocks.find(b => b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now);
     const btnLabel = startBlockBtn.querySelector('.btn-label');
     const pauseBtn = document.getElementById('pause-block-btn');
     const alwaysOnMsg = document.getElementById('always-on-message');
@@ -17647,7 +17259,7 @@ function syncSelectedControlState() {
         disableTimeControls(false);
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isAlwaysOnMode);
     }
-    startBlockBtn.disabled = !selectedBlocklistId;
+    startBlockBtn.disabled = !state.selectedBlocklistId;
     syncStopBtnLabelFit(startBlockBtn);
     updateOverrideAllButtonVisibility();
     updateCleanHostsBtnState();
@@ -17766,18 +17378,18 @@ function renderWeekBlocks() {
 
     // Always-on active blocks are represented in the "Always on" pill row instead of
     // being drawn as bars across the timeline.
-    const visibleBlocks = appData.activeBlocks.filter(block =>
+    const visibleBlocks = state.appData.activeBlocks.filter(block =>
         !isBlockAlwaysOn(block) && block.endTime > now
     );
 
-    const hasSchedules = appData.schedules && appData.schedules.length > 0;
-    const hasAlwaysOnBlocks = appData.activeBlocks.some(b => isBlockAlwaysOn(b));
+    const hasSchedules = state.appData.schedules && state.appData.schedules.length > 0;
+    const hasAlwaysOnBlocks = state.appData.activeBlocks.some(b => isBlockAlwaysOn(b));
 
     // Hide the "No active blocks" overlay — empty calendar is self-explanatory.
     noBlocksMsg?.classList.add('hidden');
 
     visibleBlocks.forEach(block => {
-        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+        const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
         if (!blocklist) return;
 
         // The eye chip above the schedule is authoritative — hidden means hidden,
@@ -17941,9 +17553,9 @@ function collectNowBlockingEntries(now = Date.now()) {
     const nowDate = new Date(now);
     const entries = [];
 
-    for (const block of appData.activeBlocks || []) {
+    for (const block of state.appData.activeBlocks || []) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
-        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+        const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
         if (!blocklist) continue;
         entries.push({
             kind: 'block',
@@ -17955,9 +17567,9 @@ function collectNowBlockingEntries(now = Date.now()) {
         });
     }
 
-    for (const schedule of appData.schedules || []) {
+    for (const schedule of state.appData.schedules || []) {
         if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
-        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (!blocklist) continue;
         // A schedule and a one-off for the same blocklist could both be active; keep both
         // (they're independent rules) so the user can act on whichever they intend.
@@ -17973,10 +17585,10 @@ function collectNowBlockingEntries(now = Date.now()) {
     }
 
     // Sort to match the visual order of the "My Blocklists" section, which iterates
-    // `appData.blocklists` in array order. Entries whose blocklist isn't found in that
+    // `state.appData.blocklists` in array order. Entries whose blocklist isn't found in that
     // array (shouldn't happen, but be safe) sort to the end. Within a single blocklist,
     // one-off blocks come before schedules so explicit user-started actions read first.
-    const order = new Map(appData.blocklists.map((bl, i) => [bl.id, i]));
+    const order = new Map(state.appData.blocklists.map((bl, i) => [bl.id, i]));
     const kindRank = { block: 0, schedule: 1 };
     entries.sort((a, b) => {
         const ai = order.has(a.blocklistId) ? order.get(a.blocklistId) : Number.MAX_SAFE_INTEGER;
@@ -18066,7 +17678,7 @@ function handleNowBlockingEdit(entry) {
         dropdown.value = blocklist.id;
         handleBlocklistSelect({ target: dropdown });
     } else {
-        selectedBlocklistId = blocklist.id;
+        state.selectedBlocklistId = blocklist.id;
     }
     openBlocklistModal(blocklist);
 }
@@ -18303,17 +17915,17 @@ function renderScheduleAlwaysOnRow() {
     const chips = document.getElementById('schedule-always-on-chips');
     if (!row || !chips) return;
 
-    const alwaysOnBlocks = (appData.activeBlocks || []).filter(b => isBlockAlwaysOn(b));
+    const alwaysOnBlocks = (state.appData.activeBlocks || []).filter(b => isBlockAlwaysOn(b));
 
     // When the user has the "always" tab selected and picked a blocklist that isn't already
     // running, show a faded preview chip alongside the real ones. This replaces the timeline
     // preview bar that always-on mode used to draw across every day.
     let previewBlocklist = null;
-    if (isAlwaysOnMode && !isScheduleMode && selectedBlocklistId) {
-        const candidate = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
+    if (isAlwaysOnMode && !isScheduleMode && state.selectedBlocklistId) {
+        const candidate = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
         const now = Date.now();
-        const alreadyActive = (appData.activeBlocks || []).some(b =>
-            b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
+        const alreadyActive = (state.appData.activeBlocks || []).some(b =>
+            b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now
         );
         if (candidate && !alreadyActive) {
             previewBlocklist = candidate;
@@ -18329,7 +17941,7 @@ function renderScheduleAlwaysOnRow() {
     chips.innerHTML = '';
 
     alwaysOnBlocks.forEach(block => {
-        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+        const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
         if (!blocklist) return;
 
         const chip = document.createElement('button');
@@ -18377,17 +17989,17 @@ function renderScheduleVisibilityChips() {
     if (!container) return;
 
     const now = Date.now();
-    const scheduledIds = new Set((appData.schedules || []).map(s => s.blocklistId));
+    const scheduledIds = new Set((state.appData.schedules || []).map(s => s.blocklistId));
     // Always-on blocks aren't drawn in the timeline (they're surfaced by the "Always on"
     // row above instead), so don't add a visibility chip for them either.
     const manualIds = new Set(
-        (appData.activeBlocks || [])
+        (state.appData.activeBlocks || [])
             .filter(b => b.endTime > now && !isBlockAlwaysOn(b))
             .map(b => b.blocklistId)
     );
     const relevantIds = new Set([...scheduledIds, ...manualIds]);
 
-    const blocklists = (appData.blocklists || []).filter(bl => relevantIds.has(bl.id));
+    const blocklists = (state.appData.blocklists || []).filter(bl => relevantIds.has(bl.id));
 
     if (blocklists.length === 0) {
         container.classList.add('hidden');
@@ -18414,7 +18026,7 @@ function renderScheduleVisibilityChips() {
             <span class="schedule-visibility-chip-name">${bl.emoji ? escapeHtml(bl.emoji) + ' ' : ''}${escapeHtml(bl.name || '')}</span>
         `;
         chip.addEventListener('click', async () => {
-            const blocklist = appData.blocklists.find(b => b.id === bl.id);
+            const blocklist = state.appData.blocklists.find(b => b.id === bl.id);
             if (!blocklist) return;
             blocklist.alwaysShowInSchedule = !(blocklist.alwaysShowInSchedule !== false);
             await saveData();
@@ -18523,12 +18135,12 @@ function layoutOverlappingBlocks() {
 // next weekday (wrapping Sun → Mon). One-shot non-repeating schedules render onto the
 // weekday of each resolved occurrence.
 function renderScheduledCalendarBlocks() {
-    if (!appData.schedules || appData.schedules.length === 0) return;
+    if (!state.appData.schedules || state.appData.schedules.length === 0) return;
 
     const now = new Date();
 
-    appData.schedules.forEach(schedule => {
-        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+    state.appData.schedules.forEach(schedule => {
+        const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (!blocklist) return;
 
         // The eye chip above the schedule is authoritative — hidden means hidden,
@@ -18630,11 +18242,11 @@ function renderScheduleSegmentOnWeekday(schedule, segment, segmentIdx, dayIndex,
 function renderBlocklistSelector() {
     const select = document.getElementById('blocklist-select');
     const currentValue = select.value;
-    const activeIds = appData.activeBlocks.map(b => b.blocklistId);
+    const activeIds = state.appData.activeBlocks.map(b => b.blocklistId);
 
     const newHTML = `
     <option value="">${tSettings('selectionPromptOption')}</option>
-    ${appData.blocklists.map(bl => {
+    ${state.appData.blocklists.map(bl => {
         const isActive = activeIds.includes(bl.id);
         const activeLabel = isActive ? tSettings('runningSuffix') : '';
         return `<option value="${bl.id}">${escapeHtml(bl.name)}${activeLabel}</option>`;
@@ -18653,7 +18265,7 @@ function renderBlocklistSelector() {
 function renderBlocklists() {
     const container = document.getElementById('blocklists-container');
 
-    if (appData.blocklists.length === 0) {
+    if (state.appData.blocklists.length === 0) {
         container.innerHTML = `
       <div class="no-active-blocks clickable" id="empty-blocklists-cta" style="cursor: pointer;">
         <p>${tSettings('noBlocklistsYet')}</p>
@@ -18666,7 +18278,7 @@ function renderBlocklists() {
         return;
     }
 
-    container.innerHTML = appData.blocklists.map(bl => {
+    container.innerHTML = state.appData.blocklists.map(bl => {
         // Build detailed meta text
         const websiteCount = bl.websites?.length || 0;
         const regularApps = getBlocklistRegularApps(bl);
@@ -18708,11 +18320,11 @@ function renderBlocklists() {
 
         // Check if this blocklist has an active block
         const now = Date.now();
-        const activeBlock = appData.activeBlocks.find(b => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now);
+        const activeBlock = state.appData.activeBlocks.find(b => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now);
         const isActive = !!activeBlock;
 
         // Check if this blocklist has a schedule
-        const hasSchedule = appData.schedules && appData.schedules.some(s => s.blocklistId === bl.id);
+        const hasSchedule = state.appData.schedules && state.appData.schedules.some(s => s.blocklistId === bl.id);
 
         const activeClass = isActive ? ' blocklist-card-active' : (hasSchedule ? ' blocklist-card-scheduled' : '');
 
@@ -18749,7 +18361,7 @@ function renderBlocklists() {
         if (hasSchedule) {
             const compactScheduleUpcomingLabel =
                 (bl.name || '').trim().length > BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS;
-            const schedule = appData.schedules.find(s => s.blocklistId === bl.id);
+            const schedule = state.appData.schedules.find(s => s.blocklistId === bl.id);
             let scheduleTimeText = '';
             if (schedule && schedule.segments) {
                 if (isSchedulePausedNow(schedule, now)) {
@@ -18868,7 +18480,7 @@ function renderBlocklists() {
         const activeBadge = oneOffBadge + scheduleBadge;
 
         // Check if this blocklist is selected
-        const isSelected = bl.id === selectedBlocklistId;
+        const isSelected = bl.id === state.selectedBlocklistId;
         const selectedClass = isSelected ? ' selected' : '';
         const accent = bl.color || '#667eea';
         const selectedStyle = isSelected
@@ -18946,7 +18558,7 @@ function renderBlocklists() {
         card.querySelector('.edit-btn').addEventListener('click', (e) => {
             e.stopPropagation();
             closeAllBlocklistMenus();
-            const blocklist = appData.blocklists.find(bl => bl.id === id);
+            const blocklist = state.appData.blocklists.find(bl => bl.id === id);
             openBlocklistModal(blocklist);
         });
 
@@ -19030,13 +18642,13 @@ function renderBlocklists() {
 /// user just *created* a new blocklist, which is a strong "I want to
 /// use this" signal.
 function autoSelectSoleBlocklist({ force = false } = {}) {
-    if (appData.blocklists.length !== 1) return;
-    if (selectedBlocklistId) return;
-    if (force) userExplicitlyDeselected = false;
-    if (userExplicitlyDeselected) return;
+    if (state.appData.blocklists.length !== 1) return;
+    if (state.selectedBlocklistId) return;
+    if (force) state.userExplicitlyDeselected = false;
+    if (state.userExplicitlyDeselected) return;
     const dropdown = document.getElementById('blocklist-select');
     if (!dropdown) return;
-    dropdown.value = appData.blocklists[0].id;
+    dropdown.value = state.appData.blocklists[0].id;
     handleBlocklistSelect({ target: dropdown });
 }
 
@@ -19054,23 +18666,23 @@ function saveBlocklistOrderFromDOM() {
     const cardElements = Array.from(container.querySelectorAll('.blocklist-card'));
     const newOrder = cardElements.map(card => card.dataset.id);
 
-    // Reorder appData.blocklists to match
+    // Reorder state.appData.blocklists to match
     const reorderedBlocklists = [];
     newOrder.forEach(id => {
-        const blocklist = appData.blocklists.find(bl => bl.id === id);
+        const blocklist = state.appData.blocklists.find(bl => bl.id === id);
         if (blocklist) {
             reorderedBlocklists.push(blocklist);
         }
     });
 
     // Add any blocklists that weren't in the DOM
-    appData.blocklists.forEach(bl => {
+    state.appData.blocklists.forEach(bl => {
         if (!reorderedBlocklists.find(r => r.id === bl.id)) {
             reorderedBlocklists.push(bl);
         }
     });
 
-    appData.blocklists = reorderedBlocklists;
+    state.appData.blocklists = reorderedBlocklists;
     saveData();
 
     // Re-render the bits of UI that mirror blocklist order. Don't call full render() —
@@ -19085,7 +18697,7 @@ function startTickInterval() {
     // Track which blocks have been activated (to avoid repeated password prompts)
     // Initialize activatedBlockIds with already-active blocks at startup
     activatedBlockIds = new Set(
-        appData.activeBlocks
+        state.appData.activeBlocks
             .filter(b => b.startTime <= Date.now())
             .map(b => b.id)
     );
@@ -19100,7 +18712,7 @@ function startTickInterval() {
         let shouldSyncControls = false;
 
         // Check for future blocks that have now become active
-        const newlyActiveBlocks = appData.activeBlocks.filter(
+        const newlyActiveBlocks = state.appData.activeBlocks.filter(
             block => block.startTime <= now && !activatedBlockIds.has(block.id)
         );
 
@@ -19114,7 +18726,7 @@ function startTickInterval() {
         }
 
         // Check for paused blocks that should resume
-        const resumedBlocks = appData.activeBlocks.filter(
+        const resumedBlocks = state.appData.activeBlocks.filter(
             block => block.isPaused && block.pauseEndTime && block.pauseEndTime <= now
         );
 
@@ -19134,8 +18746,8 @@ function startTickInterval() {
         }
 
         // Check for paused schedules that should resume
-        if (appData.schedules) {
-            const resumedSchedules = appData.schedules.filter(
+        if (state.appData.schedules) {
+            const resumedSchedules = state.appData.schedules.filter(
                 s => s.isPaused && s.pauseEndTime && s.pauseEndTime <= now
             );
 
@@ -19156,7 +18768,7 @@ function startTickInterval() {
 
         // Check for schedule segment transitions every 30s (schedules are minute-granular
         // and the helper daemon handles transitions autonomously)
-        if (appData.schedules && appData.schedules.length > 0) {
+        if (state.appData.schedules && state.appData.schedules.length > 0) {
             if (!startTickInterval._scheduleTickCount) startTickInterval._scheduleTickCount = 0;
             startTickInterval._scheduleTickCount++;
 
@@ -19171,7 +18783,7 @@ function startTickInterval() {
             const expiredScheduleIds = [];
             const nowDate = new Date(now);
 
-            for (const schedule of appData.schedules) {
+            for (const schedule of state.appData.schedules) {
                 // Only check non-repeating schedules (repeatType === 'no' or undefined)
                 if (schedule.repeatType === 'forever') continue;
 
@@ -19221,10 +18833,10 @@ function startTickInterval() {
 
             // Remove expired schedules
             if (expiredScheduleIds.length > 0) {
-                const previousScheduleCount = appData.schedules.length;
-                appData.schedules = appData.schedules.filter(s => !expiredScheduleIds.includes(s.id));
+                const previousScheduleCount = state.appData.schedules.length;
+                state.appData.schedules = state.appData.schedules.filter(s => !expiredScheduleIds.includes(s.id));
 
-                if (appData.schedules.length < previousScheduleCount) {
+                if (state.appData.schedules.length < previousScheduleCount) {
                     console.log('Auto-stopped expired schedule(s):', expiredScheduleIds);
                     activeScheduleSegmentCount = 0;
                     await saveData();
@@ -19239,18 +18851,18 @@ function startTickInterval() {
         }
 
         // Check for expired blocks
-        const previousCount = appData.activeBlocks.length;
-        appData.activeBlocks = appData.activeBlocks.filter(block => block.endTime > now);
+        const previousCount = state.appData.activeBlocks.length;
+        state.appData.activeBlocks = state.appData.activeBlocks.filter(block => block.endTime > now);
 
         // Clean up activated set
         activatedBlockIds = new Set(
             [...activatedBlockIds].filter(id =>
-                appData.activeBlocks.some(b => b.id === id)
+                state.appData.activeBlocks.some(b => b.id === id)
             )
         );
 
         // Only re-render if blocks actually expired
-        if (appData.activeBlocks.length < previousCount) {
+        if (state.appData.activeBlocks.length < previousCount) {
             await saveData();
             render();
 
@@ -19268,7 +18880,7 @@ function startTickInterval() {
             // Schedule segment transitioned (active↔inactive) — update blocking
             // rules immediately so iOS Screen Time enforcement fires within ~1s
             // instead of waiting up to 30s for the schedule tick counter.
-            if (isIOS) {
+            if (state.isIOS) {
                 await syncSchedulesToHelper();
             }
             await updateHostsFile();
@@ -19301,7 +18913,7 @@ function startTickInterval() {
 
         // Update remaining times in UI
         document.querySelectorAll('.entry-remaining').forEach((el, idx) => {
-            const block = appData.activeBlocks[idx];
+            const block = state.appData.activeBlocks[idx];
             if (block) {
                 if (block.isPaused) {
                     const pauseRemaining = Math.max(0, Math.ceil((block.pauseEndTime - now) / 60000));
@@ -19316,7 +18928,7 @@ function startTickInterval() {
         });
 
         // Auto-update end time if user hasn't manually edited it (skip in always-on mode)
-        if (selectedBlocklistId && !userEditedEndTime && !isAlwaysOnMode) {
+        if (state.selectedBlocklistId && !userEditedEndTime && !isAlwaysOnMode) {
             const newEndTime = new Date(now + targetDurationMinutes * 60 * 1000);
             selectedEndHour = newEndTime.getHours();
             selectedEndMinute = newEndTime.getMinutes();
@@ -19345,8 +18957,8 @@ function kickClockNow() {
 
 function getScheduleStateSignature(now = Date.now()) {
     const nowDate = new Date(now);
-    if (!appData.schedules || appData.schedules.length === 0) return '';
-    return appData.schedules.map(s => `${s.id || s.blocklistId}:${isSchedulePausedNow(s, now) ? 1 : 0}:${isScheduleSegmentActiveNow(s, nowDate) ? 1 : 0}`).sort().join('|');
+    if (!state.appData.schedules || state.appData.schedules.length === 0) return '';
+    return state.appData.schedules.map(s => `${s.id || s.blocklistId}:${isSchedulePausedNow(s, now) ? 1 : 0}:${isScheduleSegmentActiveNow(s, nowDate) ? 1 : 0}`).sort().join('|');
 }
 
 // Utility functions
@@ -19407,11 +19019,6 @@ function formatBlockTimeRemainingShort(totalMins) {
     return `${mins}m left`;
 }
 
-function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-}
 
 function buildWordChallengeState(text) {
     const words = String(text || '').split(/\s+/).filter(Boolean);
@@ -19517,1718 +19124,19 @@ function renderOverrideAllWordChallengeState() {
 }
 
 // Clean up URL for display (remove protocol, www, trailing slash)
-function cleanUrlForDisplay(url) {
-    return url
-        .replace(/^https?:\/\//, '')  // Remove http:// or https://
-        .replace(/^www\./, '')         // Remove www.
-        .replace(/\/$/, '');           // Remove trailing slash
-}
-
-// Parse #rgb / #rrggbb into { r, g, b } or null.
-function parseRgbFromColorString(color) {
-    if (!color || typeof color !== 'string') return null;
-
-    if (color.startsWith('#')) {
-        const hex = color.slice(1);
-        if (hex.length === 3) {
-            return {
-                r: parseInt(hex[0] + hex[0], 16),
-                g: parseInt(hex[1] + hex[1], 16),
-                b: parseInt(hex[2] + hex[2], 16),
-            };
-        }
-        if (hex.length >= 6) {
-            return {
-                r: parseInt(hex.slice(0, 2), 16),
-                g: parseInt(hex.slice(2, 4), 16),
-                b: parseInt(hex.slice(4, 6), 16),
-            };
-        }
-        return null;
-    }
-
-    if (color.startsWith('rgb')) {
-        const match = color.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
-        if (!match) return null;
-        return {
-            r: parseInt(match[1], 10),
-            g: parseInt(match[2], 10),
-            b: parseInt(match[3], 10),
-        };
-    }
-
-    return null;
-}
-
-function rgbToHex(r, g, b) {
-    const clamp = (value) => Math.max(0, Math.min(255, Math.round(value)));
-    return `#${[clamp(r), clamp(g), clamp(b)].map((channel) => channel.toString(16).padStart(2, '0')).join('')}`;
-}
-
-function rgbToHsl(r, g, b) {
-    const rn = r / 255;
-    const gn = g / 255;
-    const bn = b / 255;
-    const max = Math.max(rn, gn, bn);
-    const min = Math.min(rn, gn, bn);
-    const lightness = (max + min) / 2;
-    let hue = 0;
-    let saturation = 0;
-
-    if (max !== min) {
-        const delta = max - min;
-        saturation = lightness > 0.5 ? delta / (2 - max - min) : delta / (max + min);
-        switch (max) {
-            case rn:
-                hue = ((gn - bn) / delta + (gn < bn ? 6 : 0)) / 6;
-                break;
-            case gn:
-                hue = ((bn - rn) / delta + 2) / 6;
-                break;
-            default:
-                hue = ((rn - gn) / delta + 4) / 6;
-        }
-    }
-
-    return { h: hue * 360, s: saturation * 100, l: lightness * 100 };
-}
-
-function hslToRgb(h, s, l) {
-    const hue = ((h % 360) + 360) % 360 / 360;
-    const saturation = Math.max(0, Math.min(100, s)) / 100;
-    const lightness = Math.max(0, Math.min(100, l)) / 100;
-
-    if (saturation === 0) {
-        const gray = lightness * 255;
-        return [gray, gray, gray];
-    }
-
-    const q = lightness < 0.5
-        ? lightness * (1 + saturation)
-        : lightness + saturation - lightness * saturation;
-    const p = 2 * lightness - q;
-    const hueToRgb = (t) => {
-        let value = t;
-        if (value < 0) value += 1;
-        if (value > 1) value -= 1;
-        if (value < 1 / 6) return p + (q - p) * 6 * value;
-        if (value < 1 / 2) return q;
-        if (value < 2 / 3) return p + (q - p) * (2 / 3 - value) * 6;
-        return p;
-    };
-
-    return [
-        hueToRgb(hue + 1 / 3) * 255,
-        hueToRgb(hue) * 255,
-        hueToRgb(hue - 1 / 3) * 255,
-    ];
-}
-
-function getRelativeLuminance(r, g, b) {
-    return (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-}
-
-/** Room accent on the ENTERING chip — darkens faded pastels while keeping the hue. */
-function getEnteringChipColor(accentColor) {
-    const rgb = parseRgbFromColorString(accentColor);
-    if (!rgb) return accentColor || '#667eea';
-
-    const luminance = getRelativeLuminance(rgb.r, rgb.g, rgb.b);
-    if (luminance <= 0.42) return accentColor;
-
-    const { h, s, l } = rgbToHsl(rgb.r, rgb.g, rgb.b);
-    const fadeAmount = Math.min(1, (luminance - 0.42) / 0.45);
-    const targetLightness = Math.max(36, l - fadeAmount * Math.max(0, l - 40));
-    const targetSaturation = Math.min(100, s + fadeAmount * 18);
-    const [r, g, b] = hslToRgb(h, targetSaturation, targetLightness);
-    return rgbToHex(r, g, b);
-}
-
-// Get contrasting text color (black or white) based on background color
-function getContrastTextColor(backgroundColor) {
-    if (!backgroundColor) return '#ffffff';
-
-    const rgb = parseRgbFromColorString(backgroundColor);
-    if (!rgb) return '#ffffff';
-
-    return getRelativeLuminance(rgb.r, rgb.g, rgb.b) > 0.5 ? '#000000' : '#ffffff';
-}
-
-const SETTINGS_TRANSLATIONS = {
-    en: {
-        // Main shell
-        updateBannerPrefix: 'Version',
-        updateBannerSuffix: 'is available',
-        updateBannerCurrentFmt: "You're on {version}",
-        updateBannerCta: 'Reinstall',
-        updateBannerDownloading: 'Downloading…',
-        updateBannerDownloadingFmt: 'Downloading… {percent}%',
-        updateBannerOpeningInstaller: 'Opening installer…',
-        updateBannerDownloadFailedTitle: 'Update download failed',
-        updateBannerDownloadFailed: 'Could not download the update. Check your connection and try again.',
-        updateBannerInstallerOpenedTitle: 'Installer opened',
-        updateBannerInstallerOpened: 'Follow the installer prompts. ReDD Blocker will reopen automatically when the update finishes.',
-        updateBannerWhatsNew: "What's new?",
-        mainStartBlockTitle: 'Enter',
-        modeNow: 'Now',
-        modeTimer: 'Timer',
-        modeSchedule: 'Schedule',
-        selectionPrompt: 'Select a space',
-        selectionPromptOption: 'Select a space...',
-        yourBlocklists: 'My Focus Spaces',
-        blocklistCardMenuTitle: 'Blocklist options',
-        blocklistCardDuplicate: 'Duplicate',
-        blocklistCardDelete: 'Delete',
-        blocklistCardEditTooltip: 'Edit',
-        blocklistEnteringChip: 'Entering',
-        blocklistScheduleStartsInMinutesFmt: 'starts in {n}m',
-        blocklistScheduleStartsInHoursFmt: 'starts in {n}h',
-        blocklistScheduleStartsInDaysFmt: 'starts in {n}d',
-        blocklistScheduleCompactMinutesFmt: 'in {n}m',
-        blocklistScheduleCompactHoursFmt: 'in {n}h',
-        blocklistScheduleCompactDaysFmt: 'in {n}d',
-        blocklistScheduleFallback: 'scheduled',
-        deleteBlocklistDeniedActiveBlockFmt:
-            'Cannot delete "{name}" while the block is active. Stop the block first.',
-        deleteBlocklistDeniedActiveScheduleFmt:
-            'Cannot delete "{name}" while the schedule is active. Stop the schedule first.',
-        scheduleTitle: 'Week Schedule',
-        today: 'Today',
-        noActiveBlocks: 'No active blocks',
-        alwaysOnRowLead: 'Always on',
-        alwaysOnRowTimelineHint: 'not shown',
-        nowBlockingLabel: 'BLOCKING NOW',
-        nowBlockingUntil: 'until',
-        nowBlockingAlways: 'always',
-        nowBlockingMenuAria: 'Block actions',
-        titleBarNoActiveBlocks: 'No active blocks right now',
-        titleBarNextScheduleStarts: '{emoji} {name} starts {when}',
-        scheduleStartsToday: 'today at',
-        scheduleStartsTomorrow: 'tomorrow at',
-        nowBlockingMenuEdit: 'Edit',
-        nowBlockingMenuPause: 'Pause',
-        nowBlockingMenuStop: 'Stop',
-        scheduleFooterHint: 'Click any block to edit',
-        setupBrowsersBannerHeadline: 'Enable ReDD Focus in your browsers',
-        setupBrowsersBannerHeadlineMac: 'Allow ReDD Blocker in your browsers',
-        setupBrowsersBannerCta: 'Set up browsers',
-        setupBrowsersBannerDismissTitle: 'Dismiss for this session',
-        bannerTurnOnBrowserProtection: 'Turn on browser protection',
-        bannerActionInstallIn: 'Install in',
-        bannerActionAutomationIn: 'Allow Automation for',
-        bannerActionEnableIn: 'Enable in',
-        bannerActionPrivateBrowsingIn: 'Allow in private browsing in',
-        bannerActionAllWebsitesIn: 'Allow on all websites in',
-        bannerActionSetUpIn: 'Set up in',
-        // First-run EULA gate
-        eulaAgreeAria: 'I agree to the End User License Agreement and Privacy Policy',
-        eulaAgreeLineHtml:
-            'I agree to the ReDD Project\'s <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">End User License Agreement</a>',
-        eulaNoteHtml:
-            'Note: we do not collect any user data, as per our <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">Privacy Policy</a>.',
-        eulaContinueBtn: 'Continue',
-        eulaContinueBusy: 'Continuing…',
-        eulaBackBtn: 'Back',
-        eulaAcceptSaveFailedAlert: 'We could not save your agreement. Please try again to continue.',
-        eulaWelcomeIconAlt: 'ReDD Blocker app icon',
-        eulaProjectBlurb:
-            'Developed by the Reduce Digital Distraction Project, with researchers at the University of Oxford and University of Maastricht. ReDD is a not-for-profit creating open-source digital focus tools.',
-        // Welcome onboarding (before EULA)
-        welcomeOnboardingTitle: 'Welcome to ReDD Blocker',
-        welcomeOnboardingSubtitle:
-            'Create a space for calm focus, by blocking\nthe apps and websites that pull you away.',
-        welcomeHowHeading: 'STEPS TO GET STARTED (we\'ll guide you through it 😊)',
-        welcomeStep1TitleAutomationHtml: 'Allow {APPLE}Automation',
-        welcomeStep1BodyAutomationHtml:
-            'In Safari, Chrome, Brave, and Edge, <em>ReDD Blocker</em> uses Automation to block websites. We\'ll prompt you to allow access.',
-        welcomeStep2TitleFirefoxHtml: 'Set up {LOGO}ReDD Focus in Firefox',
-        welcomeStep2BodyFirefoxHtml:
-            'Firefox blocking uses our extension <em>ReDD Focus</em>. We\'ll guide you through installing it from the Firefox Add-ons store.',
-        welcomeStep2TitleHtml: 'Enable blocking in your browser & allow it in private/incognito tabs',
-        welcomeStep2BodyHtml:
-            'Our {LOGO}<strong>ReDD Focus</strong> extension is what actually blocks websites. We\'ll auto-install it in your browsers where we can, and show you what to do.',
-        welcomeStep2TitleIosHtml: 'Allow Screen Time access',
-        welcomeStep2BodyIosHtml:
-            '<em>ReDD Blocker</em> uses Screen Time to shield apps and websites on iPhone and iPad. We\'ll ask for permission before your first block.',
-        welcomeStep2TitleAndroidHtml: 'Enable Android Accessibility blocking',
-        welcomeStep2BodyAndroidHtml:
-            '<em>ReDD Blocker</em> uses Android Accessibility to detect blocked apps and websites and show the block screen. We\'ll open Android Settings so you can enable it.',
-        welcomeStep3TitleHtml: 'Start blocking! 🥳',
-        welcomeStep3BodyHtml:
-            'Pick the websites and apps that pull you off task, and set the times you want them out of reach. <em>ReDD Blocker</em> takes care of the rest.',
-        welcomeDemoToggleLabel: 'See it in action — 30s',
-        welcomeDemoVideoCaption: 'Quick demo — creating blocklists & how blocks feel',
-        welcomeDemoPlayAriaLabel: 'Play demo video',
-        welcomeDemoResumeAriaLabel: 'Resume demo video',
-        welcomeDemoPauseAriaLabel: 'Pause demo video',
-        welcomeDemoFullscreenEnterAriaLabel: 'Enter fullscreen',
-        welcomeDemoFullscreenExitAriaLabel: 'Exit fullscreen',
-        welcomeDemoCloseLabel: 'Close',
-        welcomeFooter1Html:
-            'Built by the <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, a not-for-profit creating open-source digital focus tools &amp; training. In collaboration with researchers at the University of Oxford and University of Maastricht.',
-        welcomeFooter2Html:
-            '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
-        welcomeOnboardingContinueBtn: 'Get started',
-        // Migration / extension onboarding overlay
-        migrationPreWelcomeTitle: 'Welcome to ReDD Blocker 2.0',
-        migrationPreSubtitle: 'A one-time cleanup is needed to finish your upgrade.',
-        migrationPreExplainerHtml: 'ReDD Blocker now blocks websites through a browser extension instead of a system-level helper.<br>We need to:',
-        migrationPreBulletHelper: 'Stop and remove the old privileged helper',
-        migrationPreBulletHostsHtml: 'Restore your <code>/etc/hosts</code> file (a backup is kept)',
-        migrationPreBulletBlocklists: 'Keep all your existing blocklists intact',
-        migrationPreWarnHtml: 'You\'ll see <strong>one</strong> admin password prompt. Blocking will pause briefly during the changeover. After cleanup, ReDD Blocker sets up the <strong>ReDD Focus</strong> browser extension in your browsers automatically — you just need to allow it in private/incognito tabs.',
-        migrationContinue: 'Continue',
-        migrationPostTitleCleanup: 'Cleanup complete',
-        migrationPostSubtitleCleanup: 'Almost done — finish setting up ReDD Focus in each browser you use.',
-        migrationChecklistCleanedOld: 'Old version cleaned up',
-        migrationChecklistBlocklistsPreserved: 'Your blocklists are preserved',
-        migrationChecklistExtLinesHtml: 'Enable {LOGO}ReDD Focus in your browsers<br><span style="font-weight:400;opacity:0.7">and allow it in private/incognito tabs</span>',
-        migrationExtTitleMac: 'Allow ReDD Blocker in your browsers',
-        migrationExtSubMac: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge.',
-        migrationExtSubMacFirefox: 'Website blocking uses <strong>macOS automation</strong> for Safari, Chrome & Edge, and the <strong>ReDD Focus extension</strong> for Firefox.',
-        migrationExtStep1Mac: 'Click <strong>Grant access</strong> on each browser below and approve the macOS permission prompt. If you see <strong>Open Automation settings</strong>, click it and switch ReDD Blocker back on.',
-        migrationExtStep2MacFirefox: 'For Firefox, click <strong>Install</strong> below to add {FOCUS}<strong>ReDD Focus</strong> from the Add-ons store, then allow it in private windows.',
-        migrationHowtoHeading: 'Setting up',
-        migrationHowtoLi1Html: 'ReDD Blocker has tried to install ReDD Focus in your browsers. If it shows as not installed below, click the <strong>Install</strong> buttons to add it manually.',
-        migrationHowtoLi3Html: 'Once enabled, <strong>allow it in private/incognito tabs</strong> so blocking works in private windows too.',
-        migrationBadgeAutomationOn: 'Allowed',
-        migrationBadgeAutomationOff: 'Permission needed',
-        migrationBadgeAutomationUnknown: 'Status unknown',
-        migrationAutomationAwaitingOpenHint: 'Please open {browser} so we can check whether Automation has been granted. macOS only reports this permission while the browser is running.',
-        migrationAutomationGrantHint: 'Allow ReDD Blocker to control {browser} so it can close distracting tabs while a block is running.',
-        migrationAutomationDeniedHint: 'Permission for {browser} is turned off. Switch ReDD Blocker back on under Automation so blocking works again.',
-        migrationGrantAutomation: 'Grant access to {browser}',
-        migrationGrantAutomationOpened: 'Opened Automation settings',
-        migrationOpenAutomationSettings: 'Open Automation settings',
-        webAutomationBannerHeadline: 'Allow ReDD Blocker to control your browser',
-        webAutomationBannerBody: 'ReDD Blocker needs permission to control {browsers} to block websites. Enable it under Privacy & Security → Automation, then the block will take effect.',
-        migrationDone: 'I\'m all set up',
-        migrationSkip: 'Skip for now',
-        migrationSetupAllReady: '<strong>All detected browsers are configured.</strong> You can finish setup.',
-        migrationEnforcementHeadline: 'Browser enforcement',
-        migrationEnforcementDescMacAutomation: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation during blocking.',
-        migrationEnforcementDescMacFirefox: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you turn off Automation or disable ReDD Focus during blocking.',
-        migrationEnforcementDescExtension: 'To hold yourself accountable, your <strong>browser is automatically closed</strong> if you disable ReDD Focus during blocking.',
-        migrationEnforcementDisableNote: 'Once on, you can only turn enforcement off when no blocks are running.',
-        migrationApproveAdminPrompt: 'Approve the admin prompt to continue…',
-        migrationTryAgain: 'Try again',
-        migrationCleanupNeedAdmin: 'We need that admin permission to finish — your blocklists are safe.',
-        migrationCleanupRetryGeneric: 'Something went wrong. Click to retry.',
-        migrationCopied: 'Copied! ✓',
-        migrationSafariSettingsPath: 'Safari → Settings → Extensions',
-        migrationPrivateIncognito: 'private/incognito',
-        migrationPrivateIncognitoChrome: 'Incognito',
-        migrationPrivateIncognitoEdge: 'InPrivate',
-        migrationPrivateIncognitoBrave: 'Incognito',
-        migrationPrivateIncognitoFirefox: 'Private Windows',
-        migrationPrivateIncognitoSafari: 'Private Browsing',
-        migrationComplianceOk: '✓ Installed & allowed in private tabs',
-        migrationBadgeNotInstalled: 'Not installed',
-        migrationBadgeDisabled: 'Disabled',
-        migrationBadgeNotPrivate: 'Not allowed in private tabs',
-        migrationBadgeNoWebsiteAccess: 'No website access',
-        migrationBadgeDuplicateSafari: '⚠ Two copies installed',
-        migrationStatusDuplicateSafari: 'Disable the extra copy',
-        migrationSafariDuplicateIntroHtml: 'You have <strong>ReDD Focus: Hide Distractions</strong> from the App Store <em>and</em> the copy that ships inside ReDD Blocker. They conflict — keep only one.',
-        migrationSafariDuplicateInstructionsHeading: 'In Safari → Settings → Extensions',
-        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — the App Store copy (not “via ReDD Blocker”) — and uncheck <span class="safari-duplicate-checkbox" role="img" aria-label="Unchecked"></span> it.',
-        migrationSafariDuplicateStep2Html: 'Make sure <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Checked"></span> is checked for <strong>ReDD Focus (via ReDD Blocker)</strong>. That\'s the one this app controls.',
-        migrationSafariDuplicateOpenBtn: 'Open Safari Extensions…',
-        migrationSafariDuplicateHelpLink: 'How did this happen?',
-        migrationSafariDuplicateHelpText: 'If you previously installed ReDD Focus from the App Store and later installed ReDD Blocker, Safari keeps both extensions registered. ReDD Blocker only works with the bundled copy.',
-        migrationStatusAllowAllWebsites: 'Allow on all websites',
-        migrationStatusAllowPrivate: 'Allow in private browsing',
-        migrationStatusEnableExtension: 'Enable extension',
-        migrationStatusInstall: 'Install',
-        migrationStatusGrantFda: 'Grant Full Disk Access',
-        migrationStatusNativeHost: 'Connect ReDD Blocker',
-        bannerActionGrantFdaIn: 'Grant Full Disk Access in',
-        safariFdaOnboardingTitle: 'Grant Full Disk Access for Safari',
-        safariFdaOnboardingWhyHtml: 'Blocking on Safari through the ReDD Focus browser extension requires Full Disk Access to ensure the extension is installed, enabled, and allowed in private browsing. Open System Settings below, then toggle <strong>ReDD Blocker</strong> on (use + if it is not listed).',
-        safariFdaOnboardingGrantBtn: 'Open Full Disk Access settings',
-        safariFdaOnboardingAlreadyGrantedBtn: '✓ Proceed',
-        safariFdaOnboardingAlreadyGrantedWhy: 'Full Disk Access is already granted. Click below to continue Safari setup.',
-        safariFdaOnboardingGrantedStatus: 'Full Disk Access granted.',
-        safariFdaOnboardingWaiting: 'Waiting for Full Disk Access… leave this window open while you grant it.',
-        safariFdaOnboardingOpeningSettings: 'Opening settings…',
-        safariFdaOnboardingHowto: 'System Settings → Privacy & Security → Full Disk Access',
-        safariFdaSetupHintHtml: 'ReDD Blocker must read Safari\'s protected extension settings. Grant <strong>Full Disk Access</strong> for ReDD Blocker, then return here.',
-        safariFdaSettingsGranted: 'Full Disk Access: granted (Safari extension settings readable).',
-        safariFdaSettingsNotGranted: 'Full Disk Access: not granted — required to verify ReDD Focus in Safari.',
-        safariFdaSettingsGrantBtn: 'Grant access',
-        migrationBadgeNativeHost: 'Connect ReDD Blocker',
-        migrationFirefoxNativeHostHtml: 'ReDD Focus is installed. ReDD Blocker still needs to register its connection with Firefox (one small setup step).',
-        migrationFirefoxNativeHostButton: 'Connect to Firefox',
-        migrationInstallButton: 'Install',
-        migrationInstallOpened: 'Opened extension store',
-        migrationInstallStoreTitle: 'Open {browser} extension store page',
-        migrationUrlCopied: 'URL Copied',
-        migrationFailed: 'Failed',
-        migrationOpenSettings: 'Open Settings',
-        migrationOpened: 'Opened',
-        migrationCheckAgain: 'Check again',
-        migrationRefreshSafariTitle: 'Refresh Safari access status',
-        migrationDelayDetectionNote: 'It may take up to 20 seconds for changes to be detected.',
-        migrationExtensionInstalledMark: 'Extension installed',
-        migrationSafariStepEnable: 'Enable the extension',
-        migrationSafariStepPrivate: 'Allow in Private Browsing',
-        migrationSafariStepEveryWebsite: 'Allow on Every Website',
-        migrationSafariChecklistLine: 'Step {n} — {label}',
-        migrationOpenExtensionSettings: 'Open Extension Settings',
-        migrationShowMeHow: 'Show me how',
-        migrationPostInstallFirefoxHtml: 'ReDD Blocker already set up auto-install for ReDD Focus in Firefox — <strong>restart Firefox</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually — check <strong>Allow extension to run in private windows</strong> during install.)',
-        migrationPostInstallFirefoxMacHtml: 'Install ReDD Focus from the Firefox Add-ons store — click <strong>Install</strong> below and check <strong>Allow extension to run in private windows</strong> during install.',
-        migrationPostInstallSafariHtml: 'Install ReDD Focus from the Mac App Store — click <strong>Install</strong> below. After it\u2019s installed, return here and we\u2019ll walk you through enabling it in Safari.',
-        migrationPostInstallChromiumMacHtml: 'Install ReDD Focus from the {BROWSER} store — click <strong>Install</strong> below. After it\u2019s installed, return here and we\u2019ll walk you through enabling it and allowing it in {PRIV} tabs.',
-        migrationPostInstallChromiumHtml: 'ReDD Blocker already set up auto-install for ReDD Focus in {BROWSER} — <strong>restart {BROWSER}</strong> to pick it up. (Or click <strong>Install</strong> below to add it manually now.)',
-        migrationInstructionEnableHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → find <strong>ReDD Focus</strong> → enable the extension.',
-        migrationInstructionWebsiteAccessHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>Details</strong> on ReDD Focus → allow on <strong>all websites</strong>.',
-        migrationInstructionFirefoxPrivateHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>ReDD Focus</strong> → turn on <strong>Run in {PRIV}</strong>.',
-        migrationInstructionChromiumPrivateHtml: 'Open your extension settings (copy {URL_CHIP} and paste into {BROWSER}\'s address bar) → click <strong>Details</strong> on ReDD Focus → turn on <strong>Allow in {PRIV}</strong>.',
-        migrationHintEnableSafariMulti: 'Enable ReDD Focus in Safari\'s extension settings for every Safari profile.{SUFFIX}',
-        migrationHintEnableSafariOne: 'Enable ReDD Focus in Safari\'s extension settings.',
-        migrationHintEnableBrowser: 'Enable ReDD Focus in {BROWSER}\'s extensions settings.',
-        migrationHintPrivateSafariMulti: 'Allow ReDD Focus in Private Browsing for every Safari profile.{SUFFIX}',
-        migrationHintPrivateSafariOne: 'Allow ReDD Focus in Private Browsing in Safari\'s extension settings.',
-        migrationHintPrivateBrowser: 'Allow ReDD Focus in private/incognito browsing in {BROWSER}\'s extensions settings.',
-        migrationHintWebsitesSafariMulti: 'Allow ReDD Focus on all websites for every Safari profile.{SUFFIX}',
-        migrationHintWebsitesSafariOne: 'Allow ReDD Focus on all websites in Safari\'s extension settings.',
-        migrationSafariCheckEveryProfile: 'Check every Safari profile.',
-        migrationSafariProfilesAffected: 'Affected Safari profiles:',
-        migrationSafariProfilesMore: ', +{n} more',
-        migrationSafariProfileDefaultName: '(Default Safari profile)',
-        migrationScreenshotCaptionStep: 'Step {n}: {label}',
-        migrationScreenshotStepOnly: 'Step {n}',
-        migrationShotChromeStep1: 'In Chrome extension settings, open details for ReDD Focus',
-        migrationShotChromeStep2: 'Enable ReDD Focus and allow it in Incognito windows',
-        migrationShotEdgeStep1: 'Open Edge extension settings',
-        migrationShotEdgeStep2: 'Open Details for ReDD Focus and allow it in InPrivate windows',
-        migrationShotFirefoxStep1: 'Find ReDD Focus',
-        migrationShotFirefoxStep2: 'Allow in Private Windows',
-        migrationShotSafariCap1: 'First open Safari\'s Extension settings...',
-        migrationShotSafariCap2: 'Then i) enable ReDD Focus, ii) allow in private browsing, iii) allow it to block on all websites',
-        migrationShotAutomationStep1: 'System Settings → Automation',
-        // Browser protection — grace banners (countdown / post-close)
-        enforcerClosingHeadline: 'Browser enforcement is closing {browser} soon',
-        enforcerClosingNowHeadline: 'Closing {browser}…',
-        enforcerCountdownRemaining: 'remaining',
-        enforcerClosedStatus: 'closed',
-        enforcerCountdownInstrMissing: 'ReDD Focus is not installed. Install it to stop the countdown.',
-        enforcerCountdownInstrDisabled: 'ReDD Focus is turned off. Enable it to stop the countdown.',
-        enforcerCountdownDelayNote: '(changes can take up to 20 seconds to detect).',
-        enforcerCountdownInstrPrivate: 'Blocking is not enabled in private windows. Enable Allow in incognito for ReDD Focus to stop the countdown.',
-        enforcerCountdownInstrWebsiteAccess: 'ReDD Focus is not allowed on all websites. Allow all websites to stop the countdown.',
-        enforcerCountdownInstrAccess: 'ReDD Blocker can’t verify ReDD Focus. Grant access to stop the countdown.',
-        enforcerCountdownInstrDefault: 'ReDD Focus is not ready. Finish setup to stop the countdown.',
-        enforcerCountdownInstrMultiple: 'Fix ReDD Focus in each browser below to stop the countdown.',
-        enforcerCountdownDefault: '{browser} will be auto-closed if ReDD Focus is not ready, to support your blocking.',
-        enforcerCountdownMissing: '{browser} will be auto-closed if ReDD Focus is not installed, to support your blocking.',
-        enforcerCountdownDisabled: '{browser} will be auto-closed if ReDD Focus is not enabled, to support your blocking.',
-        enforcerCountdownPrivate: '{browser} will be auto-closed if ReDD Focus is not enabled in private windows, to support your blocking.',
-        enforcerCountdownWebsiteAccess: '{browser} will be auto-closed if ReDD Focus is not allowed on all websites, to support your blocking.',
-        enforcerCountdownAccess: '{browser} will be auto-closed if ReDD Focus cannot be verified, to support your blocking.',
-        enforcerHeadlineMissing: 'ReDD Focus isn’t set up in {browser} yet.',
-        enforcerInstrMissing: 'Install ReDD Focus for {browser}.',
-        enforcerHeadlineDisabled: 'ReDD Focus is off in {browser}.',
-        enforcerHeadlinePrivate: 'Private windows in {browser} aren’t covered by ReDD Focus yet.',
-        enforcerHeadlineWebsiteAccess: '{browser} hasn’t given ReDD Focus access on every website yet.',
-        enforcerInstrWebsiteAccessPlain: 'In {browser} extension settings, allow ReDD Focus on all websites.',
-        enforcerHeadlineAccess: 'ReDD Blocker can’t verify ReDD Focus in {browser}.',
-        enforcerInstrAccessSafari: 'Open Safari extension settings and finish ReDD Focus setup.',
-        enforcerInstrAccessBrowser: 'Grant access so ReDD Blocker can help verify {browser}.',
-        enforcerHeadlineDefault: 'ReDD Focus isn’t ready in {browser} yet.',
-        enforcerInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
-        enforcerActionInstall: 'Install ReDD Focus',
-        enforcerActionOpenExtensions: 'Open {browser} extensions',
-        enforcerActionOpenBrowserSettings: 'Open {browser} settings',
-        enforcerClosedMissing: '{browser} was closed to support your block—ReDD Focus wasn’t installed yet.',
-        enforcerClosedDisabled: '{browser} was closed to support your block—ReDD Focus was turned off.',
-        enforcerClosedPrivate: '{browser} was closed to support your block—private windows were still a loophole.',
-        enforcerClosedWebsiteAccess: '{browser} was closed to support your block—ReDD Focus couldn’t cover every site yet.',
-        enforcerClosedAccess: '{browser} was closed so your protection could stay clear—ReDD Blocker couldn’t verify ReDD Focus.',
-        enforcerClosedDefault: '{browser} was closed to support your block—ReDD Focus wasn’t fully ready.',
-        enforcerClosedCombinedMissing: '{browser} were closed to support your block—ReDD Focus wasn’t installed yet.',
-        enforcerClosedCombinedDisabled: '{browser} were closed to support your block—ReDD Focus was turned off.',
-        enforcerClosedCombinedPrivate: '{browser} were closed to support your block—private windows were still a loophole.',
-        enforcerClosedCombinedWebsiteAccess: '{browser} were closed to support your block—ReDD Focus couldn’t cover every site yet.',
-        enforcerClosedCombinedAccess: '{browser} were closed so your protection could stay clear—ReDD Blocker couldn’t verify ReDD Focus.',
-        enforcerClosedCombinedDefault: '{browser} were closed to support your block—ReDD Focus wasn’t fully ready.',
-        enforcerClosedInstrPrivateChrome: 'In Chrome: ReDD Focus → Details → Allow in Incognito.',
-        enforcerClosedInstrPrivateFirefox: 'In Firefox: ReDD Focus → Run in Private Windows → Allow.',
-        enforcerClosedInstrPrivateGeneric: 'Enable private-window access before reopening.',
-        enforcerClosedInstrMultiple: 'Fix ReDD Focus in each browser below before reopening them.',
-        enforcerClosedInstrDisabled: 'In {browser} extensions, turn ReDD Focus back on.',
-        enforcerClosedInstrMissing: 'Reopen {browser} — ReDD Focus will install automatically. (Or click Install below to add it manually.)',
-        enforcerClosedInstrWebsiteAccess: 'In {browser} extension settings, allow ReDD Focus on all websites.',
-        enforcerClosedInstrAccessSafari: 'Open Safari → Settings → Extensions and finish ReDD Focus setup.',
-        enforcerClosedInstrDefault: 'Finish ReDD Focus setup in {browser} extensions.',
-        // macOS Automation issue: ReDD Blocker lost the per-browser
-        // Automation grant, so it can't redirect blocked tabs.
-        enforcerHeadlineAutomation: 'ReDD Blocker can’t control {browser} right now.',
-        enforcerCountdownInstrAutomation: 'Switch Automation back on to keep your block.',
-        enforcerInstrAutomation: 'Switch ReDD Blocker back on for {browser} under System Settings → Privacy & Security → Automation, then your block will work again.',
-        enforcerClosedAutomation: '{browser} was closed because ReDD Blocker couldn’t control it.',
-        enforcerClosedInstrAutomation: 'Switch ReDD Blocker back on for {browser} under Privacy & Security → Automation.',
-        enforcerClosedCombinedAutomation: '{browser} were closed because ReDD Blocker couldn’t control them.',
-        enforcerClosedInstrAutomationGeneric: 'Switch ReDD Blocker back on for {browser} under Privacy & Security → Automation.',
-        enforcerBrowserFallback: 'your browser',
-        gracePeriodLabel: 'Grace period',
-        gracePeriodHint: 'Seconds to re-enable before the browser closes.',
-        settingsEnforcementHeading: 'Enforcement',
-        settingsBlockingMethodHeading: 'Blocking mechanism',
-        settingsBlockingMethodHint: 'Whether website blocking should use Automation or the ReDD Focus browser extension (try the latter if blocking is lagging).',
-        settingsBlockingMethodAutomation: 'Automation',
-        settingsBlockingMethodExtension: 'Extension',
-        settingsBlockingMethodChrome: 'Chrome',
-        settingsBlockingMethodBrave: 'Brave',
-        settingsBlockingMethodEdge: 'Edge',
-        settingsBlockingMethodSafari: 'Safari',
-        settingsEnforcementRowLabel: 'Auto-close browser if protection stops',
-        settingsEnforcementRowHintMacAutomation: 'If Automation is switched off mid-block.',
-        settingsEnforcementRowHintMacFirefox: 'If Automation is switched off — or ReDD Focus is disabled in Firefox — mid-block.',
-        settingsEnforcementRowHintExtension: 'If ReDD Focus is disabled mid-block.',
-        settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
-        settingsDiagnosticsLabel: 'Something not working?',
-        onboardingOpenSourceFootnote:
-            'Developed by the Reduce Digital Distraction Project, with researchers at the University of Oxford and University of Maastricht. ReDD is a not-for-profit creating open-source digital focus tools.',
-        settingsSetupBtn: 'Setup',
-        settingsDiagnosticsBtn: 'Diagnostics',
-        diagnosticsLoadingBtn: 'Loading…',
-        diagnosticsModalTitle: 'Diagnostics',
-        diagnosticsRefresh: 'Refresh',
-        diagnosticsCopyReport: 'Copy to Clipboard',
-        diagnosticsCopied: 'Copied!',
-        diagnosticsCopyFailed: 'Copy failed',
-        diagnosticsGenerated: 'Generated',
-        diagnosticsGeneratedLocal: 'local',
-        diagnosticsAppSection: 'App',
-        diagnosticsOsArch: 'OS / arch',
-        diagnosticsLeftoverFiles: 'Leftover files',
-        diagnosticsFullyMigrated: 'None — fully migrated',
-        diagnosticsWasV1x: 'Was a v1.x install',
-        diagnosticsStampedVersion: 'Stamped version',
-        diagnosticsStampedAt: 'Stamped at',
-        diagnosticsBrowsersSection: 'Browsers (extension)',
-        diagnosticsBrowsersSectionHintMac: 'Browsers listed here use macOS Automation (see above).',
-        diagnosticsBrowsersSectionHintMacExtension: 'Browsers listed here use the ReDD Focus extension (install, enable, and allow private browsing).',
-        diagnosticsBrowsersSectionHint: 'Status of the ReDD Focus extension in browsers on this computer.',
-        diagnosticsAutomationSection: 'Automation (macOS)',
-        diagnosticsAutomationSectionHint: 'ReDD Blocker needs Automation permission to redirect blocked tabs in each browser. Grant in System Settings → Privacy & Security → Automation.',
-        diagnosticsThAutomation: 'Automation',
-        diagnosticsAutomationGranted: 'Allowed',
-        diagnosticsAutomationDenied: 'Denied',
-        diagnosticsAutomationUnknown: 'Unknown',
-        diagnosticsEnforcementSection: 'Enforcement',
-        diagnosticsMigrationSection: 'Migration from v1.x',
-        diagnosticsGracePeriod: 'Grace period',
-        diagnosticsAutostart: 'Autostart at login',
-        diagnosticsForceClose: 'Close browsers if ReDD Focus is disabled during block',
-        diagnosticsForceCloseEnabled: 'Enabled',
-        diagnosticsForceCloseDisabled: 'Disabled',
-        diagnosticsFullDiskAccess: 'Full Disk Access',
-        diagnosticsFdaLiveGranted: 'FDA granted (live)',
-        diagnosticsSafariPlistReadable: 'Safari plist readable',
-        diagnosticsOnboardingMarker: 'Onboarding marker',
-        diagnosticsSafariFdaRequired: 'Safari FDA required',
-        diagnosticsFdaGranted: 'Granted',
-        diagnosticsFdaNotGranted: 'Not granted',
-        diagnosticsFdaRevoked: 'Revoked',
-        diagnosticsActiveBlocks: 'Active blocks',
-        diagnosticsRecentLogSection: 'Recent log (last {n} lines)',
-        diagnosticsCurrentlyBlocking: 'Currently being blocked',
-        diagnosticsActiveSources: 'Active blocklists',
-        diagnosticsActiveSourcesNone: 'None',
-        diagnosticsDomainsCount: 'Domains ({n})',
-        diagnosticsAppsCount: 'Apps ({n})',
-        diagnosticsAppDataSection: 'App data (redd-block-data.json)',
-        diagnosticsPath: 'Path',
-        diagnosticsWatchdog: 'Watchdog Scheduled Task',
-        diagnosticsMarkerNotSet: 'not set',
-        diagnosticsBrowserReady: 'Ready',
-        diagnosticsBrowserNotRunning: 'Not running',
-        diagnosticsBrowserNotInstalled: 'Not installed',
-        diagnosticsAdvancedLog: 'Recent log',
-        diagnosticsAdvancedBlocking: 'Currently being blocked',
-        diagnosticsAdvancedAppData: 'App data',
-        diagnosticsThBrowser: 'Browser',
-        diagnosticsThExtInstalled: 'Installed',
-        diagnosticsThExtEnabled: 'Enabled',
-        diagnosticsThExtPrivate: 'Private tabs',
-        diagnosticsYes: 'Yes',
-        diagnosticsNo: 'No',
-        settingsOnboardingBtn: 'Onboarding',
-        settingsBlocklistsIoLabel: 'Blocklists & schedules',
-        settingsBlocklistsIoHint: 'Save a backup or restore from a file.',
-        settingsExportBlocklistsBtn: 'Export',
-        settingsImportBlocklistsBtn: 'Import',
-        exportBlocklistsSaveTitle: 'Export blocklists',
-        exportBlocklistsFailedTitle: 'Failed to export blocklists',
-        exportBlocklistsSuccessTitle: 'Successfully exported blocklists',
-        exportBlocklistsEmpty: 'There are no blocklists to export.',
-        exportBlocklistsSuccessFmt: 'Exported {n} blocklist(s) and their schedules to:\n{path}',
-        exportBlocklistsFailed: 'There was an error exporting your blocklists. Please try again.',
-        importBlocklistsOpenTitle: 'Import blocklists',
-        importBlocklistsDialogTitle: 'Import blocklists',
-        importBlocklistsFailedTitle: 'Failed to import blocklists',
-        importBlocklistsSuccessTitle: 'Successfully imported blocklists',
-        importBlocklistsInvalidFile: 'The selected file does not contain any valid blocklists.',
-        importBlocklistsParseFailed: 'There was an error reading the selected file. Please make sure it is valid JSON.',
-        importBlocklistsConfirmFmt:
-            'Import {n} blocklist(s) from this file?\n\nThey will be added to your existing blocklists. Any schedules will be restored as drafts — start them manually when you are ready.',
-        importBlocklistsSuccessFmt: 'Imported {n} blocklist(s) and their schedules. Schedules were restored as drafts — start them manually when you are ready.',
-        importBlocklistsFailed: 'There was an error importing your blocklists. Please try again.',
-        importBlocklistDefaultName: 'Imported blocklist',
-        gracePeriodLockedHint: 'Locked while a block is active—only shorter times allowed.',
-        appBlockingLetsGo: 'Let’s go!',
-        appBlockingSnoozeBtn: 'Snooze for 2 mins',
-        appBlockingFallbackBlocklistName: 'this block',
-        appBlockingUnknownApp: 'Unknown app',
-        appBlockingBannerAppFallback: 'an app',
-        appBlockingWarningHeadingHtml: '<strong>{name}</strong> is starting',
-        appBlockingWarningSummarySingleHtml:
-            '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
-        appBlockingWarningSummaryMultiHtml:
-            '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
-        appBlockingClosedownCountdownHtml:
-            'Closing {apps} in <strong>{seconds}s</strong> — save your work now.',
-        appBlockingClosedownFinalSingleHtml: 'Closing {apps} now…',
-        appBlockingClosedownFinalMultiHtml:
-            'Closing {apps} now — saving any pending dialogs in them…',
-        appBlockingListMoreFmt: '{n} more',
-        settingsFeedbackFooterHtml:
-            'Feedback or suggestions? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a> or email <a href="mailto:team@reddfocus.org">team@reddfocus.org</a>.',
-        madeWith: 'Made with',
-        by: 'by',
-        andWord: 'and',
-        nothingWord: 'nothing',
-        noItems: 'No items',
-        noBlocklistsYet: 'No blocklists yet',
-        clickHereCreateBlocklist: 'Click here to create one',
-        typeHere: 'Type here...',
-        placeholderNameExample: 'e.g., Social Media',
-        placeholderWebsiteExample: 'e.g., facebook.com',
-        placeholderAppExample: 'e.g., Safari',
-        invalidDomainMsg: 'Please enter a valid domain (e.g. reddit.com)',
-        cannotBlockDomainPlaceholder: '⚠️ Can\'t block this domain!',
-        cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block ReDD Blocker itself!',
-        // Start/schedule controls
-        durationQuick15m: '15m',
-        durationQuick30m: '30m',
-        durationQuick45m: '45m',
-        durationQuick1Hour: '1 hour',
-        durationQuick2Hours: '2 hours',
-        durationQuickAlways: 'Until I stop',
-        alwaysOnMessage: 'You will stay in this room until you pause or exit it',
-        duration: 'Duration',
-        durationUnitMin: 'min',
-        end: 'End',
-        nextDay: 'day',
-        quickSelect: 'For how long?',
-        start: 'Start',
-        days: 'Days',
-        add: 'Add times',
-        scheduleWhenHeading: 'Starts automatically at',
-        segmentDaysWeekdays: 'Weekdays',
-        segmentDaysWeekends: 'Weekends',
-        segmentDaysEveryDay: 'Every day',
-        segmentDaysNone: 'No days',
-        segmentDone: 'Done',
-        segmentDelete: 'Delete',
-        repeat: 'Repeat:',
-        repeatNo: 'No',
-        repeatForever: 'Forever',
-        repeatUntilDate: 'Until date',
-        pause: 'Pause',
-        startBlockButton: 'Start focus space',
-        startScheduleButton: 'Start Schedule',
-        stopScheduleButton: 'Stop Schedule',
-        /** Shown inside .btn-blocklist-meta before emoji+name when Stop is shown; hidden with meta on narrow layouts. */
-        stopBlockMetaColon: ':',
-        stopScheduleMetaColon: ':',
-        editScheduleButton: 'Edit Schedule:',
-        pendingChangesLabel: 'Unsaved changes',
-        pendingChangesSave: 'Save changes',
-        pendingChangesDiscard: 'Discard',
-        saveChangesTitle: 'Save changes?',
-        saveChangesTitleFmt: 'Save changes to {name}?',
-        addingTheseSegments: 'Adding these time segments:',
-        // Blocklist modal
-        createBlocklist: 'Create focus space',
-        editBlocklist: 'Edit focus space',
-        activeBlocklistWarning: 'This blocklist is active. Some settings are locked.',
-        name: 'Name',
-        websites: 'Websites to block',
-        websitesTooltip: 'Blocking applies to entire domains. For example, typing "facebook.com" blocks all of Facebook, not just specific pages.',
-        apps: 'Apps to block',
-        appsTooltip: 'Enter the exact name of the application (e.g. \'Safari\'). You can also use the folder button to find the app.',
-        overrideDifficulty: 'Stop Difficulty',
-        overrideMethod: 'Method',
-        overrideWordsToType: 'Words to type',
-        overrideCharsToType: 'Characters to type',
-        overrideRandomWords: 'Random Words',
-        overrideGibberish: 'Random Gibberish',
-        overrideCustomText: 'Custom Text',
-        overrideMaxDifficulty: 'Max difficulty',
-        overrideMaxDifficultyHintWords: '{count} words',
-        overrideMaxDifficultyHintChars: '{count} characters',
-        overridePreviewLooksLike: 'Looks like',
-        overrideCountTimeEstimate: '~{minutes} min',
-        overrideCountTimeEstimateDa: '~{minutes} {unit}',
-        totalCharacters: 'total characters',
-        totalWords: 'total words',
-        color: 'Color',
-        emoji: 'Emoji',
-        advancedOptions: 'Advanced options',
-        listBlockedOnCard: 'Show names of blocked websites & apps in the overview',
-        importWebsitesTitle: 'Import websites',
-        browseApplicationsTitle: 'Browse Applications',
-        modalPremadeListsCaption: 'Lists',
-        modalBrowseAppsCaption: 'Select Apps',
-        modalBrowseAppsTitleIos: 'Select Apps (Screen Time)',
-        importWebsitesPickFileTitle: 'Select a file with one domain per line',
-        importWebsitesFromFile: 'From text file…',
-        importWebsitesPreMadeList: 'Pre-made list',
-        importPresetEmail: 'Email',
-        importPresetGambling: 'Gambling',
-        importPresetNews: 'News',
-        importPresetPorn: 'Porn',
-        importPresetSearchEngines: 'Search engines',
-        importPresetShopping: 'Shopping',
-        importPresetSocialMedia: 'Social media',
-        cancel: 'Cancel',
-        save: 'Save',
-        // Override / pause / confirmation modals
-        stopFocusSpaceTitle: 'Stop focus space?',
-        overrideInstruction: 'To stop this focus space early, type the following:',
-        stopBlockSubtitleFmt: 'This focus space is still active — <strong>{remaining}</strong> left.',
-        stopBlockSubtitleAlways: 'This focus space runs until you stop it.',
-        stopScheduleSubtitle: 'This scheduled focus space is currently active.',
-        stopBlock: 'Stop focus space',
-        stopSchedule: 'Stop Schedule',
-        pauseFocusSpaceTitle: 'Pause focus space?',
-        pauseBlockSubtitleFmt: 'Take a break — this focus space has <strong>{remaining}</strong> left.',
-        pauseBlockSubtitleAlways: 'Take a break — choose how long blocking pauses below.',
-        pauseScheduleSubtitle: 'Blocking will pause for the time you choose below.',
-        pauseScheduleInactiveSubtitle: 'No scheduled block is active now. Upcoming scheduled blocks will be paused until pause ends.',
-        pauseInstruction: 'To pause this focus space, type the following:',
-        pauseBlock: 'Pause focus space',
-        pauseFor: 'PAUSE FOR',
-        restartsAt: 'RESTARTS AT',
-        helperSetupTitle: 'Setup Required',
-        helperSetupText: 'To block websites when the app is closed, ReDD Blocker needs to install a small background service. Your computer will prompt you for your password once — after that, blocks will start instantly without asking again.',
-        helperRepairTitle: 'Helper Repair Required',
-        helperRepairText: 'A helper service is already installed, but it is not running right now. ReDD Blocker needs to reinstall or repair it before this block can start. Your computer may prompt you for your password to complete the repair.',
-        helperUpdateTitle: 'Helper Update Required',
-        helperUpdateText: 'A helper service is already installed, but it needs an update before this block can start. Your computer will prompt you for your password to apply the update.',
-        helperOpenSourceLink: 'open source code for ReDD Blocker here',
-        proceed: 'Proceed',
-        reinstallHelper: 'Reinstall Helper',
-        helperInstalling: 'Installing...',
-        helperUpdating: 'Updating...',
-        helperReinstalling: 'Reinstalling...',
-        startThisBlock: 'Start focus space?',
-        startBlockTitleFmt: 'Start focus space “{name}”?',
-        resumeBlockTitleFmt: 'Resume the block “{name}”?',
-        startBlockSubtitleFmt: 'Your blocked websites and apps go quiet for the next <strong>{duration}</strong>.',
-        startBlockSubtitleAlways: 'Your blocked websites and apps go quiet until you exit the room.',
-        resumeBlockSubtitle: 'Pick up where you left off with this block.',
-        startConfirmBlockingLabel: 'Blocking',
-        startConfirmDurationLabel: 'Duration',
-        startConfirmTimesLabel: 'Times',
-        startConfirmRepeatsLabel: 'Repeats',
-        startConfirmDurationLineFmt: '{duration} · <span class="start-confirm-duration-meta">ends ~{ends}</span>',
-        startConfirmRepeatForever: 'Every week · no end date',
-        startConfirmRepeatUntilFmt: 'Every week · until {date}',
-        startConfirmRepeatNone: 'One week only · no repeat',
-        startBlockHoldHeader: 'Leaving early takes a moment — on purpose.',
-        startScheduleHoldHeader: 'Leaving early takes a moment — on purpose.',
-        saveChangesHoldHeader: 'Leaving early takes a moment — on purpose.',
-        blockedWebsites: 'Blocked websites:',
-        blockedApps: 'Blocked apps:',
-        showAll: 'show all',
-        confirmDuration: 'Duration:',
-        confirmOverrideNeed: 'To stop this block early, you\'ll need to:',
-        startBlock: 'Start focus space',
-        resumeBlock: 'Resume Block',
-        resumeThisBlock: 'Resume this block?',
-        alwaysUntilOff: 'Always (until you pause or exit)',
-        scheduleResumingSegment: 'Schedule (resuming current segment)',
-        startThisSchedule: 'Start this schedule?',
-        startScheduleTitleFmt: 'Start the schedule “{name}”?',
-        startScheduleSubtitle: 'Your blocked websites and apps go quiet at the times shown below.',
-        scheduleConfirmOverlayLabel: 'Start alert',
-        scheduleActiveOverlayLabel: 'Start alert:',
-        scheduleConfirmOverlayDefaultTitle: 'Default',
-        scheduleConfirmOverlayCustomTitle: 'Custom alert',
-        scheduleConfirmOverlayDefaultDesc:
-            'Shown if blocked apps are open when a block begins — lists the apps with a “Let\'s go” button.',
-        scheduleConfirmOverlayCustomDesc:
-            'Your customised title, message, image, voice, and button label.',
-        scheduleConfirmOverlayDefault: 'Default (which apps & Let\'s go button)',
-        scheduleConfirmOverlayCustom: 'Custom',
-        scheduleOverlayCustomiseTitleFmt: 'Customise the "{name}" alert',
-        scheduleOverlayCustomiseTitleDefault: 'Customise the alert',
-        scheduleOverlayCustomiseDefaultTitle: 'Default alert',
-        scheduleOverlaySelectLabel: 'Select alert',
-        scheduleOverlayUnsavedBadge: 'Unsaved',
-        scheduleOverlaySelectNew: 'New alert',
-        scheduleOverlayDiscardConfirmTitle: 'Discard unsaved changes?',
-        scheduleOverlayDiscardConfirmStrong: 'You have unsaved changes to this alert.',
-        scheduleOverlayDiscardConfirmBody: 'If you leave now, your edits will be lost.',
-        scheduleOverlayDiscardConfirmBtn: 'Discard changes',
-        scheduleOverlayKeepEditingBtn: 'Keep editing',
-        scheduleOverlayDefaultNotice:
-            'The default start alert can\'t be edited. Add a new alert to customise with your own title, message, image, and/or voice.',
-        scheduleOverlayAddNewBtn: 'Add new alert',
-        scheduleOverlayDeleteBtn: 'Delete alert',
-        scheduleOverlayDeleteConfirmTitle: 'Delete alert?',
-        scheduleOverlayDeleteConfirmStrongFmt: 'Are you sure you want to delete "{name}"?',
-        scheduleOverlayDeleteConfirmBody:
-            'Any schedules using this start alert will use the default alert instead.',
-        scheduleOverlayNameLabel: 'Name',
-        scheduleOverlayNamePlaceholder: 'e.g. Morning nudge',
-        scheduleOverlayNameRequired: 'Give this alert a name before saving.',
-        scheduleOverlayLegacyPresetName: 'Custom alert',
-        scheduleOverlayCustomiseSubtitle:
-            'Shown full-screen if blocked apps are open when a scheduled block is about to begin.',
-        scheduleOverlayHeadingLabel: 'Title',
-        scheduleOverlayHeadingPlaceholdersHint: 'Placeholder: {name} — blocklist name.',
-        scheduleOverlayHeadingPlaceholder: '{name} is starting',
-        scheduleOverlayMessageLabel: 'Message',
-        scheduleOverlayMessagePlaceholdersHint:
-            'Placeholders: {apps} — blocked apps; {letsGo} — button label.',
-        scheduleOverlayNoBlockedAppsHint:
-            'This blocklist has no blocked apps. The alert only appears when a listed app is already running at schedule start.',
-        scheduleOverlayMessagePlaceholderFmt:
-            '{apps} — time to wrap up. When you tap {letsGo}, you\'ll have 30 seconds to save your work before we close them.',
-        scheduleOverlayMessagePlaceholderNoApps:
-            'Leave blank for the default message about blocked apps.',
-        scheduleOverlayLetsGoFieldLabel: '"Let\'s go" button',
-        scheduleOverlayImageLabel: 'Image',
-        scheduleOverlayImageDefaultStatus: 'Using your blocklist emoji',
-        scheduleOverlayImageCustomStatus: 'Using your uploaded image',
-        scheduleOverlayImageDropHint: 'Choose an image on your computer (PNG, JPG, GIF, or WebP).',
-        scheduleOverlayUnsupportedImage: 'Unsupported image type. Use PNG, JPG, GIF, or WebP.',
-        scheduleOverlayVoiceLabel: 'Voice message',
-        scheduleOverlayVoiceHelp:
-            'Plays once the \'Let\'s go\'-button is pressed.',
-        scheduleOverlayChooseImage: 'Upload',
-        scheduleOverlayRecordVoice: 'Record',
-        scheduleOverlayStartingRecording: 'Starting microphone…',
-        scheduleOverlayStopRecording: 'Stop recording',
-        scheduleOverlayChooseAudio: 'Choose file…',
-        scheduleOverlayPreviewLabel: 'Preview',
-        scheduleOverlaySaveBtn: 'Save alert',
-        scheduleOverlayCharCountFmt: '{count} / {max}',
-        scheduleOverlaySectionReset: 'Reset',
-        scheduleOverlayMicUnavailable: 'Microphone access is unavailable. Try choosing an audio file instead.',
-        scheduleOverlayEmptyRecording: 'No audio was captured. Try recording for a little longer.',
-        scheduleOverlayCustomiseBtn: 'Customise',
-        errorTitle: 'Error',
-        repeatLabel: 'Repeat:',
-        confirmScheduleOverrideNeed: 'To stop this blocking schedule, you\'ll need to:',
-        saveChangesOverrideNeed: 'To stop this schedule, you\'ll need to:',
-        /** Start/resume confirmation: friction description — placeholders {count},{charUnit},{minutes} */
-        confirmOverrideRandomWordsFmt:
-            'Type <strong>{count} {charUnit} exactly as shown</strong> (~{minutes} min) to exit.',
-        confirmOverrideRandomWordsIosFmt:
-            'Type <strong>{count} random {wordUnit} exactly as shown</strong> (~{minutes} min) to exit.',
-        confirmOverrideGibberishLettersFmt:
-            'Type <strong>{count} random {charUnit} exactly as shown</strong> (~{minutes} min) to exit.',
-        confirmOverrideGibberishWordsFmt:
-            'Type <strong>{count} random {wordUnit} exactly as shown</strong> (~{minutes} min) to exit.',
-        confirmOverrideGibberishShortFmt:
-            'Type <strong>{count} random characters exactly as shown</strong> (~{minutes} min) to exit.',
-        confirmOverrideCustomPhraseFmt:
-            'Type a <strong>{count}-character phrase exactly as shown</strong> (~{minutes} min) to exit.',
-        confirmOverrideIntentionSuffix: 'That helps you stick with your intention.',
-        startSchedule: 'Start Schedule',
-        noDaysSelected: 'No days selected',
-        runningSuffix: ' (Running)',
-        // Override all
-        overrideAllTitle: 'Stop All Blocks?',
-        overrideAllWarningStrong: 'Are you sure you want to stop all running blocks?',
-        overrideAllWarningBody: 'This will stop ANY currently running blocks for any website and app. It will also stop any future scheduled blocking.',
-        overrideAllInstruction: 'To do this, type the following:',
-        overrideAll: 'Stop All',
-        deleteUndoToastFmt: 'Deleted "{name}"',
-        undo: 'Undo',
-        // Settings
-        settingsTitle: 'Settings',
-        settingsDone: 'Done',
-        settingsGeneralHeading: 'General',
-        settingsManageHeading: 'Manage',
-        settingsOverrideAllHint: 'Ends every active block right now.',
-        settingsUninstallHint: 'Your blocklists are kept on disk.',
-        yourVersionPrefix: 'Version',
-        latestVersionPrefix: 'Latest version:',
-        lightDarkMode: 'Theme',
-        zoomLevel: 'Zoom level',
-        language: 'Language',
-        themeAuto: 'Auto',
-        themeLight: 'Light',
-        themeDark: 'Dark',
-        languageEnglish: 'English',
-        languageDanish: 'Danish',
-        languagePickerCurrent: 'Current language',
-        languagePickerSwitch: 'Switch to',
-        advancedOptions: 'Advanced options',
-        overrideAllBlocks: 'Stop All Blocks (with challenge)',
-        settingsOverrideAllLabel: 'Stop all blocks & schedules',
-        settingsOverrideAllBtn: 'Stop all',
-        // In-app uninstall (macOS only)
-        uninstallApp: 'Uninstall ReDD Blocker',
-        uninstallAppBtn: 'Uninstall…',
-        uninstallDisabledHint: 'Stop running blocks first before you can uninstall.',
-        uninstallConfirmTitle: 'Uninstall ReDD Blocker?',
-        uninstallConfirmLeadHtml: 'ReDD Blocker will be moved to the Trash. Your blocklists and schedules are <strong>kept on disk</strong>, so they\u2019ll be restored if you reinstall later.',
-        uninstallConfirmLeadDeleteHtml: 'ReDD Blocker will be moved to the Trash. Your blocklists, schedules, and settings will be <strong>permanently deleted</strong> from this Mac.',
-        uninstallDeleteDataLabel: 'Also delete my blocklists, schedules, and settings',
-        uninstallFinderWarningHtml: 'If macOS asks you to allow ReDD Blocker to control <strong>Finder</strong>, click <strong>Allow</strong> \u2014 that\u2019s how the app moves itself to the Trash.',
-        uninstallFirefoxCalloutTitle: 'ReDD Focus extension in Firefox',
-        uninstallExtFirefoxBadge: 'Stays installed',
-        uninstallFirefoxCalloutDetailHtml: 'You can continue to use ReDD Focus to hide distracting parts of websites. To remove it, open Firefox add-ons settings \u2014 copy {URL_CHIP} and paste it into the address bar.',
-        uninstallConfirmOk: 'Uninstall',
-        uninstallFailedTitle: 'Uninstall failed',
-        uninstallFailed: 'Could not complete uninstall.',
-        // Windows Settings uninstall guidance
-        windowsUninstallHint: 'Settings \u2192 Installed apps \u2192 ReDD Blocker',
-        windowsUninstallOpenSettingsBtn: 'Open settings',
-        windowsUninstallOpenFailedTitle: 'Could not open Settings',
-        windowsUninstallOpenFailed: 'Windows Settings could not be opened. Open Settings manually, go to Apps \u2192 Installed apps, and search for ReDD Blocker.',
-        macAutomationIntroBadge: 'What\u2019s new',
-        macAutomationIntroTitle: 'Website blocking on macOS works a little differently now',
-        macAutomationIntroLeadHtml: 'To make blocking easier to set up, most browsers now use <strong>macOS Automation</strong> instead of the ReDD Focus extension. Here\u2019s the new setup.',
-        macAutomationIntroAutomationBrowsers: 'Safari, Chrome, Edge & Brave',
-        macAutomationIntroAutomationMethod: 'macOS Automation',
-        macAutomationIntroFirefoxLabel: 'Firefox',
-        macAutomationIntroExtensionMethod: 'ReDD Focus extension',
-        macAutomationIntroUnchangedHtml: '<span class="mac-automation-intro-unchanged-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" fill="currentColor"></circle><path d="M7 12.5l3 3 7-7" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><span class="mac-automation-intro-unchanged-text">Your <strong>blocklists and schedules are unchanged</strong> \u2014 nothing to redo.</span>',
-        macAutomationIntroReviewBtn: 'Review browser setup',
-        macAutomationIntroDismissBtn: 'Got it',
-        helperService: 'Helper service',
-        helperStatusChecking: 'Checking...',
-        helperStatusActive: 'Active',
-        helperStatusIdle: 'Idle',
-        helperStatusInstalledNotReachable: 'Installed, not reachable',
-        helperStatusUpdateAvailable: 'Update available',
-        helperStatusNotInstalled: 'Not installed',
-        helperStatusUnknown: 'Unknown',
-        updateHelper: 'Update Helper',
-        uninstallHelper: 'Uninstall Helper',
-        helperRemoving: 'Removing...',
-        helperRemoved: 'Helper removed',
-        helperRemovedSuccess: 'Helper service removed successfully.',
-        helperRemovedFallback: 'Helper service removed using fallback cleanup because the installed helper was not responding normally.',
-        helperRemoveStaleHint: 'Installed, but not currently running. You can remove the stale helper before reinstalling it.',
-        cleanHostsFile: 'Clean hosts file',
-        helperHint: 'Remove all ReDD Blocker entries from your system\'s hosts file. Use this if websites remain blocked after all blocks have been stopped.',
-        close: 'Close',
-        // Time/date words
-        dayAbbrev: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
-        dayAbbrevMon0: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-        /** Single-letter row for schedule day toggles when the three-letter row does not fit (Mon..Sun). */
-        dayLetterMon0: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
-        locale: 'en-US',
-        // Duplicate naming: localized via blocklistDuplicateSuffix
-        blocklistDuplicateSuffix: 'copy',
-    },
-    da: {
-        // Main shell
-        updateBannerPrefix: 'Version',
-        updateBannerSuffix: 'er tilgængelig',
-        updateBannerCurrentFmt: 'Du bruger {version}',
-        updateBannerCta: 'Geninstaller',
-        updateBannerDownloading: 'Downloader…',
-        updateBannerDownloadingFmt: 'Downloader… {percent}%',
-        updateBannerOpeningInstaller: 'Åbner installationsprogram…',
-        updateBannerDownloadFailedTitle: 'Opdatering mislykkedes',
-        updateBannerDownloadFailed: 'Kunne ikke hente opdateringen. Tjek din forbindelse og prøv igen.',
-        updateBannerInstallerOpenedTitle: 'Installationsprogram åbnet',
-        updateBannerInstallerOpened: 'Følg vejledningen i installationsprogrammet. ReDD Blocker genåbner automatisk, når opdateringen er færdig.',
-        updateBannerWhatsNew: 'Hvad er nyt?',
-        mainStartBlockTitle: 'Ind',
-        modeNow: 'Nu',
-        modeTimer: 'Timer',
-        modeSchedule: 'Skema',
-        selectionPrompt: 'Vælg et rum',
-        selectionPromptOption: 'Vælg et rum...',
-        yourBlocklists: 'Mine fokusrum',
-        blocklistCardMenuTitle: 'Valgmuligheder for blokliste',
-        blocklistCardDuplicate: 'Duplikér',
-        blocklistCardDelete: 'Slet',
-        blocklistCardEditTooltip: 'Rediger',
-        blocklistEnteringChip: 'Går ind',
-        blocklistScheduleStartsInMinutesFmt: 'starter om {n}m',
-        blocklistScheduleStartsInHoursFmt: 'starter om {n}t',
-        blocklistScheduleStartsInDaysFmt: 'starter om {n}d',
-        blocklistScheduleCompactMinutesFmt: 'om {n}m',
-        blocklistScheduleCompactHoursFmt: 'om {n}t',
-        blocklistScheduleCompactDaysFmt: 'om {n}d',
-        blocklistScheduleFallback: 'planlagt',
-        deleteBlocklistDeniedActiveBlockFmt:
-            'Kan ikke slette "{name}", mens blokeringen er aktiv. Stop blokeringen først.',
-        deleteBlocklistDeniedActiveScheduleFmt:
-            'Kan ikke slette "{name}", mens skemaet er aktivt. Stop skemaet først.',
-        scheduleTitle: 'Ugeskema',
-        today: 'I dag',
-        noActiveBlocks: 'Ingen aktive blokeringer',
-        alwaysOnRowLead: 'Altid tændt',
-        alwaysOnRowTimelineHint: 'vises ikke i tidslinjen',
-        nowBlockingLabel: 'BLOKERER NU',
-        nowBlockingUntil: 'indtil',
-        nowBlockingAlways: 'altid',
-        nowBlockingMenuAria: 'Handlinger for blok',
-        titleBarNoActiveBlocks: 'Ingen aktive blokeringer lige nu',
-        titleBarNextScheduleStarts: '{emoji} {name} starter {when}',
-        scheduleStartsToday: 'i dag kl.',
-        scheduleStartsTomorrow: 'i morgen kl.',
-        nowBlockingMenuEdit: 'Rediger',
-        nowBlockingMenuPause: 'Pause',
-        nowBlockingMenuStop: 'Stop',
-        scheduleFooterHint: 'Klik på en blok for at redigere',
-        setupBrowsersBannerHeadline: 'Aktivér ReDD Focus i dine browsere',
-        setupBrowsersBannerHeadlineMac: 'Tillad ReDD Blocker i dine browsere',
-        setupBrowsersBannerCta: 'Opsæt browsere',
-        setupBrowsersBannerDismissTitle: 'Skjul for denne session',
-        bannerTurnOnBrowserProtection: 'Slå browser-beskyttelse til',
-        bannerActionInstallIn: 'Installer i',
-        bannerActionAutomationIn: 'Tillad automatisering for',
-        bannerActionEnableIn: 'Aktivér i',
-        bannerActionPrivateBrowsingIn: 'Tillad privat browsing i',
-        bannerActionAllWebsitesIn: 'Tillad på alle websites i',
-        bannerActionSetUpIn: 'Opsæt i',
-        // First-run EULA gate
-        eulaAgreeAria: 'Jeg accepterer slutbrugerlicensaftalen og privatlivspolitikken',
-        eulaAgreeLineHtml:
-            'Jeg accepterer ReDD Projektets <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">slutbrugerlicensaftale</a>',
-        eulaNoteHtml:
-            'Bemærk, at vi ikke indsamler brugerdata — som beskrevet i vores <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">privatlivspolitik</a>.',
-        eulaContinueBtn: 'Fortsæt',
-        eulaContinueBusy: 'Arbejder…',
-        eulaBackBtn: 'Tilbage',
-        eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen for at fortsætte.',
-        eulaWelcomeIconAlt: 'ReDD Blocker-appikon',
-        eulaProjectBlurb:
-            'Udviklet af Reduce Digital Distraction Project sammen med forskere ved University of Oxford og Maastricht University. ReDD er en non-profit, der skaber open source digitale fokusværktøjer.',
-        // Welcome onboarding (before EULA)
-        welcomeOnboardingTitle: 'Velkommen til ReDD Blocker',
-        welcomeOnboardingSubtitle:
-            'Bloker distraherende apps og websites,\nog skab plads og ro til fokus.',
-        welcomeHowHeading: 'TRIN FOR AT KOMME I GANG (vi guider dig igennem det 😊)',
-        welcomeStep1TitleAutomationHtml: 'Tillad {APPLE}Automatisering',
-        welcomeStep1BodyAutomationHtml:
-            'I Safari, Chrome, Brave og Edge bruger <em>ReDD Blocker</em> Automatisering til at blokere websites. Vi beder dig om at tillade adgang.',
-        welcomeStep2TitleFirefoxHtml: 'Opsæt {LOGO}ReDD Focus i Firefox',
-        welcomeStep2BodyFirefoxHtml:
-            'Blokering i Firefox bruger vores <strong>ReDD Focus</strong>-udvidelse. Vi guider dig gennem installation fra Firefoxs tilføjelsesbutik.',
-        welcomeStep2TitleHtml: 'Slå blokering til i din browser og tillad den i private/incognito-faner',
-        welcomeStep2BodyHtml:
-            'Vores {LOGO}<strong>ReDD Focus</strong>-udvidelse er det, der faktisk blokerer websites. Vi installerer den automatisk i dine browsere, hvor vi kan, og viser dig, hvad du skal gøre.',
-        welcomeStep2TitleIosHtml: 'Giv adgang til Screen Time',
-        welcomeStep2BodyIosHtml:
-            '<em>ReDD Blocker</em> bruger Screen Time til at skærme apps og websites på iPhone og iPad. Vi beder om tilladelse før din første blokering.',
-        welcomeStep2TitleAndroidHtml: 'Slå Android Accessibility-blokering til',
-        welcomeStep2BodyAndroidHtml:
-            '<em>ReDD Blocker</em> bruger Android Accessibility til at registrere blokerede apps og websites og vise blokeringsskærmen. Vi åbner Android-indstillinger, så du kan slå det til.',
-        welcomeStep3TitleHtml: 'Vælg, hvad der skal blokeres',
-        welcomeStep3BodyHtml:
-            'Vælg de websites og apps, der distraherer dig, og bestem hvornår de skal være utilgængelige. <em>ReDD Blocker</em> klarer resten.',
-        welcomeDemoToggleLabel: 'Se det i aktion — 30 sek.',
-        welcomeDemoVideoCaption: 'Demo — blokeringslister og hvordan blokering føles',
-        welcomeDemoPlayAriaLabel: 'Afspil demovideo',
-        welcomeDemoResumeAriaLabel: 'Genoptag demovideo',
-        welcomeDemoPauseAriaLabel: 'Pause demovideo',
-        welcomeDemoFullscreenEnterAriaLabel: 'Fuld skærm',
-        welcomeDemoFullscreenExitAriaLabel: 'Afslut fuld skærm',
-        welcomeDemoCloseLabel: 'Luk',
-        welcomeFooter1Html:
-            'Udviklet af <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, en non-profit, der bygger open source digitale fokusværktøjer og kurser. I samarbejde med forskere ved University of Oxford og Maastricht University.',
-        welcomeFooter2Html:
-            '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
-        welcomeOnboardingContinueBtn: 'Kom i gang',
-        // Migration / extension onboarding overlay
-        migrationPreWelcomeTitle: 'Velkommen til ReDD Blocker 2.0',
-        migrationPreSubtitle: 'Et engangskridt er nødvendigt for at afslutte opgraderingen.',
-        migrationPreExplainerHtml: 'ReDD Blocker blokerer nu websites via en browserudvidelse i stedet for et systemværktøj.<br>Vi skal:',
-        migrationPreBulletHelper: 'Stoppe og fjerne det gamle privilegerede hjælpeprogram',
-        migrationPreBulletHostsHtml: 'Gendanne din <code>/etc/hosts</code>-fil (en backup beholdes)',
-        migrationPreBulletBlocklists: 'Beholde alle dine eksisterende bloklister',
-        migrationPreWarnHtml: 'Du vil få <strong>én</strong> prompt om administratoradgang. Under skiftet sættes blokering kortvarigt på pause. Efter oprydningen sætter ReDD Blocker <strong>ReDD Focus</strong> op i dine browsere automatisk — du skal bare tillade den i private/inkognitofaner.',
-        migrationContinue: 'Fortsæt',
-        migrationPostTitleCleanup: 'Oprydning fuldført',
-        migrationPostSubtitleCleanup: 'Næsten færdig — afslut opsætningen af ReDD Focus i hver browser, du bruger.',
-        migrationChecklistCleanedOld: 'Gammel version fjernet',
-        migrationChecklistBlocklistsPreserved: 'Dine bloklister er bevaret',
-        migrationChecklistExtLinesHtml: 'Aktivér {LOGO}ReDD Focus i dine browsere<br><span style="font-weight:400;opacity:0.7">og tillad den i privat- eller inkognitofaner</span>',
-        migrationExtTitleMac: 'Tillad ReDD Blocker i browsere',
-        migrationExtSubMac: 'Websiteblokering bruger <strong>macOS-automatisering</strong> i Safari, Chrome og Edge.',
-        migrationExtSubMacFirefox: 'I Safari, Chrome og Edge: <strong>macOS-automatisering</strong>.\nI Firefox: <strong>ReDD Focus-udvidelsen</strong>.',
-        migrationExtStep1Mac: 'Klik på <strong>Giv adgang</strong> for hver browser nedenfor, og godkend macOS-prompten. Hvis du ser <strong>Åbn Automatisering</strong>, klik på den og slå ReDD Blocker til igen.',
-        migrationExtStep2MacFirefox: 'Til Firefox: klik på <strong>Installer</strong> nedenfor for at tilføje {FOCUS}<strong>ReDD Focus</strong> fra tilføjelsesbutikken, og tillad den derefter i private vinduer.',
-        migrationHowtoHeading: 'Opsætning',
-        migrationHowtoLi1Html: 'ReDD Blocker har forsøgt at installere ReDD Focus i dine browsere. Hvis den vises som ikke installeret nedenfor, klik på <strong>Installer</strong>-knapperne for at tilføje den manuelt.',
-        migrationHowtoLi3Html: 'Når den er aktiveret, <strong>tillad den i privat/inkognito-faner</strong>, så blokering også virker i private vinduer.',
-        migrationBadgeAutomationOn: 'Tilladt',
-        migrationBadgeAutomationOff: 'Tilladelse mangler',
-        migrationBadgeAutomationUnknown: 'Status ukendt',
-        migrationAutomationAwaitingOpenHint: 'Åbn {browser}, så vi kan tjekke, om Automatisering er tilladt. macOS viser kun denne tilladelse, mens browseren kører.',
-        migrationAutomationGrantHint: 'Tillad ReDD Blocker at styre {browser}, så den kan lukke distraherende faner, mens en blokering kører.',
-        migrationAutomationDeniedHint: 'Tilladelse til {browser} er slået fra. Slå ReDD Blocker til igen under Automatisering, så blokering virker igen.',
-        migrationGrantAutomation: 'Giv adgang til {browser}',
-        migrationGrantAutomationOpened: 'Åbnede Automatisering',
-        migrationOpenAutomationSettings: 'Åbn Automatisering',
-        webAutomationBannerHeadline: 'Tillad ReDD Blocker at styre din browser',
-        webAutomationBannerBody: 'ReDD Blocker skal have tilladelse til at styre {browsers} for at blokere websteder. Slå det til under Anonymitet & sikkerhed → Automatisering, så træder blokeringen i kraft.',
-        migrationDone: 'Jeg er klar',
-        migrationSkip: 'Spring over for nu',
-        migrationSetupAllReady: '<strong>Alle fundne browsere er konfigureret.</strong> Du kan afslutte opsætningen.',
-        migrationEnforcementHeadline: 'Browser-beskyttelse',
-        migrationEnforcementDescMacAutomation: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra under blokering.',
-        migrationEnforcementDescMacFirefox: 'For at holde dig selv fokuseret bliver din <strong>browser automatisk lukket</strong>, hvis du slår Automatisering fra eller deaktiverer ReDD Focus under blokering.',
-        migrationEnforcementDescExtension: 'For at holde dig ansvarlig bliver din <strong>browser automatisk lukket</strong>, hvis du deaktiverer ReDD Focus under blokering.',
-        migrationEnforcementDisableNote: 'Når den er slået til, kan du kun slå håndhævelse fra, når ingen blokeringer kører.',
-        migrationApproveAdminPrompt: 'Godkend administratorprompt for at fortsætte …',
-        migrationTryAgain: 'Prøv igen',
-        migrationCleanupNeedAdmin: 'Vi har brug for den administrators tilladelse for at afslutte — dine bloklister er i sikkerhed.',
-        migrationCleanupRetryGeneric: 'Noget gik galt. Klik for at prøve igen.',
-        migrationCopied: 'Kopieret! ✓',
-        migrationSafariSettingsPath: 'Safari → Indstillinger → Udvidelser',
-        migrationPrivateIncognito: 'privat/inkognito',
-        migrationPrivateIncognitoChrome: 'Inkognito',
-        migrationPrivateIncognitoEdge: 'InPrivate',
-        migrationPrivateIncognitoBrave: 'Inkognito',
-        migrationPrivateIncognitoFirefox: 'private vinduer',
-        migrationPrivateIncognitoSafari: 'Privat browsing',
-        migrationComplianceOk: '✓ Installeret og tilladt i private faner',
-        migrationBadgeNotInstalled: 'Ikke installeret',
-        migrationBadgeDisabled: 'Deaktiveret',
-        migrationBadgeNotPrivate: 'Ikke tilladt i private faner',
-        migrationBadgeNoWebsiteAccess: 'Ingen webadgang',
-        migrationBadgeDuplicateSafari: '⚠ To kopier installeret',
-        migrationStatusDuplicateSafari: 'Deaktivér den ekstra kopi',
-        migrationSafariDuplicateIntroHtml: 'Du har <strong>ReDD Focus: Hide Distractions</strong> fra App Store <em>og</em> kopien, der følger med ReDD Blocker. De kan ikke begge være aktive — behold kun én.',
-        migrationSafariDuplicateInstructionsHeading: 'I Safari → Indstillinger → Udvidelser',
-        migrationSafariDuplicateStep1Html: 'Find <strong>ReDD Focus: Hide Distractions</strong> — App Store-kopien (ikke “via ReDD Blocker”) — og fjern markeringen <span class="safari-duplicate-checkbox" role="img" aria-label="Ikke markeret"></span>.',
-        migrationSafariDuplicateStep2Html: 'Sørg for, at afkrydsningsfeltet <span class="safari-duplicate-checkbox safari-duplicate-checkbox-checked" role="img" aria-label="Markeret"></span> er markeret for <strong>ReDD Focus (via ReDD Blocker)</strong>. Det er den, denne app styrer.',
-        migrationSafariDuplicateOpenBtn: 'Åbn Safari-udvidelser…',
-        migrationSafariDuplicateHelpLink: 'Hvordan skete det?',
-        migrationSafariDuplicateHelpText: 'Hvis du tidligere installerede ReDD Focus fra App Store og senere installerede ReDD Blocker, beholder Safari begge udvidelser. ReDD Blocker virker kun med den bundtede kopi.',
-        migrationStatusAllowAllWebsites: 'Tillad på alle websites',
-        migrationStatusAllowPrivate: 'Tillad privat browsing',
-        migrationStatusEnableExtension: 'Aktivér udvidelse',
-        migrationStatusInstall: 'Installer',
-        migrationStatusNativeHost: 'Forbind ReDD Blocker',
-        migrationBadgeNativeHost: 'Forbind ReDD Blocker',
-        migrationFirefoxNativeHostHtml: 'ReDD Focus er installeret. ReDD Blocker skal stadig registrere forbindelsen til Firefox (ét lille trin).',
-        migrationFirefoxNativeHostButton: 'Forbind til Firefox',
-        migrationInstallButton: 'Installer',
-        migrationInstallOpened: 'Åbnede udvidelsesbutik',
-        migrationInstallStoreTitle: 'Åbn udvidelsesbutikken for {browser}',
-        migrationUrlCopied: 'URL kopieret',
-        migrationFailed: 'Mislykkedes',
-        migrationOpenSettings: 'Åbn Indstillinger',
-        migrationOpened: 'Åbnet',
-        migrationCheckAgain: 'Tjek igen',
-        migrationRefreshSafariTitle: 'Opdater Safari-status',
-        migrationDelayDetectionNote: 'Der kan gå op til 20 sekunder, før ændringer registreres.',
-        migrationExtensionInstalledMark: 'Udvidelse installeret',
-        migrationSafariStepEnable: 'Aktivér udvidelsen',
-        migrationSafariStepPrivate: 'Tillad privat browsing',
-        migrationSafariStepEveryWebsite: 'Tillad på alle websites',
-        migrationSafariChecklistLine: 'Trin {n} — {label}',
-        migrationOpenExtensionSettings: 'Åbn udvidelsesindstillinger',
-        migrationShowMeHow: 'Vis mig hvordan',
-        migrationPostInstallFirefoxHtml: 'ReDD Blocker har allerede sat auto-installation op for ReDD Focus i Firefox — <strong>genstart Firefox</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt — markér <strong>Allow extension to run in private windows</strong> under installationen.)',
-        migrationPostInstallFirefoxMacHtml: 'Installer ReDD Focus fra Firefoxs tilføjelsesbutik — klik på <strong>Installer</strong> nedenfor, og markér <strong>Allow extension to run in private windows</strong> under installationen.',
-        migrationPostInstallSafariHtml: 'Installer ReDD Focus fra Mac App Store — klik på <strong>Installer</strong> nedenfor. Når den er installeret, vend tilbage hertil, så guider vi dig gennem aktivering i Safari.',
-        migrationPostInstallChromiumMacHtml: 'Installer ReDD Focus fra {BROWSER}-butikken — klik på <strong>Installer</strong> nedenfor. Når den er installeret, vend tilbage hertil, så guider vi dig gennem aktivering og tilladelse i {PRIV}-faner.',
-        migrationPostInstallChromiumHtml: 'ReDD Blocker har allerede sat auto-installation op for ReDD Focus i {BROWSER} — <strong>genstart {BROWSER}</strong> for at hente den ind. (Eller klik på <strong>Installer</strong> nedenfor for at tilføje den manuelt nu.)',
-        migrationInstructionEnableHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → find <strong>ReDD Focus</strong> → aktivér udvidelsen.',
-        migrationInstructionWebsiteAccessHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>Details</strong> ved ReDD Focus → tillad på <strong>alle websites</strong>.',
-        migrationInstructionFirefoxPrivateHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>ReDD Focus</strong> → slå <strong>Run in {PRIV}</strong> til.',
-        migrationInstructionChromiumPrivateHtml: 'Åbn dine udvidelsesindstillinger (kopier {URL_CHIP}, og indsæt den i adresselinjen i {BROWSER}) → klik på <strong>Details</strong> ved ReDD Focus → slå <strong>Allow in {PRIV}</strong> til.',
-        migrationHintEnableSafariMulti: 'Aktivér ReDD Focus i Safaris udvidelsesindstillinger for hver Safari-profil.{SUFFIX}',
-        migrationHintEnableSafariOne: 'Aktivér ReDD Focus i Safaris udvidelsesindstillinger.',
-        migrationHintEnableBrowser: 'Aktivér ReDD Focus i udvidelsesindstillingerne for {BROWSER}.',
-        migrationHintPrivateSafariMulti: 'Tillad ReDD Focus i privat browsing for hver Safari-profil.{SUFFIX}',
-        migrationHintPrivateSafariOne: 'Tillad ReDD Focus i privat browsing i Safaris udvidelsesindstillinger.',
-        migrationHintPrivateBrowser: 'Tillad ReDD Focus i privat eller inkognito-browsing i udvidelsesindstillingerne for {BROWSER}.',
-        migrationHintWebsitesSafariMulti: 'Tillad ReDD Focus på alle websites for hver Safari-profil.{SUFFIX}',
-        migrationHintWebsitesSafariOne: 'Tillad ReDD Focus på alle websites i Safaris udvidelsesindstillinger.',
-        migrationSafariCheckEveryProfile: 'Tjek alle Safari-profiler.',
-        migrationSafariProfilesAffected: 'Berørte Safari-profiler:',
-        migrationSafariProfilesMore: ', +{n} flere',
-        migrationSafariProfileDefaultName: '(Standard Safari-profil)',
-        migrationScreenshotCaptionStep: 'Trin {n}: {label}',
-        migrationScreenshotStepOnly: 'Trin {n}',
-        migrationShotChromeStep1: 'I Chromes udvidelsesindstillinger, åbn details for ReDD Focus',
-        migrationShotChromeStep2: 'Aktivér ReDD Focus og tillad udvidelsen i Inkognito-vinduer',
-        migrationShotEdgeStep1: 'Åbn Edges udvidelsesindstillinger',
-        migrationShotEdgeStep2: 'Åbn Details for ReDD Focus og tillad udvidelsen i InPrivate-vinduer',
-        migrationShotFirefoxStep1: 'Find ReDD Focus',
-        migrationShotFirefoxStep2: 'Tillad i private vinduer',
-        migrationShotSafariCap1: 'Åbn først Safaris udvidelsesindstillinger …',
-        migrationShotSafariCap2: 'Derefter: i) aktivér ReDD Focus, ii) tillad privat browsing, iii) tillad blokering på alle websites',
-        migrationShotAutomationStep1: 'Systemindstillinger → Automatisering',
-        // Browser-beskyttelse — banner under aktiv blokering
-        enforcerClosingHeadline: 'Browser enforcement lukker snart {browser}',
-        enforcerClosingNowHeadline: 'Lukker {browser}…',
-        enforcerCountdownRemaining: 'tilbage',
-        enforcerClosedStatus: 'lukket',
-        enforcerCountdownInstrMissing: 'ReDD Focus er ikke installeret. Installer den for at stoppe nedtællingen.',
-        enforcerCountdownInstrDisabled: 'ReDD Focus er slået fra. Aktivér den for at stoppe nedtællingen.',
-        enforcerCountdownDelayNote: '(ændringer kan tage op til 20 sekunder at registrere).',
-        enforcerCountdownInstrPrivate: 'Blokering er ikke aktiveret i private vinduer. Aktivér Tillad i privat browsing for ReDD Focus for at stoppe nedtællingen.',
-        enforcerCountdownInstrWebsiteAccess: 'ReDD Focus er ikke tilladt på alle websites. Tillad alle websites for at stoppe nedtællingen.',
-        enforcerCountdownInstrAccess: 'ReDD Blocker kan ikke bekræfte ReDD Focus. Giv adgang for at stoppe nedtællingen.',
-        enforcerCountdownInstrDefault: 'ReDD Focus er ikke klar. Færdiggør opsætningen for at stoppe nedtællingen.',
-        enforcerCountdownInstrMultiple: 'Ret ReDD Focus i hver browser nedenfor for at stoppe nedtællingen.',
-        enforcerCountdownDefault: '{browser} lukkes automatisk hvis ReDD Focus ikke er klar, for at understøtte din blokering.',
-        enforcerCountdownMissing: '{browser} lukkes automatisk hvis ReDD Focus ikke er installeret, for at understøtte din blokering.',
-        enforcerCountdownDisabled: '{browser} lukkes automatisk hvis ReDD Focus ikke er aktiveret, for at understøtte din blokering.',
-        enforcerCountdownPrivate: '{browser} lukkes automatisk hvis ReDD Focus ikke er aktiveret i private vinduer, for at understøtte din blokering.',
-        enforcerCountdownWebsiteAccess: '{browser} lukkes automatisk hvis ReDD Focus ikke er tilladt på alle websites, for at understøtte din blokering.',
-        enforcerCountdownAccess: '{browser} lukkes automatisk hvis ReDD Focus ikke kan bekræftes, for at understøtte din blokering.',
-        enforcerHeadlineMissing: 'ReDD Focus er ikke sat op i {browser} endnu.',
-        enforcerInstrMissing: 'Installer ReDD Focus til {browser}.',
-        enforcerHeadlineDisabled: 'ReDD Focus er slået fra i {browser}.',
-        enforcerHeadlinePrivate: 'Privat browsing i {browser} er ikke dækket af ReDD Focus endnu.',
-        enforcerHeadlineWebsiteAccess: '{browser} har ikke givet ReDD Focus adgang på alle websites endnu.',
-        enforcerInstrWebsiteAccessPlain: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
-        enforcerHeadlineAccess: 'ReDD Blocker kan ikke bekræfte ReDD Focus i {browser}.',
-        enforcerInstrAccessSafari: 'Åbn Safaris udvidelsesindstillinger, og færdiggør opsætningen af ReDD Focus.',
-        enforcerInstrAccessBrowser: 'Giv adgang, så ReDD Blocker kan hjælpe med at tjekke {browser}.',
-        enforcerHeadlineDefault: 'ReDD Focus er ikke helt klar i {browser} endnu.',
-        enforcerInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
-        enforcerActionInstall: 'Installer ReDD Focus',
-        enforcerActionOpenExtensions: 'Åbn {browser}-udvidelser',
-        enforcerActionOpenBrowserSettings: 'Åbn Indstillinger for {browser}',
-        enforcerClosedMissing: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke installeret endnu.',
-        enforcerClosedDisabled: '{browser} blev lukket for at bakke din blok op—ReDD Focus var slået fra.',
-        enforcerClosedPrivate: '{browser} blev lukket for at bakke din blok op—private faner var stadig en åbning.',
-        enforcerClosedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
-        enforcerClosedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—ReDD Blocker kunne ikke bekræfte ReDD Focus.',
-        enforcerClosedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
-        enforcerClosedCombinedMissing: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke installeret endnu.',
-        enforcerClosedCombinedDisabled: '{browser} blev lukket for at bakke din blok op—ReDD Focus var slået fra.',
-        enforcerClosedCombinedPrivate: '{browser} blev lukket for at bakke din blok op—private faner var stadig en åbning.',
-        enforcerClosedCombinedWebsiteAccess: '{browser} blev lukket for at bakke din blok op—ReDD Focus kunne ikke dække alle websites endnu.',
-        enforcerClosedCombinedAccess: '{browser} blev lukket, så din beskyttelse kunne være tydelig—ReDD Blocker kunne ikke bekræfte ReDD Focus.',
-        enforcerClosedCombinedDefault: '{browser} blev lukket for at bakke din blok op—ReDD Focus var ikke helt klar.',
-        enforcerClosedInstrPrivateChrome: 'I Chrome: ReDD Focus → Details → Allow in Incognito.',
-        enforcerClosedInstrPrivateFirefox: 'I Firefox: ReDD Focus → Run in Private Windows → Allow.',
-        enforcerClosedInstrPrivateGeneric: 'Slå adgang i private vinduer til, før du åbner browseren igen.',
-        enforcerClosedInstrMultiple: 'Ret ReDD Focus i hver browser nedenfor, før du åbner dem igen.',
-        enforcerClosedInstrDisabled: 'I {browser}s udvidelsesindstillinger: slå ReDD Focus til igen.',
-        enforcerClosedInstrMissing: 'Genåbn {browser} — ReDD Focus installeres automatisk. (Eller klik på Installer nedenfor for at tilføje den manuelt.)',
-        enforcerClosedInstrWebsiteAccess: 'I {browser}s udvidelsesindstillinger: tillad ReDD Focus på alle websites.',
-        enforcerClosedInstrAccessSafari: 'Åbn Safari → Indstillinger → Udvidelser, og færdiggør opsætningen af ReDD Focus.',
-        enforcerClosedInstrDefault: 'Færdiggør ReDD Focus i {browser}s udvidelsesindstillinger.',
-        enforcerHeadlineAutomation: 'ReDD Blocker kan ikke styre {browser} lige nu.',
-        enforcerCountdownInstrAutomation: 'Slå Automatisering til igen for at bevare din blokering.',
-        enforcerInstrAutomation: 'Slå ReDD Blocker til igen for {browser} under Systemindstillinger → Anonymitet & sikkerhed → Automatisering, så virker din blokering igen.',
-        enforcerClosedAutomation: '{browser} blev lukket, fordi ReDD Blocker ikke kunne styre den.',
-        enforcerClosedInstrAutomation: 'Slå ReDD Blocker til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
-        enforcerClosedCombinedAutomation: '{browser} blev lukket, fordi ReDD Blocker ikke kunne styre dem.',
-        enforcerClosedInstrAutomationGeneric: 'Slå ReDD Blocker til igen for {browser} under Anonymitet & sikkerhed → Automatisering.',
-        enforcerBrowserFallback: 'din browser',
-        gracePeriodLabel: 'Henstandsperiode',
-        gracePeriodHint: 'Sekunder til at slå til igen, før browseren lukkes.',
-        settingsEnforcementHeading: 'Støtte til selvkontrol',
-        settingsBlockingMethodHeading: 'Blokeringsmekanisme',
-        settingsBlockingMethodHint: 'Om websiteblokering skal bruge Automatisering eller ReDD Focus-browserudvidelsen (prøv sidstnævnte hvis blokering er forsinket).',
-        settingsBlockingMethodAutomation: 'Automatisering',
-        settingsBlockingMethodExtension: 'Udvidelse',
-        settingsBlockingMethodChrome: 'Chrome',
-        settingsBlockingMethodBrave: 'Brave',
-        settingsBlockingMethodEdge: 'Edge',
-        settingsBlockingMethodSafari: 'Safari',
-        settingsEnforcementRowLabel: 'Luk browser automatisk, hvis beskyttelsen stopper',
-        settingsEnforcementRowHintMacAutomation: 'Hvis Automatisering slås fra midt i en blokering.',
-        settingsEnforcementRowHintMacFirefox: 'Hvis Automatisering slås fra — eller ReDD Focus deaktiveres i Firefox — midt i en blokering.',
-        settingsEnforcementRowHintExtension: 'Hvis ReDD Focus deaktiveres midt i en blokering.',
-        settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
-        settingsDiagnosticsLabel: 'Virker noget ikke?',
-        onboardingOpenSourceFootnote:
-            'Udviklet af Reduce Digital Distraction Project sammen med forskere ved University of Oxford og Maastricht University. ReDD er en non-profit, der skaber open source digitale fokusværktøjer.',
-        settingsSetupBtn: 'Opsætning',
-        settingsDiagnosticsBtn: 'Diagnostik',
-        diagnosticsLoadingBtn: 'Indlæser…',
-        diagnosticsModalTitle: 'Diagnostik',
-        diagnosticsRefresh: 'Opdater',
-        diagnosticsCopyReport: 'Kopiér til udklipsholder',
-        diagnosticsCopied: 'Kopieret!',
-        diagnosticsCopyFailed: 'Kunne ikke kopiere',
-        diagnosticsGenerated: 'Genereret',
-        diagnosticsGeneratedLocal: 'lokal tid',
-        diagnosticsAppSection: 'App',
-        diagnosticsOsArch: 'OS / arkitektur',
-        diagnosticsLeftoverFiles: 'Resterende filer',
-        diagnosticsFullyMigrated: 'Ingen — fuldt migreret',
-        diagnosticsWasV1x: 'Var en v1.x-installation',
-        diagnosticsStampedVersion: 'Stemplet version',
-        diagnosticsStampedAt: 'Stemplet',
-        diagnosticsBrowsersSection: 'Browsere (udvidelse)',
-        diagnosticsBrowsersSectionHintMac: 'Browsere her bruger macOS Automatisering (se ovenfor).',
-        diagnosticsBrowsersSectionHintMacExtension: 'Browsere her bruger ReDD Focus-udvidelsen (installer, aktiver og tillad privat browsing).',
-        diagnosticsBrowsersSectionHint: 'Status for ReDD Focus-udvidelsen i browsere på denne computer.',
-        diagnosticsAutomationSection: 'Automatisering (macOS)',
-        diagnosticsAutomationSectionHint: 'ReDD Blocker skal have Automatisering-tilladelse for at omdirigere blokerede faner i hver browser. Giv tilladelse i Systemindstillinger → Privatliv og sikkerhed → Automatisering.',
-        diagnosticsThAutomation: 'Automatisering',
-        diagnosticsAutomationGranted: 'Tilladt',
-        diagnosticsAutomationDenied: 'Afvist',
-        diagnosticsAutomationUnknown: 'Ukendt',
-        diagnosticsEnforcementSection: 'Støtte til selvkontrol',
-        diagnosticsMigrationSection: 'Migration fra v1.x',
-        diagnosticsGracePeriod: 'Henstandsperiode',
-        diagnosticsAutostart: 'Start ved login',
-        diagnosticsForceClose: 'Luk browsere hvis ReDD Focus deaktiveres under blokering',
-        diagnosticsForceCloseEnabled: 'Aktiveret',
-        diagnosticsForceCloseDisabled: 'Deaktiveret',
-        diagnosticsFullDiskAccess: 'Fuld diskadgang',
-        diagnosticsFdaLiveGranted: 'FDA givet (live)',
-        diagnosticsSafariPlistReadable: 'Safari-plist læsbar',
-        diagnosticsOnboardingMarker: 'Onboarding-markør',
-        diagnosticsSafariFdaRequired: 'Safari kræver FDA',
-        diagnosticsFdaGranted: 'Givet',
-        diagnosticsFdaNotGranted: 'Ikke givet',
-        diagnosticsFdaRevoked: 'Tilbagekaldt',
-        diagnosticsActiveBlocks: 'Aktive blokeringer',
-        diagnosticsRecentLogSection: 'Seneste log (sidste {n} linjer)',
-        diagnosticsCurrentlyBlocking: 'Blokeres lige nu',
-        diagnosticsActiveSources: 'Aktive blokeringslister',
-        diagnosticsActiveSourcesNone: 'Ingen',
-        diagnosticsDomainsCount: 'Domæner ({n})',
-        diagnosticsAppsCount: 'Apps ({n})',
-        diagnosticsAppDataSection: 'Appdata (redd-block-data.json)',
-        diagnosticsPath: 'Sti',
-        diagnosticsWatchdog: 'Watchdog-planlagt opgave',
-        diagnosticsMarkerNotSet: 'ikke sat',
-        diagnosticsBrowserReady: 'Klar',
-        diagnosticsBrowserNotRunning: 'Kører ikke',
-        diagnosticsBrowserNotInstalled: 'Ikke installeret',
-        diagnosticsAdvancedLog: 'Seneste log',
-        diagnosticsAdvancedBlocking: 'Blokeres lige nu',
-        diagnosticsAdvancedAppData: 'Appdata',
-        diagnosticsThBrowser: 'Browser',
-        diagnosticsThExtInstalled: 'Installeret',
-        diagnosticsThExtEnabled: 'Aktiveret',
-        diagnosticsThExtPrivate: 'Private faner',
-        diagnosticsYes: 'Ja',
-        diagnosticsNo: 'Nej',
-        settingsOnboardingBtn: 'Onboarding',
-        settingsBlocklistsIoLabel: 'Bloklister og tidsplaner',
-        settingsBlocklistsIoHint: 'Gem en sikkerhedskopi, eller gendan fra en fil.',
-        settingsExportBlocklistsBtn: 'Eksportér',
-        settingsImportBlocklistsBtn: 'Importér',
-        exportBlocklistsSaveTitle: 'Eksportér bloklister',
-        exportBlocklistsFailedTitle: 'Kunne ikke eksportere bloklister',
-        exportBlocklistsSuccessTitle: 'Bloklister eksporteret',
-        exportBlocklistsEmpty: 'Der er ingen bloklister at eksportere.',
-        exportBlocklistsSuccessFmt: 'Eksporterede {n} blokliste(r) og deres tidsplaner til:\n{path}',
-        exportBlocklistsFailed: 'Der opstod en fejl under eksport af dine bloklister. Prøv igen.',
-        importBlocklistsOpenTitle: 'Importér bloklister',
-        importBlocklistsDialogTitle: 'Importér bloklister',
-        importBlocklistsFailedTitle: 'Kunne ikke importere bloklister',
-        importBlocklistsSuccessTitle: 'Bloklister importeret',
-        importBlocklistsInvalidFile: 'Den valgte fil indeholder ingen gyldige bloklister.',
-        importBlocklistsParseFailed: 'Der opstod en fejl under læsning af den valgte fil. Tjek at den er gyldig JSON.',
-        importBlocklistsConfirmFmt:
-            'Importér {n} blokliste(r) fra denne fil?\n\nDe tilføjes til dine eksisterende bloklister. Eventuelle tidsplaner gendannes som kladder — start dem manuelt, når du er klar.',
-        importBlocklistsSuccessFmt: 'Importerede {n} blokliste(r) og deres tidsplaner. Tidsplaner er gendannet som kladder — start dem manuelt, når du er klar.',
-        importBlocklistsFailed: 'Der opstod en fejl under import af dine bloklister. Prøv igen.',
-        importBlocklistDefaultName: 'Importeret blokliste',
-        gracePeriodLockedHint: 'Låst mens en blokering er aktiv—kun kortere tider tilladt.',
-        appBlockingLetsGo: 'Fortsæt',
-        appBlockingSnoozeBtn: 'Udsæt i 2 min',
-        appBlockingFallbackBlocklistName: 'denne blokering',
-        appBlockingUnknownApp: 'Ukendt app',
-        appBlockingBannerAppFallback: 'en app',
-        appBlockingWarningHeadingHtml: '<strong>{name}</strong> starter',
-        appBlockingWarningSummarySingleHtml:
-            '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
-        appBlockingWarningSummaryMultiHtml:
-            '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
-        appBlockingClosedownCountdownHtml:
-            'Lukker {apps} om <strong>{seconds} sek.</strong> — gem dit arbejde nu.',
-        appBlockingClosedownFinalSingleHtml: 'Lukker {apps} nu…',
-        appBlockingClosedownFinalMultiHtml:
-            'Lukker {apps} nu — giver eventuelle åbne dialoger tid i dem…',
-        appBlockingListMoreFmt: '{n} flere',
-        settingsFeedbackFooterHtml:
-            'Feedback eller forslag? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Opret et issue på GitHub</a> eller skriv til <a href="mailto:team@reddfocus.org">team@reddfocus.org</a>.',
-        madeWith: 'Lavet med',
-        by: 'af',
-        andWord: 'og',
-        nothingWord: 'intet',
-        noItems: 'Ingen elementer',
-        noBlocklistsYet: 'Ingen bloklister endnu',
-        clickHereCreateBlocklist: 'Klik her for at oprette en',
-        typeHere: 'Skriv her...',
-        placeholderNameExample: 'f.eks. Sociale medier',
-        placeholderWebsiteExample: 'f.eks. facebook.com',
-        placeholderAppExample: 'f.eks. Safari',
-        invalidDomainMsg: 'Indtast et gyldigt domæne (f.eks. reddit.com)',
-        cannotBlockDomainPlaceholder: '⚠️ Dette domæne kan ikke blokeres!',
-        cannotBlockSelfAppPlaceholder: '⚠️ ReDD Blocker kan ikke blokere sig selv!',
-        // Start/schedule controls
-        durationQuick15m: '15m',
-        durationQuick30m: '30m',
-        durationQuick45m: '45m',
-        durationQuick1Hour: '1 time',
-        durationQuick2Hours: '2 timer',
-        durationQuickAlways: 'Indtil jeg stopper',
-        alwaysOnMessage: 'Du bliver i dette rum, indtil du pauser eller forlader det',
-        duration: 'Varighed',
-        durationUnitMin: 'min',
-        end: 'Slut',
-        nextDay: 'dag',
-        quickSelect: 'Hvor længe?',
-        start: 'Start',
-        days: 'Dage',
-        add: 'Tilføj tider',
-        scheduleWhenHeading: 'Når dette rum åbner',
-        segmentDaysWeekdays: 'Hverdage',
-        segmentDaysWeekends: 'Weekender',
-        segmentDaysEveryDay: 'Hver dag',
-        segmentDaysNone: 'Ingen dage',
-        segmentDone: 'Færdig',
-        segmentDelete: 'Slet',
-        repeat: 'Gentag ugeskema:',
-        repeatNo: 'Nej',
-        repeatForever: 'For evigt',
-        repeatUntilDate: 'Indtil dato',
-        pause: 'Pause',
-        startBlockButton: 'Start fokusrum',
-        startScheduleButton: 'Start skema',
-        stopScheduleButton: 'Stop skema',
-        stopBlockMetaColon: ':',
-        stopScheduleMetaColon: ':',
-        editScheduleButton: 'Rediger skema:',
-        pendingChangesLabel: 'Ikke-gemte ændringer',
-        pendingChangesSave: 'Gem ændringer',
-        pendingChangesDiscard: 'Kassér',
-        saveChangesTitle: 'Gem ændringer?',
-        saveChangesTitleFmt: 'Gem ændringer til {name}?',
-        addingTheseSegments: 'Tilføjer disse tidssegmenter:',
-        // Blocklist modal
-        createBlocklist: 'Opret rum',
-        editBlocklist: 'Rediger rum',
-        activeBlocklistWarning: 'Denne blokliste er aktiv. Nogle indstillinger er låst.',
-        name: 'Navn',
-        websites: 'Hjemmesider at blokere',
-        websitesTooltip: 'Blokering gælder hele domæner. Hvis du fx skriver "facebook.com", blokeres hele Facebook, ikke kun specifikke sider.',
-        apps: 'Apps at blokere',
-        appsTooltip: 'Indtast det præcise navn på appen (fx "Safari"). Du kan også bruge mappeknappen til at finde appen.',
-        overrideDifficulty: 'Stop-sværhedsgrad',
-        overrideMethod: 'Metode',
-        overrideWordsToType: 'Ord at taste',
-        overrideCharsToType: 'Tegn at taste',
-        overrideRandomWords: 'Tilfældige ord',
-        overrideGibberish: 'Tilfældig volapyk',
-        overrideCustomText: 'Egen tekst',
-        overrideMaxDifficulty: 'Max sværhed',
-        overrideMaxDifficultyHintWords: '{count} ord',
-        overrideMaxDifficultyHintChars: '{count} tegn',
-        overridePreviewLooksLike: 'Ser sådan ud',
-        overrideCountTimeEstimate: '~{minutes} min',
-        overrideCountTimeEstimateDa: '~{minutes} {unit}',
-        totalCharacters: 'tegn i alt',
-        totalWords: 'ord i alt',
-        color: 'Farve',
-        emoji: 'Emoji',
-        advancedOptions: 'Avancerede indstillinger',
-        listBlockedOnCard: 'Vis navnet på blokerede websites og apps i oversigten',
-        importWebsitesTitle: 'Importér websites',
-        browseApplicationsTitle: 'Gennemse programmer',
-        modalPremadeListsCaption: 'Lister',
-        modalBrowseAppsCaption: 'Vælg apps',
-        modalBrowseAppsTitleIos: 'Vælg apps (Screen Time)',
-        importWebsitesPickFileTitle: 'Vælg en fil med ét domæne pr. linje',
-        importWebsitesFromFile: 'Fra tekstfil…',
-        importWebsitesPreMadeList: 'Færdiglavet liste',
-        importPresetEmail: 'E-mail',
-        importPresetGambling: 'Spil',
-        importPresetNews: 'Nyheder',
-        importPresetPorn: 'Porno',
-        importPresetSearchEngines: 'Søgemaskiner',
-        importPresetShopping: 'Shopping',
-        importPresetSocialMedia: 'Sociale medier',
-        cancel: 'Annuller',
-        save: 'Gem',
-        // Override / pause / confirmation modals
-        stopFocusSpaceTitle: 'Stop fokusrum?',
-        overrideInstruction: 'For at stoppe dette fokusrum tidligt, skriv følgende:',
-        stopBlockSubtitleFmt: 'Dette fokusrum er stadig aktivt — <strong>{remaining}</strong> tilbage.',
-        stopBlockSubtitleAlways: 'Dette fokusrum kører, indtil du stopper det.',
-        stopScheduleSubtitle: 'Dette planlagte fokusrum er aktivt lige nu.',
-        stopBlock: 'Stop fokusrum',
-        stopSchedule: 'Stop skema',
-        pauseFocusSpaceTitle: 'Pause fokusrum?',
-        pauseBlockSubtitleFmt: 'Tag en pause — dette fokusrum har <strong>{remaining}</strong> tilbage.',
-        pauseBlockSubtitleAlways: 'Tag en pause — vælg hvor længe blokeringen pauser nedenfor.',
-        pauseScheduleSubtitle: 'Blokeringen pauser i den tid, du vælger nedenfor.',
-        pauseScheduleInactiveSubtitle: 'Ingen planlagt blokering er aktiv lige nu. Kommende planlagte blokeringer pauses, indtil pausen slutter.',
-        pauseInstruction: 'For at pause dette fokusrum, skriv følgende:',
-        pauseBlock: 'Pause fokusrum',
-        pauseFor: 'PAUSE I',
-        restartsAt: 'STARTER IGEN KL.',
-        pauseInstruction: 'For at pause denne blokering, skriv følgende:',
-        helperSetupTitle: 'Opsætning påkrævet',
-        helperSetupText: 'For at blokere websites, når appen er lukket, skal ReDD Blocker installere en lille baggrundstjeneste. Din computer beder om adgangskode én gang — derefter starter blokeringer med det samme uden ny prompt.',
-        helperRepairTitle: 'Reparation af helper påkrævet',
-        helperRepairText: 'Der er allerede installeret en helper-tjeneste, men den kører ikke lige nu. ReDD Blocker skal geninstallere eller reparere den, før denne blokering kan starte. Din computer kan bede om adgangskode for at fuldføre reparationen.',
-        helperUpdateTitle: 'Helper-opdatering påkrævet',
-        helperUpdateText: 'Der er allerede installeret en helper-tjeneste, men den skal opdateres, før denne blokering kan starte. Din computer beder om adgangskode for at gennemføre opdateringen.',
-        helperOpenSourceLink: 'open source-koden til ReDD Blocker her',
-        proceed: 'Fortsæt',
-        reinstallHelper: 'Geninstaller helper',
-        helperInstalling: 'Installerer...',
-        helperUpdating: 'Opdaterer...',
-        helperReinstalling: 'Geninstallerer...',
-        startThisBlock: 'Gå ind i rummet?',
-        startBlockTitleFmt: 'Gå ind i rummet “{name}”?',
-        resumeBlockTitleFmt: 'Genoptag blokeringen “{name}”?',
-        startBlockSubtitleFmt: 'Dine blokerede hjemmesider og apps er stille de næste <strong>{duration}</strong>.',
-        startBlockSubtitleAlways: 'Dine blokerede hjemmesider og apps er stille, indtil du forlader rummet.',
-        resumeBlockSubtitle: 'Fortsæt hvor du slap med denne blokering.',
-        startConfirmBlockingLabel: 'Blokering',
-        startConfirmDurationLabel: 'Varighed',
-        startConfirmTimesLabel: 'Tider',
-        startConfirmRepeatsLabel: 'Gentages',
-        startConfirmDurationLineFmt: '{duration} · <span class="start-confirm-duration-meta">slutter ~{ends}</span>',
-        startConfirmRepeatForever: 'Hver uge · ingen slutdato',
-        startConfirmRepeatUntilFmt: 'Hver uge · indtil {date}',
-        startConfirmRepeatNone: 'Kun én uge · gentages ikke',
-        startBlockHoldHeader: 'At forlade rummet tidligt tager et øjeblik — med vilje.',
-        startScheduleHoldHeader: 'At forlade rummet tidligt tager et øjeblik — med vilje.',
-        saveChangesHoldHeader: 'At forlade rummet tidligt tager et øjeblik — med vilje.',
-        blockedWebsites: 'Blokerede hjemmesider:',
-        blockedApps: 'Blokerede apps:',
-        showAll: 'vis alle',
-        confirmDuration: 'Varighed:',
-        confirmOverrideNeed: 'For at stoppe denne blokering tidligt skal du:',
-        startBlock: 'Start fokusrum',
-        resumeBlock: 'Genoptag blokering',
-        resumeThisBlock: 'Genoptag blokering?',
-        alwaysUntilOff: 'Altid (indtil du pauser eller forlader)',
-        scheduleResumingSegment: 'Skema (genoptager nuværende segment)',
-        startThisSchedule: 'Start dette skema?',
-        startScheduleTitleFmt: 'Start skemaet “{name}”?',
-        startScheduleSubtitle: 'Dine blokerede hjemmesider og apps er stille på tidspunkterne vist nedenfor.',
-        scheduleConfirmOverlayLabel: 'Startbesked',
-        scheduleActiveOverlayLabel: 'Startbesked:',
-        scheduleConfirmOverlayDefaultTitle: 'Standard',
-        scheduleConfirmOverlayCustomTitle: 'Tilpasset besked',
-        scheduleConfirmOverlayDefaultDesc:
-            'Vises hvis blokerede apps er åbne, når en blokering starter — viser apps med en “Lad os komme i gang”-knap.',
-        scheduleConfirmOverlayCustomDesc:
-            'Din tilpassede titel, besked, billede, stemme og knaptekst.',
-        scheduleConfirmOverlayDefault: 'Standard (hvilke apps og Lad os komme i gang-knap)',
-        scheduleConfirmOverlayCustom: 'Tilpasset',
-        scheduleOverlayCustomiseTitleFmt: 'Tilpas "{name}"-beskeden',
-        scheduleOverlayCustomiseTitleDefault: 'Tilpas beskeden',
-        scheduleOverlayCustomiseDefaultTitle: 'Standardbesked',
-        scheduleOverlaySelectLabel: 'Vælg besked',
-        scheduleOverlayUnsavedBadge: 'Ikke gemt',
-        scheduleOverlayDiscardConfirmTitle: 'Kassér ikke-gemte ændringer?',
-        scheduleOverlayDiscardConfirmStrong: 'Du har ikke-gemte ændringer til denne besked.',
-        scheduleOverlayDiscardConfirmBody: 'Hvis du forlader nu, går dine ændringer tabt.',
-        scheduleOverlayDiscardConfirmBtn: 'Kassér ændringer',
-        scheduleOverlayKeepEditingBtn: 'Fortsæt redigering',
-        scheduleOverlaySelectNew: 'Ny besked',
-        scheduleOverlayDefaultNotice:
-            'Standard startbeskeden kan ikke redigeres. Tilføj en ny besked for at tilpasse med din egen titel, besked, billede og/eller stemme.',
-        scheduleOverlayAddNewBtn: 'Tilføj ny besked',
-        scheduleOverlayDeleteBtn: 'Slet besked',
-        scheduleOverlayDeleteConfirmTitle: 'Slet besked?',
-        scheduleOverlayDeleteConfirmStrongFmt: 'Er du sikker på, at du vil slette "{name}"?',
-        scheduleOverlayDeleteConfirmBody:
-            'Alle skemaer, der bruger denne startbesked, får standardbeskeden i stedet.',
-        scheduleOverlayNameLabel: 'Navn',
-        scheduleOverlayNamePlaceholder: 'f.eks. Morgen-påmindelse',
-        scheduleOverlayNameRequired: 'Giv beskeden et navn, før du gemmer.',
-        scheduleOverlayLegacyPresetName: 'Tilpasset besked',
-        scheduleOverlayCustomiseSubtitle:
-            'Vises i fuld skærm, hvis blokerede apps er åbne, når et planlagt blokering er ved at begynde.',
-        scheduleOverlayHeadingLabel: 'Titel',
-        scheduleOverlayHeadingPlaceholdersHint: 'Pladsholder: {name} — blocklistens navn.',
-        scheduleOverlayHeadingPlaceholder: '{name} starter',
-        scheduleOverlayMessageLabel: 'Besked',
-        scheduleOverlayMessagePlaceholdersHint:
-            'Pladsholdere: {apps} — blokerede apps; {letsGo} — knaptekst.',
-        scheduleOverlayNoBlockedAppsHint:
-            'Denne blockliste har ingen blokerede apps. Beskeden vises kun, når en listede app allerede kører, når skemaet starter.',
-        scheduleOverlayMessagePlaceholderFmt:
-            '{apps} — tid til at afslutte. Når du trykker {letsGo}, har du 30 sekunder til at gemme dit arbejde, før vi lukker dem.',
-        scheduleOverlayMessagePlaceholderNoApps:
-            'Lad feltet stå tomt for standardbeskeden om blokerede apps.',
-        scheduleOverlayLetsGoFieldLabel: '"Lad os komme i gang"-knap',
-        scheduleOverlayImageLabel: 'Billede',
-        scheduleOverlayImageDefaultStatus: 'Bruger blocklistens emoji',
-        scheduleOverlayImageCustomStatus: 'Bruger dit uploadede billede',
-        scheduleOverlayImageDropHint: 'Vælg et billede på din computer (PNG, JPG, GIF eller WebP).',
-        scheduleOverlayUnsupportedImage: 'Ikke-understøttet billedtype. Brug PNG, JPG, GIF eller WebP.',
-        scheduleOverlayVoiceLabel: 'Stemmebesked',
-        scheduleOverlayVoiceHelp:
-            'Afspilles én gang, når \'Let\'s go\'-knappen trykkes.',
-        scheduleOverlayChooseImage: 'Upload',
-        scheduleOverlayRecordVoice: 'Optag',
-        scheduleOverlayStartingRecording: 'Starter mikrofon…',
-        scheduleOverlayStopRecording: 'Stop optagelse',
-        scheduleOverlayChooseAudio: 'Vælg fil…',
-        scheduleOverlayPreviewLabel: 'Forhåndsvisning',
-        scheduleOverlaySaveBtn: 'Gem besked',
-        scheduleOverlayCharCountFmt: '{count} / {max}',
-        scheduleOverlaySectionReset: 'Nulstil',
-        scheduleOverlayMicUnavailable: 'Mikrofon er ikke tilgængelig. Prøv at vælge en lydfil i stedet.',
-        scheduleOverlayEmptyRecording: 'Ingen lyd blev optaget. Prøv at optage lidt længere.',
-        scheduleOverlayCustomiseBtn: 'Tilpas',
-        errorTitle: 'Fejl',
-        repeatLabel: 'Gentag ugeskema:',
-        confirmScheduleOverrideNeed: 'For at stoppe dette blokeringsskema skal du:',
-        saveChangesOverrideNeed: 'For at stoppe dette skema skal du:',
-        confirmOverrideRandomWordsFmt:
-            'Skriv <strong>{count} {charUnit} præcis som vist</strong> (~{minutes} min) for at forlade.',
-        confirmOverrideRandomWordsIosFmt:
-            'Skriv <strong>{count} tilfældige {wordUnit} præcis som vist</strong> (~{minutes} min) for at forlade.',
-        confirmOverrideGibberishLettersFmt:
-            'Skriv <strong>{count} tilfældige {charUnit} præcis som vist</strong> (~{minutes} min) for at forlade.',
-        confirmOverrideGibberishWordsFmt:
-            'Skriv <strong>{count} tilfældige {wordUnit} præcis som vist</strong> (~{minutes} min) for at forlade.',
-        confirmOverrideGibberishShortFmt:
-            'Skriv <strong>{count} tilfældige tegn præcis som vist</strong> (~{minutes} min) for at forlade.',
-        confirmOverrideCustomPhraseFmt:
-            'Skriv en <strong>bestemt sætning på {count} tegn præcis som vist</strong> (~{minutes} min) for at forlade.',
-        confirmOverrideIntentionSuffix: 'Det hjælper dig med at holde fast i din intention.',
-        startSchedule: 'Start skema',
-        noDaysSelected: 'Ingen dage valgt',
-        runningSuffix: ' (Kører)',
-        // Override all
-        overrideAllTitle: 'Overstyr alle blokeringer?',
-        overrideAllWarningStrong: 'Er du sikker på, at du vil stoppe alle aktive blokeringer?',
-        overrideAllWarningBody: 'Dette stopper ALLE nuværende blokeringer af websites og apps. Det stopper også alle skemalagte blokeringer.',
-        overrideAllInstruction: 'For at gøre dette, skriv følgende:',
-        overrideAll: 'Stop alle',
-        deleteUndoToastFmt: 'Slettet "{name}"',
-        undo: 'Fortryd',
-        // Settings
-        settingsTitle: 'Indstillinger',
-        settingsDone: 'Færdig',
-        settingsGeneralHeading: 'Generelt',
-        settingsManageHeading: 'Administrér',
-        settingsOverrideAllHint: 'Afslutter alle aktive blokeringer med det samme.',
-        settingsUninstallHint: 'Dine bloklister gemmes på disken.',
-        yourVersionPrefix: 'Version',
-        latestVersionPrefix: 'Nyeste version:',
-        lightDarkMode: 'Tema',
-        zoomLevel: 'Zoomniveau',
-        language: 'Sprog',
-        themeAuto: 'Auto',
-        themeLight: 'Lys',
-        themeDark: 'Mørk',
-        languageEnglish: 'Engelsk',
-        languageDanish: 'Dansk',
-        languagePickerCurrent: 'Nuværende sprog',
-        languagePickerSwitch: 'Skift til',
-        overrideAllBlocks: 'Stop alle blokeringer (med udfordring)',
-        settingsOverrideAllLabel: 'Stop alle blokeringer og tidsplaner',
-        settingsOverrideAllBtn: 'Stop alle',
-        // In-app uninstall (macOS only)
-        uninstallApp: 'Afinstaller ReDD Blocker',
-        uninstallAppBtn: 'Afinstaller…',
-        uninstallDisabledHint: 'Stop kørende blokeringer først, før du kan afinstallere.',
-        uninstallConfirmTitle: 'Afinstaller ReDD Blocker?',
-        uninstallConfirmLeadHtml: 'ReDD Blocker flyttes til papirkurven. Dine blokeringslister og skemaer <strong>bevares p\u00e5 harddisken</strong>, s\u00e5 de kan gendannes, hvis du geninstallerer senere.',
-        uninstallConfirmLeadDeleteHtml: 'ReDD Blocker flyttes til papirkurven. Dine blokeringslister, skemaer og indstillinger bliver <strong>permanent slettet</strong> fra denne Mac.',
-        uninstallDeleteDataLabel: 'Slet ogs\u00e5 mine blokeringslister, skemaer og indstillinger',
-        uninstallFinderWarningHtml: 'Hvis macOS spørger, om ReDD Blocker må styre <strong>Finder</strong>, skal du klikke <strong>Tillad</strong> \u2014 det er sådan, appen flytter sig selv til papirkurven.',
-        uninstallFirefoxCalloutTitle: 'ReDD Focus-udvidelse i Firefox',
-        uninstallExtFirefoxBadge: 'Forbliver installeret',
-        uninstallFirefoxCalloutDetailHtml: 'Du kan forts\u00e6tte med at bruge ReDD Focus til at skjule distraherende dele af websites. For at fjerne den, \u00e5bn Firefox\u2019 udvidelsesindstillinger \u2014 kopier {URL_CHIP} og inds\u00e6t den i adresselinjen.',
-        uninstallConfirmOk: 'Afinstaller',
-        uninstallFailedTitle: 'Afinstallation mislykkedes',
-        uninstallFailed: 'Kunne ikke gennemføre afinstallation.',
-        windowsUninstallHint: 'Indstillinger \u2192 Installerede apps \u2192 ReDD Blocker',
-        windowsUninstallOpenSettingsBtn: 'Åbn indstillinger',
-        windowsUninstallOpenFailedTitle: 'Kunne ikke åbne Indstillinger',
-        windowsUninstallOpenFailed: 'Windows Indstillinger kunne ikke åbnes. Åbn Indstillinger manuelt, gå til Apps \u2192 Installerede apps, og søg efter ReDD Blocker.',
-        macAutomationIntroBadge: 'Nyhed',
-        macAutomationIntroTitle: 'Websiteblokering på macOS fungerer lidt anderledes nu',
-        macAutomationIntroLeadHtml: 'For at gøre blokering nemmere at opsætte bruger de fleste browsere nu <strong>macOS Automatisering</strong> i stedet for ReDD Focus-udvidelsen. Sådan ser opsætningen ud nu.',
-        macAutomationIntroAutomationBrowsers: 'Safari, Chrome, Edge og Brave',
-        macAutomationIntroAutomationMethod: 'macOS Automatisering',
-        macAutomationIntroFirefoxLabel: 'Firefox',
-        macAutomationIntroExtensionMethod: 'ReDD Focus-udvidelse',
-        macAutomationIntroUnchangedHtml: '<span class="mac-automation-intro-unchanged-icon" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="11" fill="currentColor"></circle><path d="M7 12.5l3 3 7-7" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><span class="mac-automation-intro-unchanged-text">Dine <strong>blokeringslister og skemaer er uændrede</strong> \u2014 intet skal gøres om.</span>',
-        macAutomationIntroReviewBtn: 'Gennemgå browseropsætning',
-        macAutomationIntroDismissBtn: 'Forstået',
-        helperService: 'Hjælper',
-        helperStatusChecking: 'Tjekker...',
-        helperStatusActive: 'Aktiv',
-        helperStatusIdle: 'Inaktiv',
-        helperStatusInstalledNotReachable: 'Installeret, men ikke tilgængelig',
-        helperStatusUpdateAvailable: 'Opdatering tilgængelig',
-        helperStatusNotInstalled: 'Ikke installeret',
-        helperStatusUnknown: 'Ukendt',
-        updateHelper: 'Opdater hjælper',
-        uninstallHelper: 'Afinstaller hjælper',
-        helperRemoving: 'Fjerner...',
-        helperRemoved: 'Helper fjernet',
-        helperRemovedSuccess: 'Hjælperen blev fjernet.',
-        helperRemovedFallback: 'Hjælperen blev fjernet via reserveoprydning, fordi den installerede hjælper ikke svarede normalt.',
-        helperRemoveStaleHint: 'Installeret, men kører ikke lige nu. Du kan fjerne den gamle hjælper her, før du geninstallerer den.',
-        cleanHostsFile: 'Ryd hosts-fil',
-        helperHint: 'Fjern alle ReDD Blocker-indsætninger fra systemets hosts-fil. Brug kun dette, hvis websites stadig er utilgængelige efter du har stoppet alle blokeringer.',
-        close: 'Luk',
-        // Time/date words
-        dayAbbrev: ['Søn', 'Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør'],
-        dayAbbrevMon0: ['Man', 'Tir', 'Ons', 'Tor', 'Fre', 'Lør', 'Søn'],
-        dayLetterMon0: ['M', 'T', 'O', 'T', 'F', 'L', 'S'],
-        locale: 'da-DK',
-        blocklistDuplicateSuffix: 'kopi',
-    },
-};
-
-function getSettingsLanguage() {
-    const saved = appData.settings?.language;
-    if (saved === 'da' || saved === 'en') return saved;
-    try {
-        return navigator.language.toLowerCase().startsWith('da') ? 'da' : 'en';
-    } catch (_) {
-        return 'en';
-    }
-}
-
-/** Abbreviated weekday labels for internal Mon..Sun indexing (Mon=0..Sun=6). */
-function weekdayAbbrevMon0List() {
-    const lang = getSettingsLanguage();
-    const row = SETTINGS_TRANSLATIONS[lang]?.dayAbbrevMon0;
-    if (Array.isArray(row) && row.length === 7) return row;
-    return SETTINGS_TRANSLATIONS.en.dayAbbrevMon0;
-}
-
-/** Single-letter weekday labels (Mon=0..Sun=6) for compact mobile schedule day toggles. */
-function weekdayLetterMon0List() {
-    const lang = getSettingsLanguage();
-    const row = SETTINGS_TRANSLATIONS[lang]?.dayLetterMon0;
-    if (Array.isArray(row) && row.length === 7) return row;
-    return SETTINGS_TRANSLATIONS.en.dayLetterMon0;
-}
 
 const MOBILE_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH = 1024;
 let mobileCompactScheduleDayLabelsActive = null;
 
 /** Smaller mobile viewports, including iPad portrait, use single-letter day pills from first render. */
 function shouldUseCompactMobileScheduleDayLabels() {
-    if (!isIOS && !isAndroid) return false;
+    if (!state.isIOS && !state.isAndroid) return false;
     const effVp = Math.round(getEffectiveViewportWidth());
     return effVp > 0 && effVp <= MOBILE_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
 }
 
 function syncMobileScheduleDayLabelsViewportMode() {
-    if (!isIOS && !isAndroid) return;
+    if (!state.isIOS && !state.isAndroid) return;
     const nextCompact = shouldUseCompactMobileScheduleDayLabels();
     if (nextCompact === mobileCompactScheduleDayLabelsActive) return;
     mobileCompactScheduleDayLabelsActive = nextCompact;
@@ -21244,33 +19152,6 @@ function syncMobileScheduleDayLabelsViewportMode() {
     }
 }
 
-function tSettings(key) {
-    const lang = getSettingsLanguage();
-    return SETTINGS_TRANSLATIONS[lang][key] || SETTINGS_TRANSLATIONS.en[key] || key;
-}
-
-/** Replace `{placeholder}` segments in a translated template string. */
-function tSettingsFmt(key, vars = {}) {
-    let s = tSettings(key);
-    for (const [k, v] of Object.entries(vars)) {
-        s = String(s).split(`{${k}}`).join(String(v));
-    }
-    return s;
-}
-
-const LANGUAGE_FLAG_SVG = {
-    en: '<svg class="language-flag-svg" viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="#012169" d="M0 0h60v40H0z"/><path stroke="#FFF" stroke-width="8" d="M0 0l60 40M60 0L0 40"/><path stroke="#C8102E" stroke-width="5" d="M0 0l60 40M60 0L0 40"/><path stroke="#FFF" stroke-width="12" d="M30 0v40M0 20h60"/><path stroke="#C8102E" stroke-width="7" d="M30 0v40M0 20h60"/></svg>',
-    da: '<svg class="language-flag-svg" viewBox="0 0 37 28" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><rect width="37" height="28" fill="#C8102E" rx="2"/><rect x="13" y="0" width="4" height="28" fill="#fff"/><rect x="0" y="12" width="37" height="4" fill="#fff"/></svg>',
-};
-
-const LANGUAGE_NATIVE_LABELS = {
-    en: 'English',
-    da: 'Dansk',
-};
-
-function languageNativeLabel(code) {
-    return LANGUAGE_NATIVE_LABELS[code] || LANGUAGE_NATIVE_LABELS.en;
-}
 
 const LANGUAGE_PICKER_ROOT_IDS = ['language-picker', 'welcome-language-picker'];
 
@@ -21370,11 +19251,11 @@ function syncLanguagePickerUI() {
 function switchLanguageSetting() {
     const cur = getSettingsLanguage();
     const next = cur === 'da' ? 'en' : 'da';
-    if (!appData.settings) appData.settings = {};
-    appData.settings.language = next;
+    if (!state.appData.settings) state.appData.settings = {};
+    state.appData.settings.language = next;
     applySettingsLanguage();
     saveData();
-    if (!isIOS && !isAndroid) void refreshBehaviourBannerIfStale({ force: true });
+    if (!state.isIOS && !state.isAndroid) void refreshBehaviourBannerIfStale({ force: true });
     closeAllLanguagePickers();
 }
 
@@ -21469,7 +19350,7 @@ function applyMigrationOverlayStaticCopy() {
     syncMigrationPostHeader(lastMigrationBrowserState);
     setHtml('migration-checklist-ext-lines', migrationExtLinesHtml(lastMigrationBrowserState));
     setText('migration-howto-title', tSettings('migrationHowtoHeading'));
-    if (isMacOSDesktop) {
+    if (state.isMacOSDesktop) {
         syncMigrationMacHowto(lastMigrationBrowserState);
     } else {
         setHtml('migration-howto-li1', tSettings('migrationHowtoLi1Html'));
@@ -21543,7 +19424,7 @@ function applyEulaOnboardingLanguage() {
     const backBtn = document.getElementById('eula-back-btn');
     if (backBtn) {
         backBtn.textContent = tSettings('eulaBackBtn');
-        backBtn.classList.toggle('hidden', isIOS);
+        backBtn.classList.toggle('hidden', state.isIOS);
     }
 }
 
@@ -21599,7 +19480,7 @@ function applyWelcomeOnboardingLanguage() {
     const step2Title = document.getElementById('welcome-step-2-title');
     const step2Body = document.getElementById('welcome-step-2-body');
 
-    if (isMacOSDesktop) {
+    if (state.isMacOSDesktop) {
         stepMac?.classList.remove('hidden');
         stepFirefox?.classList.toggle('hidden', !welcomeFirefoxInstalled);
 
@@ -21624,10 +19505,10 @@ function applyWelcomeOnboardingLanguage() {
 
         let step2TitleKey = 'welcomeStep2TitleHtml';
         let step2BodyKey = 'welcomeStep2BodyHtml';
-        if (isAndroid) {
+        if (state.isAndroid) {
             step2TitleKey = 'welcomeStep2TitleAndroidHtml';
             step2BodyKey = 'welcomeStep2BodyAndroidHtml';
-        } else if (isIOS) {
+        } else if (state.isIOS) {
             step2TitleKey = 'welcomeStep2TitleIosHtml';
             step2BodyKey = 'welcomeStep2BodyIosHtml';
         }
@@ -21753,7 +19634,7 @@ function initWelcomeDemoControls() {
     // needs — it 404/fails to load there even though it works fine in
     // WKWebView on iOS. Hide the whole toggle/panel rather than show a
     // permanently-broken video player.
-    if (isAndroid) {
+    if (state.isAndroid) {
         document.getElementById('welcome-demo-toggle')?.classList.add('hidden');
         document.getElementById('welcome-demo-panel')?.classList.add('hidden');
         return;
@@ -21938,7 +19819,7 @@ function applySettingsLanguage() {
     }
     setText(
         'setup-banner-headline',
-        tSettings(isMacOSDesktop ? 'setupBrowsersBannerHeadlineMac' : 'setupBrowsersBannerHeadline'),
+        tSettings(state.isMacOSDesktop ? 'setupBrowsersBannerHeadlineMac' : 'setupBrowsersBannerHeadline'),
     );
     syncSetupBannerHeadline();
     setText('behaviour-change-help', tSettings('setupBrowsersBannerCta'));
@@ -22352,7 +20233,7 @@ function setupTheme() {
             void wireBlockingMethodSettings();
             // Set current theme selection
             if (themeSelect) {
-                const currentTheme = appData.settings?.themeMode || 'system';
+                const currentTheme = state.appData.settings?.themeMode || 'system';
                 themeSelect.value = currentTheme;
             }
             void (async () => {
@@ -22419,17 +20300,17 @@ function setupTheme() {
     // Theme selection change
     if (themeSelect) {
         themeSelect.addEventListener('change', (e) => {
-            if (!appData.settings) appData.settings = {};
-            appData.settings.themeMode = e.target.value;
+            if (!state.appData.settings) state.appData.settings = {};
+            state.appData.settings.themeMode = e.target.value;
 
             // Update legacy darkMode for backwards compatibility
             if (e.target.value === 'dark') {
-                appData.settings.darkMode = true;
+                state.appData.settings.darkMode = true;
             } else if (e.target.value === 'light') {
-                appData.settings.darkMode = false;
+                state.appData.settings.darkMode = false;
             } else {
                 // Auto/system mode - use system preference
-                delete appData.settings.darkMode;
+                delete state.appData.settings.darkMode;
             }
 
             applyTheme();
@@ -22440,7 +20321,7 @@ function setupTheme() {
     // Listen for system theme changes when in auto mode
     if (window.matchMedia) {
         window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-            if (appData.settings?.themeMode === 'system' || !appData.settings?.themeMode) {
+            if (state.appData.settings?.themeMode === 'system' || !state.appData.settings?.themeMode) {
                 applyTheme();
             }
         });
@@ -22449,7 +20330,7 @@ function setupTheme() {
 
 function applyTheme() {
     const body = document.body;
-    const themeMode = appData.settings?.themeMode || 'system';
+    const themeMode = state.appData.settings?.themeMode || 'system';
 
     let isDark;
     if (themeMode === 'dark') {
@@ -22469,7 +20350,7 @@ function applyTheme() {
 }
 
 function getUiZoomMax() {
-    if (isIOS) return UI_ZOOM_MAX_IOS;
+    if (state.isIOS) return UI_ZOOM_MAX_IOS;
     const isDesktop = document.body.classList.contains('windows') || document.body.classList.contains('mac');
     return isDesktop ? UI_ZOOM_MAX_DESKTOP : UI_ZOOM_MAX;
 }
@@ -22483,18 +20364,18 @@ function getDefaultUiZoom() {
 }
 
 function getSavedUiZoom() {
-    const parsed = Number(appData.settings?.uiZoom);
+    const parsed = Number(state.appData.settings?.uiZoom);
     if (!Number.isFinite(parsed)) return getDefaultUiZoom();
     return clampUiZoom(parsed);
 }
 
 function isIosTablet() {
-    return isIOS && !document.body.classList.contains('ios-phone');
+    return state.isIOS && !document.body.classList.contains('ios-phone');
 }
 
 /** Desktop only — iPad uses transform scaling; phones use CSS zoom. */
 function usesNativeWebviewZoom() {
-    if (!isIOS && (document.body.classList.contains('windows') || document.body.classList.contains('mac'))) {
+    if (!state.isIOS && (document.body.classList.contains('windows') || document.body.classList.contains('mac'))) {
         return nativeWebviewZoomSupported !== false;
     }
     return false;
@@ -22522,9 +20403,9 @@ function syncUiZoomResponsiveLayout() {
     const zoom = getActiveUiZoomScale();
     document.documentElement.style.setProperty('--ui-zoom', String(zoom));
 
-    if (isIOS) {
+    if (state.isIOS) {
         const effVp = getEffectiveViewportWidth();
-        const ipadPortraitStack = isIOS
+        const ipadPortraitStack = state.isIOS
             && usesStackSettingsPlacement()
             && !document.body.classList.contains('ios-phone');
         const cramped = effVp > UI_ZOOM_LAYOUT_STACK_MAX
@@ -22620,13 +20501,13 @@ function syncSchedulerModeTabLabelMode() {
     const toolbar = document.querySelector('#settings-toolbar-scheduler');
     const iconOnly = schedulerModeTabsNeedIconOnly(enterHeader, modeTabs, toolbar);
 
-    if (!isIOS && mainTitle && iconOnly) {
+    if (!state.isIOS && mainTitle && iconOnly) {
         body.classList.add('ui-zoom-sched-hide-title');
         void enterHeader.offsetWidth;
     }
 
-    body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly && isIOS);
-    schedTabsIconOnlyEnteredAtWidth = iconOnly && isIOS ? enterHeader.clientWidth : 0;
+    body.classList.toggle('ui-zoom-sched-tabs-icons', iconOnly && state.isIOS);
+    schedTabsIconOnlyEnteredAtWidth = iconOnly && state.isIOS ? enterHeader.clientWidth : 0;
 }
 
 function scheduleSelectionPromptLayout() {
@@ -22798,7 +20679,7 @@ function applyUiZoom(scale) {
         return;
     }
 
-    if (isIOS) {
+    if (state.isIOS) {
         document.documentElement.style.zoom = String(clamped);
         scheduleUiZoomResponsiveLayout();
         return;
@@ -22856,10 +20737,10 @@ function setUiZoom(scale, options = {}) {
         showUiZoomToast(clamped);
     }
 
-    if (!appData.settings) appData.settings = {};
-    if (appData.settings.uiZoom === clamped) return;
+    if (!state.appData.settings) state.appData.settings = {};
+    if (state.appData.settings.uiZoom === clamped) return;
 
-    appData.settings.uiZoom = clamped;
+    state.appData.settings.uiZoom = clamped;
     saveData();
 }
 
@@ -22887,9 +20768,9 @@ function setupUiZoomShortcuts() {
     // on a 393dp phone → horizontal overflow) and triggers paint bugs
     // (duplicated/offset text). Reset once; the user can still zoom
     // manually afterwards and that choice sticks.
-    if (isAndroid && appData.settings?.uiZoom !== undefined && !appData.settings.androidZoomReset) {
-        appData.settings.uiZoom = DEFAULT_UI_ZOOM;
-        appData.settings.androidZoomReset = true;
+    if (state.isAndroid && state.appData.settings?.uiZoom !== undefined && !state.appData.settings.androidZoomReset) {
+        state.appData.settings.uiZoom = DEFAULT_UI_ZOOM;
+        state.appData.settings.androidZoomReset = true;
         saveData();
     }
 
@@ -22898,7 +20779,7 @@ function setupUiZoomShortcuts() {
     window.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
     window.visualViewport?.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
 
-    if (isIOS) return;
+    if (state.isIOS) return;
 
     tauriAPI.onMenuZoomIn(() => zoomUiIn({ showToast: true })).catch(() => { });
     tauriAPI.onMenuZoomOut(() => zoomUiOut({ showToast: true })).catch(() => { });
@@ -22944,7 +20825,7 @@ function setupHelpMenuLinks() {
 
 // Setup Helper Settings in the settings modal
 function setupHelperSettings() {
-    if (isIOS || isAndroid) return;
+    if (state.isIOS || state.isAndroid) return;
     const statusIndicator = document.getElementById('helper-status-indicator');
     const cleanHostsBtn = document.getElementById('clean-hosts-btn');
 
@@ -23073,7 +20954,7 @@ async function confirmHelperRemoved() {
         };
     }
 
-    helperAvailable = false;
+    state.helperAvailable = false;
     return { removed: true, status };
 }
 
@@ -23103,7 +20984,7 @@ async function uninstallHelperAndConfirmRemoved() {
 }
 
 function isDesktopBlockingEnforcedNow() {
-    if (isIOS || isAndroid) return false;
+    if (state.isIOS || state.isAndroid) return false;
     return hasAnyEnforcedBlocks();
 }
 
@@ -23118,7 +20999,7 @@ async function updateHelperStatusIndicator() {
     try {
         const status = await refreshDesktopHelperStatus();
         const helperDisplay = getHelperStatusDisplay(status);
-        helperAvailable = helperDisplay.helperReady;
+        state.helperAvailable = helperDisplay.helperReady;
 
         statusIndicator.classList.remove('running', 'stopped');
         statusIndicator.classList.add(helperDisplay.indicatorClass);
@@ -23574,10 +21455,10 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
     }
 
     // Browsers (extension)
-    const extensionBrowserKeys = isMacOSDesktop
+    const extensionBrowserKeys = state.isMacOSDesktop
         ? ['firefox', ...MAC_BLOCKING_METHOD_KEYS.filter((k) => browserBlockingMethod(k) === 'extension')]
         : ['chrome', 'brave', 'edge', 'firefox', 'safari'];
-    const browsersHint = isMacOSDesktop
+    const browsersHint = state.isMacOSDesktop
         ? tSettings('diagnosticsBrowsersSectionHintMacExtension')
         : tSettings('diagnosticsBrowsersSectionHint');
     html += '<div class="diagnostics-section">';
@@ -23607,7 +21488,7 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
     html += '<div class="diagnostics-section">';
     html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsEnforcementSection'))}</div>`;
     html += '<div class="diagnostics-card">';
-    if (!isIOS && !isAndroid) {
+    if (!state.isIOS && !state.isAndroid) {
         const forceLabel = enforcementEnabled
             ? tSettings('diagnosticsForceCloseEnabled')
             : tSettings('diagnosticsForceCloseDisabled');
@@ -23845,7 +21726,7 @@ async function openInstalledAppsPicker() {
     // No OS-level "browse for an app bundle" concept on Android —
     // installed apps are only reachable via PackageManager (already
     // covered by the list above).
-    browseBtn?.classList.toggle('hidden', isAndroid);
+    browseBtn?.classList.toggle('hidden', state.isAndroid);
 
     // Show modal with loading state
     modal.classList.remove('hidden');
@@ -23971,7 +21852,7 @@ async function openInstalledAppsPicker() {
     };
 
     // Browse manually — fall back to the OS file picker (desktop only)
-    if (browseBtn && !isAndroid) {
+    if (browseBtn && !state.isAndroid) {
         browseBtn.classList.remove('hidden');
         browseBtn.onclick = async () => {
         closePickerModal();
@@ -24502,7 +22383,7 @@ function refreshUninstallButtonState() {
 }
 
 function setupWindowsUninstallGuidance() {
-    if (isIOS || isAndroid) return;
+    if (state.isIOS || state.isAndroid) return;
     const btn = document.getElementById('windows-uninstall-open-settings-btn');
     if (!btn) return;
 
@@ -24536,9 +22417,9 @@ function findHardestChallenge() {
     let hardestDifficulty = null;
 
     // Check one-off blocks that still have remaining time.
-    for (const block of appData.activeBlocks) {
+    for (const block of state.appData.activeBlocks) {
         if (isOneOffBlockStillActive(block, now)) {
-            const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+            const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
             if (blocklist?.overrideDifficulty) {
                 hardestDifficulty = hardestDifficulty
                     ? compareDifficulties(hardestDifficulty, blocklist.overrideDifficulty)
@@ -24548,11 +22429,11 @@ function findHardestChallenge() {
     }
 
     // Check schedules that can still become active later.
-    for (const schedule of appData.schedules || []) {
+    for (const schedule of state.appData.schedules || []) {
         if (!schedule.segments) continue;
         if (!scheduleCanStillBecomeActive(schedule, nowDate)) continue;
 
-        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
         if (blocklist?.overrideDifficulty) {
             hardestDifficulty = hardestDifficulty
                 ? compareDifficulties(hardestDifficulty, blocklist.overrideDifficulty)
@@ -24611,23 +22492,23 @@ function compareDifficulties(a, b) {
 // Perform the actual override-all operation
 async function performOverrideAll() {
     try {
-        const androidManualBlockIds = isAndroid
-            ? appData.activeBlocks.map((block) => block.id).filter(Boolean)
+        const androidManualBlockIds = state.isAndroid
+            ? state.appData.activeBlocks.map((block) => block.id).filter(Boolean)
             : [];
 
         // Clear all active blocks
-        appData.activeBlocks = [];
+        state.appData.activeBlocks = [];
 
         // Clear all schedules
-        appData.schedules = [];
+        state.appData.schedules = [];
 
         // Save the data
         await saveData();
 
         // Full cleanup on the helper side
-        if (isIOS) {
+        if (state.isIOS) {
             await tauriAPI.screentimeClearBlock();
-        } else if (isAndroid) {
+        } else if (state.isAndroid) {
             for (const id of androidManualBlockIds) {
                 try {
                     await tauriAPI.androidStopManualBlock(id);
