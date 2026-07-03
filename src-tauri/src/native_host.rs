@@ -902,4 +902,109 @@ mod tests {
 
         assert_eq!(apps, vec!["Notes".to_string()]);
     }
+
+    #[test]
+    fn derive_allowed_apps_uses_resolved_one_shot_windows() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = temp_json_path("resolved-one-shot-allowlist-apps");
+        let data = json!({
+            "blocklists": [{
+                "id": "bl-allow",
+                "name": "Allowlist",
+                "mode": "allowlist",
+                "websites": [],
+                "apps": ["Mail"]
+            }],
+            "activeBlocks": [],
+            "schedules": [{
+                "id": "sch-allow",
+                "blocklistId": "bl-allow",
+                "repeatType": "no",
+                "createdAt": now.saturating_sub(3_600_000),
+                "segments": [{
+                    "startHour": 0,
+                    "startMinute": 0,
+                    "endHour": 0,
+                    "endMinute": 0,
+                    "days": [0]
+                }],
+                "resolvedSegments": [{
+                    "startHour": 0,
+                    "startMinute": 0,
+                    "endHour": 0,
+                    "endMinute": 0,
+                    "days": [],
+                    "activeFromTimestampMs": now.saturating_sub(60_000),
+                    "activeUntilTimestampMs": now + 60_000
+                }]
+            }],
+            "settings": {}
+        });
+
+        fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        let apps = derive_allowed_apps(&path);
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(apps, vec!["Mail".to_string()]);
+    }
+
+    #[test]
+    fn derive_payload_keeps_one_shot_allowlist_schedule_metadata() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let active_from = now.saturating_sub(60_000);
+        let active_until = now + 60_000;
+        let path = temp_json_path("resolved-one-shot-allowlist-payload");
+        let data = json!({
+            "blocklists": [{
+                "id": "bl-allow-web",
+                "name": "Allow Websites",
+                "mode": "allowlist",
+                "websites": ["docs.example.com"],
+                "apps": []
+            }],
+            "activeBlocks": [],
+            "schedules": [{
+                "id": "sch-allow-web",
+                "blocklistId": "bl-allow-web",
+                "repeatType": "no",
+                "createdAt": now.saturating_sub(3_600_000),
+                "segments": [{
+                    "startHour": 0,
+                    "startMinute": 0,
+                    "endHour": 0,
+                    "endMinute": 0,
+                    "days": [0]
+                }],
+                "resolvedSegments": [{
+                    "startHour": 0,
+                    "startMinute": 0,
+                    "endHour": 0,
+                    "endMinute": 0,
+                    "days": [],
+                    "activeFromTimestampMs": active_from,
+                    "activeUntilTimestampMs": active_until
+                }]
+            }],
+            "settings": {}
+        });
+
+        fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        let (domains, blocks) = derive_payload(&path);
+        let _ = fs::remove_file(&path);
+
+        assert!(domains.is_empty(), "allowlist domains should not leak into legacy flat blacklist payload");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].blocklist_id, "bl-allow-web");
+        assert_eq!(blocks[0].mode, "allowlist");
+        assert_eq!(blocks[0].source, "schedule");
+        assert_eq!(blocks[0].domains, vec!["docs.example.com".to_string()]);
+        assert_eq!(blocks[0].started_at, Some(active_from));
+        assert_eq!(blocks[0].ends_at, Some(active_until));
+    }
 }
