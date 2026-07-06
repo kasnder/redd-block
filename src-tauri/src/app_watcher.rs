@@ -433,12 +433,12 @@ enum EntryOrigin {
 
 /// Sentinel PID for the allowlist block-start overlay when no non-allowed
 /// apps need closing — the frontend renders intention-only copy.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const ALLOWLIST_INTENTION_PID_RAW: u32 = 0;
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const ALLOWLIST_INTENTION_NAME: &str = "__allowlist_intention__";
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn allowlist_intention_pid() -> sysinfo::Pid {
     sysinfo::Pid::from_u32(ALLOWLIST_INTENTION_PID_RAW)
 }
@@ -593,9 +593,9 @@ fn sweep(
 
     let now = Instant::now();
     let mut still_alive: HashSet<sysinfo::Pid> = HashSet::new();
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     let allowlist_window_pids = if allowlist_on && !allowed.is_empty() {
-        Some(user_facing_window_pids())
+        Some(current_user_facing_window_pids())
     } else {
         None
     };
@@ -757,7 +757,7 @@ fn sweep(
         }
     }
 
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     if allowlist_on && !allowed.is_empty() {
         sweep_allowlist(
             app,
@@ -800,7 +800,7 @@ fn sweep(
                 origin,
                 intention_only,
                 now,
-                #[cfg(target_os = "macos")]
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
                 allowlist_window_pids.as_ref(),
             ) {
                 entries.remove(&pid);
@@ -846,9 +846,9 @@ fn advance_pid_entry(
     origin: EntryOrigin,
     intention_only: bool,
     now: Instant,
-    #[cfg(target_os = "macos")] allowlist_window_pids: Option<&HashSet<u32>>,
+    #[cfg(any(target_os = "macos", target_os = "windows"))] allowlist_window_pids: Option<&HashSet<u32>>,
 ) -> bool {
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     if origin == EntryOrigin::Allowlist
         && !intention_only
         && !allowlist_entry_still_user_facing(pid, allowlist_window_pids)
@@ -905,7 +905,7 @@ fn advance_pid_entry(
     false
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn refresh_pid(sys: &mut sysinfo::System, pid: sysinfo::Pid) {
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, UpdateKind};
     sys.refresh_processes_specifics(
@@ -920,7 +920,7 @@ fn refresh_pid(sys: &mut sysinfo::System, pid: sysinfo::Pid) {
 /// still get closed. **Every** visible non-allowed app gets the user-ack
 /// warning on that one sweep — not just the first. After that, only the
 /// frontmost app is checked so background agents (Dropbox, etc.) keep running.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn sweep_allowlist(
     app: Option<&AppHandle>,
     allowed: &[String],
@@ -1012,7 +1012,7 @@ fn sweep_allowlist(
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn raise_allowlist_intention_warning(
     app: Option<&AppHandle>,
     entries: &mut HashMap<sysinfo::Pid, PidEntry>,
@@ -1039,7 +1039,7 @@ fn raise_allowlist_intention_warning(
     );
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn frontmost_non_allowed_app(_allowed: &[String]) -> Vec<(sysinfo::Pid, String)> {
     let Some((pid, name)) = frontmost_app_pid_and_name() else {
         return Vec::new();
@@ -1050,7 +1050,7 @@ fn frontmost_non_allowed_app(_allowed: &[String]) -> Vec<(sysinfo::Pid, String)>
     vec![(pid, name)]
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn visible_non_allowed_regular_apps(allowed: &[String]) -> Vec<(sysinfo::Pid, String)> {
     let mut out = Vec::new();
     for (pid, name, bundle_path) in visible_regular_running_apps() {
@@ -1068,9 +1068,7 @@ fn visible_non_allowed_regular_apps(allowed: &[String]) -> Vec<(sysinfo::Pid, St
     out
 }
 
-/// Visible `.app` bundles with a regular activation policy — excludes
-/// menu-bar / background agents while still catching apps sitting
-/// behind ReDD Blocker when a block starts.
+/// User-facing apps/windows that count as closable allowlist targets.
 #[cfg(target_os = "macos")]
 fn visible_regular_running_apps() -> Vec<(sysinfo::Pid, String, Option<std::path::PathBuf>)> {
     use cocoa::base::{id, YES};
@@ -1140,6 +1138,69 @@ fn visible_regular_running_apps() -> Vec<(sysinfo::Pid, String, Option<std::path
     }
 }
 
+#[cfg(target_os = "windows")]
+fn visible_regular_running_apps() -> Vec<(sysinfo::Pid, String, Option<std::path::PathBuf>)> {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetWindow, GetWindowThreadProcessId, IsWindowVisible, GW_OWNER,
+    };
+
+    struct CollectCtx {
+        pids: HashSet<u32>,
+    }
+
+    unsafe extern "system" fn collect_top_level(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let ctx = &mut *(lparam.0 as *mut CollectCtx);
+        if !IsWindowVisible(hwnd).as_bool() {
+            return BOOL(1);
+        }
+        let owner = GetWindow(hwnd, GW_OWNER).unwrap_or(HWND::default());
+        if owner != HWND::default() {
+            return BOOL(1);
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid != 0 {
+            ctx.pids.insert(pid);
+        }
+        BOOL(1)
+    }
+
+    let mut ctx = CollectCtx {
+        pids: HashSet::new(),
+    };
+    unsafe {
+        let ptr = (&mut ctx) as *mut CollectCtx as isize;
+        let _ = EnumWindows(Some(collect_top_level), LPARAM(ptr));
+    }
+    if ctx.pids.is_empty() {
+        return Vec::new();
+    }
+
+    let pids: Vec<sysinfo::Pid> = ctx.pids.iter().copied().map(sysinfo::Pid::from_u32).collect();
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&pids),
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
+
+    let mut out = Vec::new();
+    for pid in pids {
+        let Some(proc_) = sys.process(pid) else {
+            continue;
+        };
+        let name = proc_.name().to_string_lossy().to_string();
+        if name.is_empty() {
+            continue;
+        }
+        out.push((pid, name, proc_.exe().map(|p| p.to_path_buf())));
+    }
+    out
+}
+
 #[cfg(target_os = "macos")]
 fn frontmost_app_pid_and_name() -> Option<(sysinfo::Pid, String)> {
     use cocoa::base::id;
@@ -1168,6 +1229,64 @@ fn frontmost_app_pid_and_name() -> Option<(sysinfo::Pid, String)> {
         let name_str = std::ffi::CStr::from_ptr(cstr).to_string_lossy().into_owned();
         Some((sysinfo::Pid::from_u32(raw_pid as u32), name_str))
     }
+}
+
+#[cfg(target_os = "windows")]
+fn frontmost_app_pid_and_name() -> Option<(sysinfo::Pid, String)> {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowThreadProcessId};
+
+    let hwnd = unsafe { GetForegroundWindow() };
+    if hwnd == HWND::default() {
+        return None;
+    }
+
+    let mut raw_pid = 0u32;
+    unsafe {
+        GetWindowThreadProcessId(hwnd, Some(&mut raw_pid));
+    }
+    if raw_pid == 0 {
+        return None;
+    }
+
+    let pid = sysinfo::Pid::from_u32(raw_pid);
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
+    let proc_ = sys.process(pid)?;
+    let name = proc_.name().to_string_lossy().to_string();
+    if name.is_empty() {
+        return None;
+    }
+    Some((pid, name))
+}
+
+#[cfg(target_os = "macos")]
+fn current_user_facing_window_pids() -> HashSet<u32> {
+    user_facing_window_pids()
+}
+
+#[cfg(target_os = "windows")]
+fn current_user_facing_window_pids() -> HashSet<u32> {
+    visible_regular_running_apps()
+        .into_iter()
+        .map(|(pid, _, _)| pid.as_u32())
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn allowlist_entry_still_user_facing(
+    pid: sysinfo::Pid,
+    allowlist_window_pids: Option<&HashSet<u32>>,
+) -> bool {
+    let Some(window_pids) = allowlist_window_pids else {
+        return false;
+    };
+    window_pids.contains(&pid.as_u32())
 }
 
 #[cfg(target_os = "macos")]

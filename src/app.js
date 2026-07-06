@@ -24014,7 +24014,7 @@ async function openInstalledAppsPicker() {
         }
 
         listEl.innerHTML = filtered.map(app => {
-            const alreadyAdded = modalApps.some(a => a.toLowerCase() === app.process_name.toLowerCase());
+            const alreadyAdded = getModalApps().some(a => a.toLowerCase() === app.process_name.toLowerCase());
             const isChecked = selectedProcessNames.has(app.process_name) || alreadyAdded;
             const checkedClass = isChecked ? ' checked' : '';
             const checkedAttr = isChecked ? ' checked' : '';
@@ -24051,7 +24051,7 @@ async function openInstalledAppsPicker() {
 
     function updateAddButton() {
         const newCount = [...selectedProcessNames].filter(
-            p => !modalApps.some(a => a.toLowerCase() === p.toLowerCase())
+            p => !getModalApps().some(a => a.toLowerCase() === p.toLowerCase())
         ).length;
         addBtn.textContent = newCount > 0 ? `Add Selected (${newCount})` : 'Add Selected';
         addBtn.disabled = newCount === 0;
@@ -24083,19 +24083,19 @@ async function openInstalledAppsPicker() {
     // Add Selected
     addBtn.onclick = () => {
         const toAdd = [...selectedProcessNames].filter(
-            p => !modalApps.some(a => a.toLowerCase() === p.toLowerCase())
+            p => !getModalApps().some(a => a.toLowerCase() === p.toLowerCase())
         );
         if (toAdd.length > 0) {
             const toAddCopy = [...toAdd];
             pushModalUndo('app', () => {
                 toAddCopy.forEach(a => {
-                    const i = modalApps.indexOf(a);
-                    if (i !== -1) modalApps.splice(i, 1);
+                    const i = getModalApps().indexOf(a);
+                    if (i !== -1) getModalApps().splice(i, 1);
                 });
                 window.renderModalTags();
             });
             for (const appName of toAdd) {
-                modalApps.push(appName);
+                getModalApps().push(appName);
             }
             window.renderModalTags();
         }
@@ -24109,20 +24109,20 @@ async function openInstalledAppsPicker() {
         closePickerModal();
         const appNames = await tauriAPI.openAppPicker();
         if (appNames && appNames.length > 0) {
-            const toAdd = appNames.filter(n => !modalApps.includes(n));
+            const toAdd = appNames.filter(n => !getModalApps().includes(n));
             if (toAdd.length > 0) {
                 const toAddCopy = [...toAdd];
                 pushModalUndo('app', () => {
                     toAddCopy.forEach(a => {
-                        const i = modalApps.indexOf(a);
-                        if (i !== -1) modalApps.splice(i, 1);
+                        const i = getModalApps().indexOf(a);
+                        if (i !== -1) getModalApps().splice(i, 1);
                     });
                     window.renderModalTags();
                 });
             }
             for (const appName of appNames) {
-                if (!modalApps.includes(appName)) {
-                    modalApps.push(appName);
+                if (!getModalApps().includes(appName)) {
+                    getModalApps().push(appName);
                 }
             }
             window.renderModalTags();
