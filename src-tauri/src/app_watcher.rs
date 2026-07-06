@@ -431,6 +431,18 @@ enum EntryOrigin {
     Allowlist,
 }
 
+/// Sentinel PID for the allowlist block-start overlay when no non-allowed
+/// apps need closing — the frontend renders intention-only copy.
+#[cfg(target_os = "macos")]
+const ALLOWLIST_INTENTION_PID_RAW: u32 = 0;
+#[cfg(target_os = "macos")]
+const ALLOWLIST_INTENTION_NAME: &str = "__allowlist_intention__";
+
+#[cfg(target_os = "macos")]
+fn allowlist_intention_pid() -> sysinfo::Pid {
+    sysinfo::Pid::from_u32(ALLOWLIST_INTENTION_PID_RAW)
+}
+
 #[derive(Debug)]
 struct PidEntry {
     /// The user-list name we matched against this process — emitted
@@ -451,6 +463,9 @@ struct PidEntry {
     /// user-facing-window re-check before any quit action; blocklist
     /// entries keep the existing behavior unchanged.
     origin: EntryOrigin,
+    /// Allowlist block-start reminder with no apps to close yet. Dismissed
+    /// immediately when the user clicks "Let's go!" — no PreQuit countdown.
+    intention_only: bool,
 }
 
 // ---- Run loop -------------------------------------------------------------
@@ -590,13 +605,30 @@ fn sweep(
     // swap so we consume the signal exactly once.
     let user_acked = USER_ACK_PENDING.swap(false, Ordering::SeqCst);
     if user_acked {
-        for entry in entries.values_mut() {
-            if matches!(entry.phase, PidPhase::AwaitingUserAck) {
+        let mut intention_dismissed: Vec<sysinfo::Pid> = Vec::new();
+        for (pid, entry) in entries.iter_mut() {
+            if !matches!(entry.phase, PidPhase::AwaitingUserAck) {
+                continue;
+            }
+            if entry.intention_only {
+                intention_dismissed.push(*pid);
+                continue;
+            }
+            log::info!(
+                "app_watcher: user ack received for '{}'; entering PreQuit",
+                entry.matched_name
+            );
+            entry.phase = PidPhase::PreQuit { quit_at: now + PREQUIT_DURATION };
+        }
+        for pid in intention_dismissed {
+            if let Some(entry) = entries.remove(&pid) {
                 log::info!(
-                    "app_watcher: user ack received for '{}'; entering PreQuit",
+                    "app_watcher: allowlist intention ack for pid={pid} name='{}'",
                     entry.matched_name
                 );
-                entry.phase = PidPhase::PreQuit { quit_at: now + PREQUIT_DURATION };
+                if entry.warning_raised {
+                    emit_warning_hide(app, pid.as_u32(), &entry.matched_name, HideReason::Resolved);
+                }
             }
         }
     }
@@ -640,6 +672,7 @@ fn sweep(
                         phase: PidPhase::AwaitingUserAck,
                         warning_raised: true,
                         origin: EntryOrigin::Blocklist,
+                        intention_only: false,
                     });
                 } else {
                     // Mid-block app launch — the user opened a
@@ -658,6 +691,7 @@ fn sweep(
                         phase: PidPhase::PostQuit { kill_at: now + POSTQUIT_GRACE },
                         warning_raised: false,
                         origin: EntryOrigin::Blocklist,
+                        intention_only: false,
                     });
                 }
             }
@@ -754,6 +788,7 @@ fn sweep(
             let matched = entry.matched_name.clone();
             let warned = entry.warning_raised;
             let origin = entry.origin;
+            let intention_only = entry.intention_only;
             if advance_pid_entry(
                 app,
                 pid,
@@ -763,6 +798,7 @@ fn sweep(
                 &matched,
                 warned,
                 origin,
+                intention_only,
                 now,
                 #[cfg(target_os = "macos")]
                 allowlist_window_pids.as_ref(),
@@ -808,11 +844,13 @@ fn advance_pid_entry(
     matched_name: &str,
     warning_raised: bool,
     origin: EntryOrigin,
+    intention_only: bool,
     now: Instant,
     #[cfg(target_os = "macos")] allowlist_window_pids: Option<&HashSet<u32>>,
 ) -> bool {
     #[cfg(target_os = "macos")]
     if origin == EntryOrigin::Allowlist
+        && !intention_only
         && !allowlist_entry_still_user_facing(pid, allowlist_window_pids)
     {
         if warning_raised {
@@ -900,7 +938,7 @@ fn sweep_allowlist(
         frontmost_non_allowed_app(allowed)
     };
 
-    if targets.is_empty() {
+    if !block_start && targets.is_empty() {
         return;
     }
 
@@ -911,6 +949,8 @@ fn sweep_allowlist(
     if block_start {
         allowlist_warn_pending.store(false, Ordering::SeqCst);
     }
+
+    let mut block_start_warning_raised = false;
 
     for (pid, name) in targets {
         if is_protected(&name) {
@@ -938,11 +978,13 @@ fn sweep_allowlist(
                         "app_watcher: allowlist block-start pid={pid} name='{name}'; raising user-ack warning"
                     );
                     emit_warning_show(app, pid.as_u32(), &name, PREQUIT_DURATION.as_secs());
+                    block_start_warning_raised = true;
                     slot.insert(PidEntry {
                         matched_name: name.clone(),
                         phase: PidPhase::AwaitingUserAck,
                         warning_raised: true,
                         origin: EntryOrigin::Allowlist,
+                        intention_only: false,
                     });
                 } else {
                     log::info!(
@@ -956,12 +998,45 @@ fn sweep_allowlist(
                         },
                         warning_raised: false,
                         origin: EntryOrigin::Allowlist,
+                        intention_only: false,
                     });
                 }
             }
             Entry::Occupied(_) => {}
         }
     }
+
+    if block_start_batch && !block_start_warning_raised {
+        raise_allowlist_intention_warning(app, entries);
+        still_alive.insert(allowlist_intention_pid());
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn raise_allowlist_intention_warning(
+    app: Option<&AppHandle>,
+    entries: &mut HashMap<sysinfo::Pid, PidEntry>,
+) {
+    if entries.contains_key(&allowlist_intention_pid()) {
+        return;
+    }
+    log::info!("app_watcher: allowlist block-start with no closable apps; raising intention warning");
+    emit_warning_show(
+        app,
+        ALLOWLIST_INTENTION_PID_RAW,
+        ALLOWLIST_INTENTION_NAME,
+        PREQUIT_DURATION.as_secs(),
+    );
+    entries.insert(
+        allowlist_intention_pid(),
+        PidEntry {
+            matched_name: ALLOWLIST_INTENTION_NAME.to_string(),
+            phase: PidPhase::AwaitingUserAck,
+            warning_raised: true,
+            origin: EntryOrigin::Allowlist,
+            intention_only: true,
+        },
+    );
 }
 
 #[cfg(target_os = "macos")]

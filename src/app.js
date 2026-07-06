@@ -6049,6 +6049,9 @@ const APP_BLOCKING_CLOSEDOWN_PREQUIT_MS = 30 * 1000;
 /// Schedule-block warnings may be snoozed once for this long before the
 /// overlay reappears (without the snooze button on the second show).
 const APP_BLOCKING_SCHEDULE_SNOOZE_MS = 2 * 60 * 1000;
+/** Backend sentinel for an allowlist block-start with no apps to close yet. */
+const ALLOWLIST_INTENTION_WARNING_PID = 0;
+const ALLOWLIST_INTENTION_WARNING_NAME = '__allowlist_intention__';
 
 function buildAppBlockingSnoozeIconImg(size) {
     return `<img src="${snoozeIconUrl}" alt="" class="app-blocking-snooze-icon" width="${size}" height="${size}" aria-hidden="true">`;
@@ -6223,8 +6226,62 @@ function collectScheduleAllowedApps(now = Date.now()) {
     return set;
 }
 
+function isAllowlistIntentionWarningRow(row) {
+    return row?.intentionOnly === true
+        || row?.name === ALLOWLIST_INTENTION_WARNING_NAME;
+}
+
+function isAllowlistIntentionWarningPid(pid) {
+    return Number(pid) === ALLOWLIST_INTENTION_WARNING_PID;
+}
+
+function findActiveAllowlistBlocklist(now = Date.now(), nowDate = new Date(now)) {
+    for (const block of appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        if (isBlocklistAllowlistMode(blocklist)) return blocklist;
+    }
+    for (const schedule of appData.schedules || []) {
+        if (!schedule.segments) continue;
+        if (isSchedulePausedNow(schedule, now)) continue;
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        if (isBlocklistAllowlistMode(blocklist)) return blocklist;
+    }
+    return null;
+}
+
+function collectActiveAllowlistAllowedAppNames(now = Date.now(), nowDate = new Date(now)) {
+    const names = [];
+    for (const block of appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        if (!isBlocklistAllowlistMode(blocklist)) continue;
+        for (const app of blocklist?.apps || []) {
+            if (!isProtectedApp(app)) names.push(app);
+        }
+    }
+    for (const schedule of appData.schedules || []) {
+        if (!schedule.segments) continue;
+        if (isSchedulePausedNow(schedule, now)) continue;
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        if (!isBlocklistAllowlistMode(blocklist)) continue;
+        for (const app of blocklist?.apps || []) {
+            if (!isProtectedApp(app)) names.push(app);
+        }
+    }
+    return uniqueBlockedAppDisplayNames(names);
+}
+
 function isAllowlistAppEnforcementActive(now = Date.now()) {
     return collectManualAllowedApps(now).size > 0 || collectScheduleAllowedApps(now).size > 0;
+}
+
+function collectActiveAllowlistAllowedAppNamesForBlocklist(blocklist) {
+    if (!blocklist || !isBlocklistAllowlistMode(blocklist)) return [];
+    const names = (blocklist.apps || []).filter((app) => !isProtectedApp(app));
+    return uniqueBlockedAppDisplayNames(names);
 }
 
 /** Count of active manual blocks + schedule segments enforcing allowlist mode. */
@@ -6360,6 +6417,8 @@ function setupAppBlockingWarningOverlay() {
         if (!Number.isFinite(pid)) return;
         appBlockingWarningRows.set(pid, {
             name: p.name || 'App',
+            intentionOnly: isAllowlistIntentionWarningPid(pid)
+                || p.name === ALLOWLIST_INTENTION_WARNING_NAME,
         });
         renderAppBlockingWarningOverlay();
         renderAppBlockingClosedownBanner();
@@ -6407,7 +6466,9 @@ function setupAppBlockingWarningOverlay() {
         void playAppBlockingLetsGoVoice();
         const ackedDeadlineMs = Date.now() + APP_BLOCKING_CLOSEDOWN_PREQUIT_MS;
         for (const row of appBlockingWarningRows.values()) {
-            if (!row.ackedDeadlineMs) row.ackedDeadlineMs = ackedDeadlineMs;
+            if (!row.ackedDeadlineMs && !isAllowlistIntentionWarningRow(row)) {
+                row.ackedDeadlineMs = ackedDeadlineMs;
+            }
         }
         applyWarningOverlayPresence();
         renderAppBlockingClosedownBanner();
@@ -6499,20 +6560,32 @@ function renderAppBlockingWarningOverlay() {
     const rawNames = [];
     for (const [, row] of appBlockingWarningRows) {
         if (row.ackedDeadlineMs) continue;
+        if (isAllowlistIntentionWarningRow(row)) continue;
         const n = (row.name || unknownApp).trim() || unknownApp;
         rawNames.push(n);
     }
     const names = uniqueBlockedAppDisplayNames(rawNames);
-    if (names.length === 0) {
+    const hasIntentionOnly = [...appBlockingWarningRows.values()].some(
+        (row) => !row.ackedDeadlineMs && isAllowlistIntentionWarningRow(row),
+    );
+    if (names.length === 0 && !hasIntentionOnly) {
         appBlockingActiveStartOverlay = null;
         applyWarningOverlayPresence();
         return;
     }
 
-    const responsibleBlocklist = findResponsibleBlocklistForWarningApps(names);
+    let responsibleBlocklist = findResponsibleBlocklistForWarningApps(names);
+    if (!responsibleBlocklist && hasIntentionOnly) {
+        responsibleBlocklist = findActiveAllowlistBlocklist();
+    }
     const blocklistName = responsibleBlocklist?.name || tSettings('appBlockingFallbackBlocklistName');
     const blocklistEmoji = responsibleBlocklist?.emoji || '🎯';
-    const startOverlay = getScheduleStartOverlayForWarningApps(names);
+    const startOverlay = getScheduleStartOverlayForWarningApps(names)
+        ?? (responsibleBlocklist ? getScheduleStartOverlayForBlocklistId(responsibleBlocklist.id) : null);
+    const isAllowlistWarning = isBlocklistAllowlistMode(responsibleBlocklist);
+    const allowedAppNames = isAllowlistWarning
+        ? collectActiveAllowlistAllowedAppNamesForBlocklist(responsibleBlocklist)
+        : [];
 
     const headingEl = document.getElementById('app-blocking-warning-heading');
     const summaryEl = document.getElementById('app-blocking-warning-summary');
@@ -6541,6 +6614,8 @@ function renderAppBlockingWarningOverlay() {
         blocklistName,
         blocklistEmoji,
         appNames: names,
+        allowedAppNames,
+        isAllowlistWarning,
         headingEl,
         summaryEl,
         emojiWrapEl,
@@ -6692,6 +6767,21 @@ function uniqueBlockedAppDisplayNames(names) {
         out.push(displayNameForBlockedApp(name));
     }
     return out;
+}
+
+/** Pretty Oxford-comma list: "A", "A and B", "A, B, and C". */
+function joinAppListOxford(names, { bold = true } = {}) {
+    const arr = names.filter(Boolean);
+    const wrap = bold
+        ? (n) => `<strong>${escapeHtml(n)}</strong>`
+        : (n) => escapeHtml(n);
+    if (arr.length === 0) return '';
+    if (arr.length === 1) return wrap(arr[0]);
+    const and = tSettings('andWord');
+    if (arr.length === 2) return `${wrap(arr[0])} ${and} ${wrap(arr[1])}`;
+    const head = arr.slice(0, -1).map(wrap).join(', ');
+    const tail = wrap(arr[arr.length - 1]);
+    return `${head}, ${and} ${tail}`;
 }
 
 /** Pretty list join: "A", "A and B", "A, B and C", "A, B and 4 more". */
@@ -11610,6 +11700,19 @@ function buildDefaultWarningSummaryHtml(names, blocklistName, letsGoLabel) {
     return tSettingsFmt(summaryKey, { blocklist: bl, letsGo, apps });
 }
 
+function buildAllowlistWarningSummaryHtml(allowedNames, warnedNames, letsGoLabel) {
+    const allowedApps = joinAppListOxford(allowedNames);
+    const letsGo = escapeHtml(letsGoLabel || tSettings('appBlockingLetsGo'));
+    if (warnedNames.length === 0) {
+        return tSettingsFmt('appBlockingAllowlistSummaryNoWarnedHtml', { allowedApps });
+    }
+    const warnedApps = joinAppListOxford(warnedNames);
+    const summaryKey = warnedNames.length === 1
+        ? 'appBlockingAllowlistSummarySingleWarnedHtml'
+        : 'appBlockingAllowlistSummaryMultiWarnedHtml';
+    return tSettingsFmt(summaryKey, { allowedApps, warnedApps, letsGo });
+}
+
 function getScheduleOverlayAppsPreviewList(blocklist) {
     const apps = getBlocklistDisplayApps(blocklist);
     return joinAppListWithLimit(apps, 3, { bold: false });
@@ -11825,6 +11928,8 @@ async function applyScheduleStartOverlayPresentation({
     blocklistName,
     blocklistEmoji,
     appNames,
+    allowedAppNames = [],
+    isAllowlistWarning = false,
     headingEl,
     summaryEl,
     emojiWrapEl,
@@ -11848,7 +11953,13 @@ async function applyScheduleStartOverlayPresentation({
     }
 
     if (summaryEl) {
-        if (useCustom && overlay.message) {
+        if (isAllowlistWarning) {
+            summaryEl.innerHTML = buildAllowlistWarningSummaryHtml(
+                allowedAppNames,
+                appNames,
+                letsGoText,
+            );
+        } else if (useCustom && overlay.message) {
             summaryEl.innerHTML = formatScheduleOverlayCustomMessageHtml(
                 overlay.message,
                 appNames,
@@ -19782,6 +19893,12 @@ const SETTINGS_TRANSLATIONS = {
             '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
         appBlockingWarningSummaryMultiHtml:
             '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
+        appBlockingAllowlistSummaryNoWarnedHtml:
+            'You will only be allowed to use {allowedApps}. All other apps will be closed when you try to open them.',
+        appBlockingAllowlistSummarySingleWarnedHtml:
+            'You will only be allowed to use {allowedApps}. When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close it for you.',
+        appBlockingAllowlistSummaryMultiWarnedHtml:
+            'You will only be allowed to use {allowedApps}. When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close them for you.',
         appBlockingClosedownCountdownHtml:
             'Closing {apps} in <strong>{seconds}s</strong> — save your work now.',
         appBlockingClosedownFinalSingleHtml: 'Closing {apps} now…',
@@ -20560,6 +20677,12 @@ const SETTINGS_TRANSLATIONS = {
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
         appBlockingWarningSummaryMultiHtml:
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
+        appBlockingAllowlistSummaryNoWarnedHtml:
+            'Du må kun bruge {allowedApps}. Alle andre apps lukkes, når du forsøger at åbne dem.',
+        appBlockingAllowlistSummarySingleWarnedHtml:
+            'Du må kun bruge {allowedApps}. Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes den ned.',
+        appBlockingAllowlistSummaryMultiWarnedHtml:
+            'Du må kun bruge {allowedApps}. Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes de ned.',
         appBlockingClosedownCountdownHtml:
             'Lukker {apps} om <strong>{seconds} sek.</strong> — gem dit arbejde nu.',
         appBlockingClosedownFinalSingleHtml: 'Lukker {apps} nu…',
