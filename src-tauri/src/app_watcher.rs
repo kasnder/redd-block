@@ -51,6 +51,9 @@ use tauri::{AppHandle, Emitter};
 
 pub type BlockedApps = Arc<RwLock<HashSet<String>>>;
 
+#[cfg(target_os = "macos")]
+use crate::window_inventory::user_facing_window_pids;
+
 /// Steady-state poll cadence while a schedule is active but no blocked
 /// app is currently being tracked — the common idle case. We only need
 /// to notice a newly-launched blocked app within a couple of seconds,
@@ -422,6 +425,12 @@ enum PidPhase {
     PostQuit { kill_at: Instant },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EntryOrigin {
+    Blocklist,
+    Allowlist,
+}
+
 #[derive(Debug)]
 struct PidEntry {
     /// The user-list name we matched against this process — emitted
@@ -438,6 +447,10 @@ struct PidEntry {
     /// would underflow / falsely tear down panel mode while a
     /// concurrent block-start warning is still up.
     warning_raised: bool,
+    /// Why this PID was enrolled. Allowlist-origin entries get the
+    /// user-facing-window re-check before any quit action; blocklist
+    /// entries keep the existing behavior unchanged.
+    origin: EntryOrigin,
 }
 
 // ---- Run loop -------------------------------------------------------------
@@ -565,6 +578,12 @@ fn sweep(
 
     let now = Instant::now();
     let mut still_alive: HashSet<sysinfo::Pid> = HashSet::new();
+    #[cfg(target_os = "macos")]
+    let allowlist_window_pids = if allowlist_on && !allowed.is_empty() {
+        Some(user_facing_window_pids())
+    } else {
+        None
+    };
 
     // If the user clicked "Let's go!" since the last sweep, transition
     // every PID currently in `AwaitingUserAck` into `PreQuit`. Atomic
@@ -620,6 +639,7 @@ fn sweep(
                         matched_name,
                         phase: PidPhase::AwaitingUserAck,
                         warning_raised: true,
+                        origin: EntryOrigin::Blocklist,
                     });
                 } else {
                     // Mid-block app launch — the user opened a
@@ -637,6 +657,7 @@ fn sweep(
                         matched_name,
                         phase: PidPhase::PostQuit { kill_at: now + POSTQUIT_GRACE },
                         warning_raised: false,
+                        origin: EntryOrigin::Blocklist,
                     });
                 }
             }
@@ -712,6 +733,7 @@ fn sweep(
             sys,
             now,
             &mut still_alive,
+            allowlist_window_pids.as_ref(),
         );
     }
 
@@ -731,6 +753,7 @@ fn sweep(
         if let Some(entry) = entries.get_mut(&pid) {
             let matched = entry.matched_name.clone();
             let warned = entry.warning_raised;
+            let origin = entry.origin;
             if advance_pid_entry(
                 app,
                 pid,
@@ -739,7 +762,10 @@ fn sweep(
                 &mut entry.phase,
                 &matched,
                 warned,
+                origin,
                 now,
+                #[cfg(target_os = "macos")]
+                allowlist_window_pids.as_ref(),
             ) {
                 entries.remove(&pid);
             }
@@ -781,8 +807,20 @@ fn advance_pid_entry(
     phase: &mut PidPhase,
     matched_name: &str,
     warning_raised: bool,
+    origin: EntryOrigin,
     now: Instant,
+    #[cfg(target_os = "macos")] allowlist_window_pids: Option<&HashSet<u32>>,
 ) -> bool {
+    #[cfg(target_os = "macos")]
+    if origin == EntryOrigin::Allowlist
+        && !allowlist_entry_still_user_facing(pid, allowlist_window_pids)
+    {
+        if warning_raised {
+            emit_warning_hide(app, pid.as_u32(), matched_name, HideReason::Resolved);
+        }
+        return true;
+    }
+
     let next = match phase {
         PidPhase::AwaitingUserAck => PidPhase::AwaitingUserAck,
         PidPhase::PreQuit { quit_at } => {
@@ -853,6 +891,7 @@ fn sweep_allowlist(
     sys: &mut sysinfo::System,
     now: Instant,
     still_alive: &mut HashSet<sysinfo::Pid>,
+    allowlist_window_pids: Option<&HashSet<u32>>,
 ) {
     let block_start = allowlist_warn_pending.load(Ordering::SeqCst);
     let targets = if block_start {
@@ -875,6 +914,9 @@ fn sweep_allowlist(
 
     for (pid, name) in targets {
         if is_protected(&name) {
+            continue;
+        }
+        if !allowlist_entry_still_user_facing(pid, allowlist_window_pids) {
             continue;
         }
         refresh_pid(sys, pid);
@@ -900,6 +942,7 @@ fn sweep_allowlist(
                         matched_name: name.clone(),
                         phase: PidPhase::AwaitingUserAck,
                         warning_raised: true,
+                        origin: EntryOrigin::Allowlist,
                     });
                 } else {
                     log::info!(
@@ -912,6 +955,7 @@ fn sweep_allowlist(
                             kill_at: now + POSTQUIT_GRACE,
                         },
                         warning_raised: false,
+                        origin: EntryOrigin::Allowlist,
                     });
                 }
             }
@@ -1048,6 +1092,37 @@ fn frontmost_app_pid_and_name() -> Option<(sysinfo::Pid, String)> {
         }
         let name_str = std::ffi::CStr::from_ptr(cstr).to_string_lossy().into_owned();
         Some((sysinfo::Pid::from_u32(raw_pid as u32), name_str))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn allowlist_entry_still_user_facing(
+    pid: sysinfo::Pid,
+    allowlist_window_pids: Option<&HashSet<u32>>,
+) -> bool {
+    let Some(window_pids) = allowlist_window_pids else {
+        return false;
+    };
+    window_pids.contains(&pid.as_u32()) && pid_has_regular_activation_policy(pid)
+}
+
+#[cfg(target_os = "macos")]
+fn pid_has_regular_activation_policy(pid: sysinfo::Pid) -> bool {
+    use cocoa::base::id;
+    use objc::runtime::Class;
+    use objc::{msg_send, sel, sel_impl};
+
+    let raw_pid: i32 = pid.as_u32() as i32;
+    unsafe {
+        let Some(class) = Class::get("NSRunningApplication") else {
+            return false;
+        };
+        let app: id = msg_send![class, runningApplicationWithProcessIdentifier: raw_pid];
+        if app.is_null() {
+            return false;
+        }
+        let policy: i64 = msg_send![app, activationPolicy];
+        policy == 0
     }
 }
 
