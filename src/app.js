@@ -424,6 +424,10 @@ function updateBlocklistModalModeLabels(mode) {
         tSettings(isAllow ? 'appsAllowTooltip' : 'appsTooltip'),
     );
     assignText('blocklist-mode-hint', tSettings(isAllow ? 'allowlistModeHint' : 'blocklistModeHint'));
+    assignText(
+        'show-item-details-label',
+        tSettings(isAllow ? 'listAllowedOnCard' : 'listBlockedOnCard'),
+    );
     const websiteInput = document.getElementById('modal-website-input');
     if (websiteInput) {
         websiteInput.placeholder = tSettings(isAllow ? 'placeholderWebsiteAllow' : 'placeholderWebsiteBlock');
@@ -13352,8 +13356,11 @@ function formatStartBlockDurationCopy(isAlwaysOn, blockStart, blockEnd) {
     });
 }
 
-function formatStartBlockSubtitle(isAlwaysOn, blockStart, blockEnd) {
-    if (isAlwaysOn) return tSettings('startBlockSubtitleAlways');
+function formatStartBlockSubtitle(blocklist, isAlwaysOn, blockStart, blockEnd) {
+    const isAllowlist = isBlocklistAllowlistMode(blocklist);
+    if (isAlwaysOn) {
+        return tSettings(isAllowlist ? 'startBlockSubtitleAllowlistAlways' : 'startBlockSubtitleAlways');
+    }
     const durationMs = blockEnd.getTime() - blockStart.getTime();
     const durationMinutes = Math.max(1, Math.round(durationMs / 60000));
     const hours = Math.floor(durationMinutes / 60);
@@ -13362,7 +13369,16 @@ function formatStartBlockSubtitle(isAlwaysOn, blockStart, blockEnd) {
     if (hours > 0 && mins > 0) durationLabel = `${hours}h ${mins}m`;
     else if (hours > 0) durationLabel = `${hours} hour${hours > 1 ? 's' : ''}`;
     else durationLabel = `${mins} minute${mins > 1 ? 's' : ''}`;
-    return tSettingsFmt('startBlockSubtitleFmt', { duration: durationLabel });
+    const key = isAllowlist ? 'startBlockSubtitleAllowlistFmt' : 'startBlockSubtitleFmt';
+    return tSettingsFmt(key, { duration: durationLabel });
+}
+
+function formatStartScheduleSubtitle(blocklist) {
+    return tSettings(
+        isBlocklistAllowlistMode(blocklist)
+            ? 'startScheduleSubtitleAllowlist'
+            : 'startScheduleSubtitle',
+    );
 }
 
 function setStartConfirmRoomChip(blocklist, {
@@ -13523,7 +13539,10 @@ function getStartBlockConfirmTitle(blocklist) {
 
 function getResumeBlockConfirmTitle(blocklist) {
     if (!blocklist) return tSettings('resumeThisBlock');
-    return tSettingsFmt('resumeBlockTitleFmt', { name: blocklist.name });
+    const key = isBlocklistAllowlistMode(blocklist)
+        ? 'resumeBlockTitleAllowlistFmt'
+        : 'resumeBlockTitleFmt';
+    return tSettingsFmt(key, { name: blocklist.name });
 }
 
 function showScheduleConfirmModal(blocklist) {
@@ -13535,7 +13554,7 @@ function showScheduleConfirmModal(blocklist) {
     setStartConfirmRoomChip(blocklist, SCHEDULE_CONFIRM_ROOM_CHIP_IDS);
 
     const subtitleEl = document.getElementById('schedule-confirm-subtitle');
-    if (subtitleEl) subtitleEl.innerHTML = tSettings('startScheduleSubtitle');
+    if (subtitleEl) subtitleEl.innerHTML = formatStartScheduleSubtitle(blocklist);
 
     pendingScheduleStartOverlayId = getEffectiveScheduleStartOverlayId();
     syncScheduleConfirmOverlaySummary();
@@ -14936,7 +14955,7 @@ function startBlock() {
 
     const subtitleEl = document.getElementById('start-confirm-subtitle');
     if (subtitleEl) {
-        subtitleEl.innerHTML = formatStartBlockSubtitle(isAlwaysOnMode, blockStart, blockEnd);
+        subtitleEl.innerHTML = formatStartBlockSubtitle(blocklist, isAlwaysOnMode, blockStart, blockEnd);
     }
 
     const durationEl = document.getElementById('start-confirm-duration');
@@ -15891,7 +15910,9 @@ function formatBlocklistModalSummary(blocklist) {
     const websiteCount = blocklist.websites?.length || 0;
     const displayApps = getBlocklistDisplayApps(blocklist);
     const appCount = displayApps.length;
-    const mode = blocklist.mode === 'allowlist' ? 'Allows' : 'Blocks';
+    const mode = isBlocklistAllowlistMode(blocklist)
+        ? tSettings('blocklistModalSummaryAllows')
+        : tSettings('blocklistModalSummaryBlocks');
     const metaParts = [];
 
     if (websiteCount > 0) {
@@ -15905,9 +15926,9 @@ function formatBlocklistModalSummary(blocklist) {
 
     if (appCount > 0) {
         if (appCount <= 3) {
-            metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${displayApps.join(', ')})`);
+            metaParts.push(`${appCount} ${appWord(appCount)} (${displayApps.join(', ')})`);
         } else {
-            metaParts.push(`${appCount} apps (${displayApps.slice(0, 3).join(', ')}, ...)`);
+            metaParts.push(`${appCount} ${appWord(appCount)} (${displayApps.slice(0, 3).join(', ')}, ...)`);
         }
     }
 
@@ -16019,7 +16040,12 @@ function openResumeConfirmation(blocklistId, type, blockId) {
     document.getElementById('start-block-confirm-title').textContent = getResumeBlockConfirmTitle(blocklist);
 
     const subtitleEl = document.getElementById('start-confirm-subtitle');
-    if (subtitleEl) subtitleEl.innerHTML = tSettings('resumeBlockSubtitle');
+    if (subtitleEl) {
+        const subtitleKey = isBlocklistAllowlistMode(blocklist)
+            ? 'resumeBlockSubtitleAllowlist'
+            : 'resumeBlockSubtitle';
+        subtitleEl.innerHTML = tSettings(subtitleKey);
+    }
 
     const durationEl = document.getElementById('start-confirm-duration');
     if (type === 'block') {
@@ -20076,6 +20102,8 @@ const SETTINGS_TRANSLATIONS = {
         blocklistModeLabel: 'Mode',
         blocklistModeBlocklist: 'Block list',
         blocklistModeAllowlist: 'Allow list',
+        blocklistModalSummaryBlocks: 'Blocks',
+        blocklistModalSummaryAllows: 'Allows',
         blocklistModeHint: 'Only the websites and apps you add will be blocked.',
         allowlistModeHint: 'Only the websites and apps you add will be accessible. Everything else is blocked.',
         placeholderWebsiteBlock: 'e.g., facebook.com',
@@ -20102,6 +20130,7 @@ const SETTINGS_TRANSLATIONS = {
         emoji: 'Emoji',
         advancedOptions: 'Advanced options',
         listBlockedOnCard: 'Show names of blocked websites & apps in the overview',
+        listAllowedOnCard: 'Show names of allowed websites & apps in the overview',
         importWebsitesTitle: 'Import websites',
         browseApplicationsTitle: 'Browse Applications',
         modalPremadeListsCaption: 'Lists',
@@ -20151,9 +20180,13 @@ const SETTINGS_TRANSLATIONS = {
         startThisBlock: 'Start focus space?',
         startBlockTitleFmt: 'Start focus space “{name}”?',
         resumeBlockTitleFmt: 'Resume the block “{name}”?',
+        resumeBlockTitleAllowlistFmt: 'Resume the allow list “{name}”?',
         startBlockSubtitleFmt: 'Your blocked websites and apps go quiet for the next <strong>{duration}</strong>.',
         startBlockSubtitleAlways: 'Your blocked websites and apps go quiet until you exit the room.',
+        startBlockSubtitleAllowlistFmt: 'Only your allowed websites and apps will be accessible for the next <strong>{duration}</strong>.',
+        startBlockSubtitleAllowlistAlways: 'Only your allowed websites and apps will be accessible until you exit the room.',
         resumeBlockSubtitle: 'Pick up where you left off with this block.',
+        resumeBlockSubtitleAllowlist: 'Pick up where you left off with this allow list.',
         startConfirmBlockingLabel: 'Blocking',
         startConfirmAllowingLabel: 'Allowing',
         startConfirmDurationLabel: 'Duration',
@@ -20179,6 +20212,7 @@ const SETTINGS_TRANSLATIONS = {
         startThisSchedule: 'Start this schedule?',
         startScheduleTitleFmt: 'Start the schedule “{name}”?',
         startScheduleSubtitle: 'Your blocked websites and apps go quiet at the times shown below.',
+        startScheduleSubtitleAllowlist: 'Only your allowed websites and apps will be accessible at the times shown below.',
         scheduleConfirmOverlayLabel: 'Start alert',
         scheduleActiveOverlayLabel: 'Start alert:',
         scheduleConfirmOverlayDefaultTitle: 'Default',
@@ -20859,6 +20893,8 @@ const SETTINGS_TRANSLATIONS = {
         blocklistModeLabel: 'Tilstand',
         blocklistModeBlocklist: 'Blokeringsliste',
         blocklistModeAllowlist: 'Tilladelsesliste',
+        blocklistModalSummaryBlocks: 'Blokerer',
+        blocklistModalSummaryAllows: 'Tillader',
         blocklistModeHint: 'Kun de hjemmesider og apps du tilføjer bliver blokeret.',
         allowlistModeHint: 'Kun de hjemmesider og apps du tilføjer er tilgængelige. Alt andet blokeres.',
         placeholderWebsiteBlock: 'fx facebook.com',
@@ -20885,6 +20921,7 @@ const SETTINGS_TRANSLATIONS = {
         emoji: 'Emoji',
         advancedOptions: 'Avancerede indstillinger',
         listBlockedOnCard: 'Vis navnet på blokerede websites og apps i oversigten',
+        listAllowedOnCard: 'Vis navnet på tilladte websites og apps i oversigten',
         importWebsitesTitle: 'Importér websites',
         browseApplicationsTitle: 'Gennemse programmer',
         modalPremadeListsCaption: 'Lister',
@@ -20935,11 +20972,15 @@ const SETTINGS_TRANSLATIONS = {
         startThisBlock: 'Gå ind i rummet?',
         startBlockTitleFmt: 'Gå ind i rummet “{name}”?',
         resumeBlockTitleFmt: 'Genoptag blokeringen “{name}”?',
+        resumeBlockTitleAllowlistFmt: 'Genoptag tilladelseslisten “{name}”?',
         startBlockSubtitleFmt: 'Dine blokerede hjemmesider og apps er stille de næste <strong>{duration}</strong>.',
         startBlockSubtitleAlways: 'Dine blokerede hjemmesider og apps er stille, indtil du forlader rummet.',
+        startBlockSubtitleAllowlistFmt: 'Kun dine tilladte hjemmesider og apps er tilgængelige de næste <strong>{duration}</strong>.',
+        startBlockSubtitleAllowlistAlways: 'Kun dine tilladte hjemmesider og apps er tilgængelige, indtil du forlader rummet.',
         resumeBlockSubtitle: 'Fortsæt hvor du slap med denne blokering.',
+        resumeBlockSubtitleAllowlist: 'Fortsæt hvor du slap med denne tilladelsesliste.',
         startConfirmBlockingLabel: 'Blokering',
-        startConfirmAllowingLabel: 'Tillader',
+        startConfirmAllowingLabel: 'Tilladelse',
         startConfirmDurationLabel: 'Varighed',
         startConfirmTimesLabel: 'Tider',
         startConfirmRepeatsLabel: 'Gentages',
@@ -20963,6 +21004,7 @@ const SETTINGS_TRANSLATIONS = {
         startThisSchedule: 'Start dette skema?',
         startScheduleTitleFmt: 'Start skemaet “{name}”?',
         startScheduleSubtitle: 'Dine blokerede hjemmesider og apps er stille på tidspunkterne vist nedenfor.',
+        startScheduleSubtitleAllowlist: 'Kun dine tilladte hjemmesider og apps er tilgængelige på tidspunkterne vist nedenfor.',
         scheduleConfirmOverlayLabel: 'Startbesked',
         scheduleActiveOverlayLabel: 'Startbesked:',
         scheduleConfirmOverlayDefaultTitle: 'Standard',
@@ -21776,6 +21818,13 @@ function websiteWord(count) {
         return count === 1 ? 'hjemmeside' : 'hjemmesider';
     }
     return count === 1 ? 'website' : 'websites';
+}
+
+function appWord(count) {
+    if (getSettingsLanguage() === 'da') {
+        return count === 1 ? 'app' : 'apps';
+    }
+    return count === 1 ? 'app' : 'apps';
 }
 
 function siteWord(count) {
