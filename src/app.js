@@ -6897,15 +6897,33 @@ function normalizeBlockedAppKey(name) {
     return String(name || '').trim().replace(/\.exe$/i, '').toLowerCase();
 }
 
+function humanizeBlockedAppName(processName) {
+    const raw = String(processName || '').trim().replace(/\.exe$/i, '');
+    if (!raw) return processName;
+    const spaced = raw
+        .replace(/[_-]+/g, ' ')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!spaced) return processName;
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 function displayNameForBlockedApp(processName) {
-    const key = normalizeBlockedAppKey(processName);
+    const raw = String(processName || '').trim();
+    const key = normalizeBlockedAppKey(raw);
     if (!key) return processName;
     const match = (installedAppsCache || []).find(
         (a) => normalizeBlockedAppKey(a.process_name) === key,
     );
     if (match?.display_name) return match.display_name;
 
-    return key.charAt(0).toUpperCase() + key.slice(1);
+    // If the watcher already gave us a user-facing title (e.g. "ReDD Blocker"
+    // or "Windows PowerShell"), keep it verbatim instead of re-humanizing it
+    // as though it were a raw process token.
+    if (/\s/.test(raw)) return raw;
+
+    return humanizeBlockedAppName(raw);
 }
 
 async function ensureInstalledAppsCache() {
