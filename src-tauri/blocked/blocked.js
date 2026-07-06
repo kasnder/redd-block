@@ -41,27 +41,18 @@
     if (el) el.hidden = false;
   }
 
-  const BLOCKED_PAGE_STRINGS = {
-    en: {
-      subtitleBlocklist: "This site is on your current blocklist.",
-      subtitleAllowlist: "This site is not on your current allowlist.",
-    },
-    da: {
-      subtitleBlocklist: "Dette websted er på din nuværende blokeringsliste.",
-      subtitleAllowlist: "Dette websted er ikke på din nuværende tilladelsesliste.",
-    },
-  };
-
-  const blockedPageLocale = (navigator.language || "en").toLowerCase().startsWith("da")
-    ? "da"
-    : "en";
-  const blockedPageCopy = BLOCKED_PAGE_STRINGS[blockedPageLocale];
-
+  const da = (navigator.language || "").toLowerCase().startsWith("da");
   const subtitleEl = document.getElementById("subtitle");
   if (subtitleEl) {
-    subtitleEl.textContent = blockMode === "allowlist"
-      ? blockedPageCopy.subtitleAllowlist
-      : blockedPageCopy.subtitleBlocklist;
+    if (blockMode === "allowlist") {
+      subtitleEl.textContent = da
+        ? "Dette websted er ikke på din nuværende tilladelsesliste."
+        : "This site is not on your current allowlist.";
+    } else {
+      subtitleEl.textContent = da
+        ? "Dette websted er på din nuværende blokeringsliste."
+        : "This site is on your current blocklist.";
+    }
   }
 
   // ---- Blocklist pill -------------------------------------------------

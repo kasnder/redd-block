@@ -6233,114 +6233,70 @@ function collectScheduleAllowedApps(now = Date.now()) {
 }
 
 function isAllowlistIntentionWarningRow(row) {
-    return row?.intentionOnly === true
-        || row?.name === ALLOWLIST_INTENTION_WARNING_NAME;
+    return row?.intentionOnly === true;
 }
 
-function isAllowlistIntentionWarningPid(pid) {
-    return Number(pid) === ALLOWLIST_INTENTION_WARNING_PID;
-}
-
-function findActiveAllowlistBlocklist(now = Date.now(), nowDate = new Date(now)) {
+/** Invoke `fn(blocklist, source, manualStartTime)` for each active allowlist enforcement source. */
+function eachActiveAllowlistEnforcement(now, nowDate, fn) {
     for (const block of appData.activeBlocks || []) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
         const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
-        if (isBlocklistAllowlistMode(blocklist)) return blocklist;
+        if (!isBlocklistAllowlistMode(blocklist)) continue;
+        fn(blocklist, 'manual', block.startTime);
     }
     for (const schedule of appData.schedules || []) {
         if (!schedule.segments) continue;
         if (isSchedulePausedNow(schedule, now)) continue;
         if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
         const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
-        if (isBlocklistAllowlistMode(blocklist)) return blocklist;
+        if (!isBlocklistAllowlistMode(blocklist)) continue;
+        fn(blocklist, 'schedule', 0);
     }
-    return null;
 }
 
-function findBlocklistById(blocklistId) {
-    if (!blocklistId) return null;
-    return appData.blocklists.find((bl) => bl.id === blocklistId) ?? null;
+function findActiveAllowlistBlocklist(now = Date.now(), nowDate = new Date(now)) {
+    let found = null;
+    eachActiveAllowlistEnforcement(now, nowDate, (blocklist) => {
+        if (!found) found = blocklist;
+    });
+    return found;
 }
 
-function findAllowlistBlocklistNewlyStarted(
+function inferAllowlistWarningSessionBlocklistId(
     now,
     nowDate,
     prevAllowlistActive,
     prevAllowedAll,
+    allowedAppsArray,
     allowlistEnforcementExpanded,
 ) {
-    if (!prevAllowlistActive) {
-        let newestManual = null;
-        for (const block of appData.activeBlocks || []) {
-            if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
-            const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
-            if (!isBlocklistAllowlistMode(blocklist)) continue;
-            if (!newestManual || block.startTime > newestManual.startTime) {
-                newestManual = block;
-            }
-        }
-        if (newestManual) {
-            return appData.blocklists.find((bl) => bl.id === newestManual.blocklistId) ?? null;
-        }
-    }
-
     if (allowlistEnforcementExpanded) {
-        for (const schedule of appData.schedules || []) {
-            if (!schedule.segments) continue;
-            if (isSchedulePausedNow(schedule, now)) continue;
-            if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
-            const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
-            if (isBlocklistAllowlistMode(blocklist)) return blocklist;
-        }
+        let scheduleAllowlist = null;
+        eachActiveAllowlistEnforcement(now, nowDate, (blocklist, source) => {
+            if (source === 'schedule' && !scheduleAllowlist) scheduleAllowlist = blocklist;
+        });
+        if (scheduleAllowlist) return scheduleAllowlist.id;
     }
-
+    if (!prevAllowlistActive) {
+        let newest = null;
+        let newestStart = -1;
+        eachActiveAllowlistEnforcement(now, nowDate, (blocklist, source, startTime) => {
+            if (source === 'manual' && startTime > newestStart) {
+                newest = blocklist;
+                newestStart = startTime;
+            }
+        });
+        if (newest) return newest.id;
+    }
     if (prevAllowedAll) {
-        for (const block of appData.activeBlocks || []) {
-            if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
-            const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
-            if (!isBlocklistAllowlistMode(blocklist)) continue;
-            const gainedAllowedApp = (blocklist.apps || []).some(
-                (app) => !isProtectedApp(app) && !prevAllowedAll.has(app),
-            );
-            if (gainedAllowedApp) return blocklist;
-        }
-        for (const schedule of appData.schedules || []) {
-            if (!schedule.segments) continue;
-            if (isSchedulePausedNow(schedule, now)) continue;
-            if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
-            const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
-            if (!isBlocklistAllowlistMode(blocklist)) continue;
-            const gainedAllowedApp = (blocklist.apps || []).some(
-                (app) => !isProtectedApp(app) && !prevAllowedAll.has(app),
-            );
-            if (gainedAllowedApp) return blocklist;
+        for (const app of allowedAppsArray) {
+            if (prevAllowedAll.has(app)) continue;
+            const blocklistId = findManualBlocklistIdForApp(app, now)
+                ?? findScheduleBlocklistIdForApp(app, now, nowDate);
+            if (blocklistId) return blocklistId;
         }
     }
-
-    return findActiveAllowlistBlocklist(now, nowDate);
-}
-
-function collectActiveAllowlistAllowedAppNames(now = Date.now(), nowDate = new Date(now)) {
-    const names = [];
-    for (const block of appData.activeBlocks || []) {
-        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
-        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
-        if (!isBlocklistAllowlistMode(blocklist)) continue;
-        for (const app of blocklist?.apps || []) {
-            if (!isProtectedApp(app)) names.push(app);
-        }
-    }
-    for (const schedule of appData.schedules || []) {
-        if (!schedule.segments) continue;
-        if (isSchedulePausedNow(schedule, now)) continue;
-        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
-        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
-        if (!isBlocklistAllowlistMode(blocklist)) continue;
-        for (const app of blocklist?.apps || []) {
-            if (!isProtectedApp(app)) names.push(app);
-        }
-    }
-    return uniqueBlockedAppDisplayNames(names);
+    return findActiveAllowlistBlocklist(now, nowDate)?.id ?? null;
 }
 
 function isAllowlistAppEnforcementActive(now = Date.now()) {
@@ -6356,18 +6312,9 @@ function collectActiveAllowlistAllowedAppNamesForBlocklist(blocklist) {
 /** Count of active manual blocks + schedule segments enforcing allowlist mode. */
 function countAllowlistEnforcementSources(now = Date.now(), nowDate = new Date(now)) {
     let count = 0;
-    for (const block of appData.activeBlocks || []) {
-        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
-        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
-        if (isBlocklistAllowlistMode(blocklist)) count++;
-    }
-    for (const schedule of appData.schedules || []) {
-        if (!schedule.segments) continue;
-        if (isSchedulePausedNow(schedule, now)) continue;
-        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
-        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
-        if (isBlocklistAllowlistMode(blocklist)) count++;
-    }
+    eachActiveAllowlistEnforcement(now, nowDate, () => {
+        count++;
+    });
     return count;
 }
 
@@ -6486,7 +6433,7 @@ function setupAppBlockingWarningOverlay() {
         if (!Number.isFinite(pid)) return;
         appBlockingWarningRows.set(pid, {
             name: p.name || 'App',
-            intentionOnly: isAllowlistIntentionWarningPid(pid)
+            intentionOnly: Number(pid) === ALLOWLIST_INTENTION_WARNING_PID
                 || p.name === ALLOWLIST_INTENTION_WARNING_NAME,
         });
         renderAppBlockingWarningOverlay();
@@ -6582,7 +6529,9 @@ function findActiveBlocklistForBlockedAppName(appName) {
 
 /** Pick the blocklist to show in the warning overlay for the given apps. */
 function findResponsibleBlocklistForWarningApps(appNames) {
-    const sessionBlocklist = findBlocklistById(appBlockingWarningSessionBlocklistId);
+    const sessionBlocklist = appBlockingWarningSessionBlocklistId
+        ? appData.blocklists.find((bl) => bl.id === appBlockingWarningSessionBlocklistId) ?? null
+        : null;
     if (sessionBlocklist) return sessionBlocklist;
 
     if (isAllowlistAppEnforcementActive()) {
@@ -6653,9 +6602,6 @@ function renderAppBlockingWarningOverlay() {
     }
 
     let responsibleBlocklist = findResponsibleBlocklistForWarningApps(names);
-    if (!responsibleBlocklist && (hasIntentionOnly || isAllowlistAppEnforcementActive())) {
-        responsibleBlocklist = findActiveAllowlistBlocklist();
-    }
     const blocklistName = responsibleBlocklist?.name || tSettings('appBlockingFallbackBlocklistName');
     const blocklistEmoji = responsibleBlocklist?.emoji || '🎯';
     const startOverlay = getScheduleStartOverlayForWarningApps(names)
@@ -6847,23 +6793,8 @@ function uniqueBlockedAppDisplayNames(names) {
     return out;
 }
 
-/** Pretty Oxford-comma list: "A", "A and B", "A, B, and C". */
-function joinAppListOxford(names, { bold = true } = {}) {
-    const arr = names.filter(Boolean);
-    const wrap = bold
-        ? (n) => `<strong>${escapeHtml(n)}</strong>`
-        : (n) => escapeHtml(n);
-    if (arr.length === 0) return '';
-    if (arr.length === 1) return wrap(arr[0]);
-    const and = tSettings('andWord');
-    if (arr.length === 2) return `${wrap(arr[0])} ${and} ${wrap(arr[1])}`;
-    const head = arr.slice(0, -1).map(wrap).join(', ');
-    const tail = wrap(arr[arr.length - 1]);
-    return `${head}, ${and} ${tail}`;
-}
-
 /** Pretty list join: "A", "A and B", "A, B and C", "A, B and 4 more". */
-function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
+function joinAppListWithLimit(names, max = 3, { bold = true, oxford = false } = {}) {
     const arr = names.filter(Boolean);
     const wrap = bold
         ? (n) => `<strong>${escapeHtml(n)}</strong>`
@@ -6872,9 +6803,10 @@ function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
     if (arr.length === 1) return wrap(arr[0]);
     const and = tSettings('andWord');
     if (arr.length <= max) {
+        if (arr.length === 2) return `${wrap(arr[0])} ${and} ${wrap(arr[1])}`;
         const head = arr.slice(0, -1).map(wrap).join(', ');
         const tail = wrap(arr[arr.length - 1]);
-        return `${head} ${and} ${tail}`;
+        return oxford ? `${head}, ${and} ${tail}` : `${head} ${and} ${tail}`;
     }
     const shown = arr.slice(0, max - 1).map(wrap).join(', ');
     const remaining = arr.length - (max - 1);
@@ -11779,12 +11711,13 @@ function buildDefaultWarningSummaryHtml(names, blocklistName, letsGoLabel) {
 }
 
 function buildAllowlistWarningSummaryHtml(allowedNames, warnedNames, letsGoLabel) {
-    const allowedApps = joinAppListOxford(allowedNames);
+    const oxford = { oxford: true };
+    const allowedApps = joinAppListWithLimit(allowedNames, allowedNames.length, oxford);
     const letsGo = escapeHtml(letsGoLabel || tSettings('appBlockingLetsGo'));
     if (warnedNames.length === 0) {
         return tSettingsFmt('appBlockingAllowlistSummaryNoWarnedHtml', { allowedApps });
     }
-    const warnedApps = joinAppListOxford(warnedNames);
+    const warnedApps = joinAppListWithLimit(warnedNames, warnedNames.length, oxford);
     const summaryKey = warnedNames.length === 1
         ? 'appBlockingAllowlistSummarySingleWarnedHtml'
         : 'appBlockingAllowlistSummaryMultiWarnedHtml';
@@ -13373,14 +13306,6 @@ function formatStartBlockSubtitle(blocklist, isAlwaysOn, blockStart, blockEnd) {
     return tSettingsFmt(key, { duration: durationLabel });
 }
 
-function formatStartScheduleSubtitle(blocklist) {
-    return tSettings(
-        isBlocklistAllowlistMode(blocklist)
-            ? 'startScheduleSubtitleAllowlist'
-            : 'startScheduleSubtitle',
-    );
-}
-
 function setStartConfirmRoomChip(blocklist, {
     chipId = 'start-confirm-room-chip',
     emojiId = 'start-confirm-room-chip-emoji',
@@ -13539,10 +13464,10 @@ function getStartBlockConfirmTitle(blocklist) {
 
 function getResumeBlockConfirmTitle(blocklist) {
     if (!blocklist) return tSettings('resumeThisBlock');
-    const key = isBlocklistAllowlistMode(blocklist)
-        ? 'resumeBlockTitleAllowlistFmt'
-        : 'resumeBlockTitleFmt';
-    return tSettingsFmt(key, { name: blocklist.name });
+    return tSettingsFmt(
+        isBlocklistAllowlistMode(blocklist) ? 'resumeBlockTitleAllowlistFmt' : 'resumeBlockTitleFmt',
+        { name: blocklist.name },
+    );
 }
 
 function showScheduleConfirmModal(blocklist) {
@@ -13554,7 +13479,13 @@ function showScheduleConfirmModal(blocklist) {
     setStartConfirmRoomChip(blocklist, SCHEDULE_CONFIRM_ROOM_CHIP_IDS);
 
     const subtitleEl = document.getElementById('schedule-confirm-subtitle');
-    if (subtitleEl) subtitleEl.innerHTML = formatStartScheduleSubtitle(blocklist);
+    if (subtitleEl) {
+        subtitleEl.innerHTML = tSettings(
+            isBlocklistAllowlistMode(blocklist)
+                ? 'startScheduleSubtitleAllowlist'
+                : 'startScheduleSubtitle',
+        );
+    }
 
     pendingScheduleStartOverlayId = getEffectiveScheduleStartOverlayId();
     syncScheduleConfirmOverlaySummary();
@@ -15535,23 +15466,20 @@ async function updateBlockedApps() {
                 || allowlistEnforcementExpanded);
 
     if (allowlistNewlyStarted) {
-        const startedAllowlist = findAllowlistBlocklistNewlyStarted(
+        const sessionId = inferAllowlistWarningSessionBlocklistId(
             now,
             nowDate,
             prevAllowlistActive,
             prevAllowedAll,
+            allowedAppsArray,
             allowlistEnforcementExpanded,
         );
-        if (startedAllowlist) {
-            appBlockingWarningSessionBlocklistId = startedAllowlist.id;
-        }
+        if (sessionId) appBlockingWarningSessionBlocklistId = sessionId;
     } else if (newlyAddedApps.length > 0) {
         const metaBlocklistId = newlyAddedApps
             .map((app) => appBlockingNewlyAddedMeta.get(app)?.blocklistId)
             .find(Boolean);
-        if (metaBlocklistId) {
-            appBlockingWarningSessionBlocklistId = metaBlocklistId;
-        }
+        if (metaBlocklistId) appBlockingWarningSessionBlocklistId = metaBlocklistId;
     } else if (!allowlistActive && appsArray.length === 0) {
         appBlockingWarningSessionBlocklistId = null;
     }
@@ -15925,10 +15853,11 @@ function formatBlocklistModalSummary(blocklist) {
     }
 
     if (appCount > 0) {
+        const appLabel = appCount === 1 ? 'app' : 'apps';
         if (appCount <= 3) {
-            metaParts.push(`${appCount} ${appWord(appCount)} (${displayApps.join(', ')})`);
+            metaParts.push(`${appCount} ${appLabel} (${displayApps.join(', ')})`);
         } else {
-            metaParts.push(`${appCount} ${appWord(appCount)} (${displayApps.slice(0, 3).join(', ')}, ...)`);
+            metaParts.push(`${appCount} apps (${displayApps.slice(0, 3).join(', ')}, ...)`);
         }
     }
 
@@ -16041,10 +15970,9 @@ function openResumeConfirmation(blocklistId, type, blockId) {
 
     const subtitleEl = document.getElementById('start-confirm-subtitle');
     if (subtitleEl) {
-        const subtitleKey = isBlocklistAllowlistMode(blocklist)
-            ? 'resumeBlockSubtitleAllowlist'
-            : 'resumeBlockSubtitle';
-        subtitleEl.innerHTML = tSettings(subtitleKey);
+        subtitleEl.innerHTML = tSettings(
+            isBlocklistAllowlistMode(blocklist) ? 'resumeBlockSubtitleAllowlist' : 'resumeBlockSubtitle',
+        );
     }
 
     const durationEl = document.getElementById('start-confirm-duration');
@@ -21818,13 +21746,6 @@ function websiteWord(count) {
         return count === 1 ? 'hjemmeside' : 'hjemmesider';
     }
     return count === 1 ? 'website' : 'websites';
-}
-
-function appWord(count) {
-    if (getSettingsLanguage() === 'da') {
-        return count === 1 ? 'app' : 'apps';
-    }
-    return count === 1 ? 'app' : 'apps';
 }
 
 function siteWord(count) {
