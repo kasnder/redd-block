@@ -280,7 +280,10 @@ Protocol (`native_host.rs`):
 
 `extension_install.rs` can auto-install or hint on Windows where supported.
 The extension performs the actual page redirect to `blocked.html` (shipped
-with the extension assets, not the Automation bundle path).
+with the extension assets, not the Automation bundle path). Both copies share
+the same `blocked.js` contract: redirect URLs carry block metadata query params
+(including `mode=allowlist` vs `blocklist`) so subtitle, pill, site, reason,
+and countdown rows render identically on Automation and extension paths.
 
 ### 5.3 Windows watchdog
 

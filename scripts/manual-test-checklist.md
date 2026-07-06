@@ -151,6 +151,7 @@ Requires `settings.enforcementEnabled` (opt-in in extension/setup dialog). Grace
 - [ ] Re-grant before timer expires → banner clears, browser stays open
 - [ ] Let timer expire → browser force-quit; `enforcer://browser-closed` event
 - [ ] Start block → navigate to blocked domain → redirect to bundled `blocked.html` within ~1 s
+- [ ] **Allowlist (Automation):** start allowlist with `github.com` only → open `reddit.com` → bundled `blocked.html` subtitle says site is not on your current allowlist; pill/countdown/source rows still populate from block metadata
 
 ### macOS Firefox / Windows (extension)
 
@@ -158,6 +159,7 @@ Requires `settings.enforcementEnabled` (opt-in in extension/setup dialog). Grace
 - [ ] During active block with enforcement on: disable extension → grace countdown → force-quit at expiry
 - [ ] Re-enable before expiry → grace clears
 - [ ] Navigate to blocked domain → extension `blocked.html` with metadata
+- [ ] **Allowlist (extension):** start allowlist with `github.com` only → open `reddit.com` → extension `blocked.html` shows the same allowlist subtitle, pill, site row, reason, and countdown as Automation (via `mode=allowlist` query param)
 
 ### Native messaging (Windows + macOS Firefox)
 - [ ] Block active → blocked domain redirects in browser
