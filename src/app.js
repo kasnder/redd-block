@@ -6095,6 +6095,8 @@ const overlayAssetBlobUrls = new Set();
 /** Per-app attribution for the block that just started blocking it. */
 /** @type {Map<string, { blocklistId: string, source: 'schedule'|'manual' }>} */
 const appBlockingNewlyAddedMeta = new Map();
+/** Blocklist that owns the current warning session (the block/allowlist the user just started). */
+let appBlockingWarningSessionBlocklistId = null;
 
 function clearAppBlockingWarningSnoozeTimer() {
     if (appBlockingWarningSnoozeTimer !== null) {
@@ -6249,6 +6251,69 @@ function findActiveAllowlistBlocklist(now = Date.now(), nowDate = new Date(now))
         if (isBlocklistAllowlistMode(blocklist)) return blocklist;
     }
     return null;
+}
+
+function findBlocklistById(blocklistId) {
+    if (!blocklistId) return null;
+    return appData.blocklists.find((bl) => bl.id === blocklistId) ?? null;
+}
+
+function findAllowlistBlocklistNewlyStarted(
+    now,
+    nowDate,
+    prevAllowlistActive,
+    prevAllowedAll,
+    allowlistEnforcementExpanded,
+) {
+    if (!prevAllowlistActive) {
+        let newestManual = null;
+        for (const block of appData.activeBlocks || []) {
+            if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+            const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+            if (!isBlocklistAllowlistMode(blocklist)) continue;
+            if (!newestManual || block.startTime > newestManual.startTime) {
+                newestManual = block;
+            }
+        }
+        if (newestManual) {
+            return appData.blocklists.find((bl) => bl.id === newestManual.blocklistId) ?? null;
+        }
+    }
+
+    if (allowlistEnforcementExpanded) {
+        for (const schedule of appData.schedules || []) {
+            if (!schedule.segments) continue;
+            if (isSchedulePausedNow(schedule, now)) continue;
+            if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+            const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+            if (isBlocklistAllowlistMode(blocklist)) return blocklist;
+        }
+    }
+
+    if (prevAllowedAll) {
+        for (const block of appData.activeBlocks || []) {
+            if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+            const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+            if (!isBlocklistAllowlistMode(blocklist)) continue;
+            const gainedAllowedApp = (blocklist.apps || []).some(
+                (app) => !isProtectedApp(app) && !prevAllowedAll.has(app),
+            );
+            if (gainedAllowedApp) return blocklist;
+        }
+        for (const schedule of appData.schedules || []) {
+            if (!schedule.segments) continue;
+            if (isSchedulePausedNow(schedule, now)) continue;
+            if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+            const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+            if (!isBlocklistAllowlistMode(blocklist)) continue;
+            const gainedAllowedApp = (blocklist.apps || []).some(
+                (app) => !isProtectedApp(app) && !prevAllowedAll.has(app),
+            );
+            if (gainedAllowedApp) return blocklist;
+        }
+    }
+
+    return findActiveAllowlistBlocklist(now, nowDate);
 }
 
 function collectActiveAllowlistAllowedAppNames(now = Date.now(), nowDate = new Date(now)) {
@@ -6431,6 +6496,7 @@ function setupAppBlockingWarningOverlay() {
         appBlockingWarningRows.delete(pid);
         if (appBlockingWarningRows.size === 0) {
             resetAppBlockingWarningSnoozeState();
+            appBlockingWarningSessionBlocklistId = null;
         }
         renderAppBlockingWarningOverlay();
         renderAppBlockingClosedownBanner();
@@ -6512,6 +6578,14 @@ function findActiveBlocklistForBlockedAppName(appName) {
 
 /** Pick the blocklist to show in the warning overlay for the given apps. */
 function findResponsibleBlocklistForWarningApps(appNames) {
+    const sessionBlocklist = findBlocklistById(appBlockingWarningSessionBlocklistId);
+    if (sessionBlocklist) return sessionBlocklist;
+
+    if (isAllowlistAppEnforcementActive()) {
+        const activeAllowlist = findActiveAllowlistBlocklist();
+        if (activeAllowlist) return activeAllowlist;
+    }
+
     for (const appName of appNames) {
         const meta = appBlockingNewlyAddedMeta.get(appName);
         if (meta?.blocklistId) {
@@ -6575,7 +6649,7 @@ function renderAppBlockingWarningOverlay() {
     }
 
     let responsibleBlocklist = findResponsibleBlocklistForWarningApps(names);
-    if (!responsibleBlocklist && hasIntentionOnly) {
+    if (!responsibleBlocklist && (hasIntentionOnly || isAllowlistAppEnforcementActive())) {
         responsibleBlocklist = findActiveAllowlistBlocklist();
     }
     const blocklistName = responsibleBlocklist?.name || tSettings('appBlockingFallbackBlocklistName');
@@ -13693,6 +13767,7 @@ async function proceedWithSchedule() {
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
+    appBlockingWarningSessionBlocklistId = selectedBlocklistId;
 
     // v2: no helper to install. The app itself is the engine; if it
     // launched, blocking works. The legacy helper-install-modal
@@ -14954,6 +15029,7 @@ async function proceedWithBlock() {
         startBtn.innerHTML = getStartBlockButtonHTML();
         return;
     }
+    appBlockingWarningSessionBlocklistId = selectedBlocklistId;
     if (isIOS && isBlocklistAllowlistMode(blocklist)) {
         startBtn.disabled = false;
         startBtn.innerHTML = getStartBlockButtonHTML();
@@ -15438,6 +15514,28 @@ async function updateBlockedApps() {
             : !prevAllowlistActive
                 || allowedAppsArray.some((a) => !prevAllowedAll.has(a))
                 || allowlistEnforcementExpanded);
+
+    if (allowlistNewlyStarted) {
+        const startedAllowlist = findAllowlistBlocklistNewlyStarted(
+            now,
+            nowDate,
+            prevAllowlistActive,
+            prevAllowedAll,
+            allowlistEnforcementExpanded,
+        );
+        if (startedAllowlist) {
+            appBlockingWarningSessionBlocklistId = startedAllowlist.id;
+        }
+    } else if (newlyAddedApps.length > 0) {
+        const metaBlocklistId = newlyAddedApps
+            .map((app) => appBlockingNewlyAddedMeta.get(app)?.blocklistId)
+            .find(Boolean);
+        if (metaBlocklistId) {
+            appBlockingWarningSessionBlocklistId = metaBlocklistId;
+        }
+    } else if (!allowlistActive && appsArray.length === 0) {
+        appBlockingWarningSessionBlocklistId = null;
+    }
 
     appBlockingPreviousAppsSet = new Set(appsArray);
     appBlockingPreviousManualAppsSet = new Set(manualApps);
