@@ -102,11 +102,15 @@ flowchart TD
     enforcer -->|grace_force_quit| browsers[Running_browsers]
 ```
 
-**Single source of truth for “what is blocked right now” (desktop):**
-`redd-block-data.json` → `native_host::derive_payload()` computes the active
-domain set from `activeBlocks`, `schedules`, and `blocklists`. Both the
-Automation watcher and the native-messaging host re-read this file; the
-frontend writes it via `save_data` before starting or editing blocks.
+**Single source of truth for desktop website rules:**
+`redd-block-data.json` → `native_host::derive_payload()` computes both the
+legacy flat blocklist domain set and the richer per-block website metadata from
+`activeBlocks`, `schedules`, and `blocklists`. Website composition matches
+desktop app enforcement: blocklist domains always block, and when allowlist
+website blocks are active the union of allowlisted domains is allowed while
+everything else is blocked. Both the Automation watcher and the native-messaging
+host re-read this file; the frontend writes it via `save_data` before starting
+or editing blocks.
 
 ---
 
@@ -265,8 +269,10 @@ manifests pointing at the installed binary.
 Protocol (`native_host.rs`):
 
 - 4-byte little-endian length + UTF-8 JSON per message
-- on connect: read `redd-block-data.json`, derive domains, push
-  `{ "blocklist": [...] }`
+- on connect: read `redd-block-data.json`, derive website rules, push
+  `{ "blocklist": [...], "blocks": [...] }`
+- `blocklist` remains the legacy blocklist-only domain array; `blocks` is an
+  additive contract used for richer metadata and allowlist-aware website rules
 - re-push on file change (`notify`) and every 30 s (schedule time transitions)
 - empty list when nothing active → extension clears blocking
 
@@ -291,6 +297,9 @@ Firefox on macOS follows the Windows-style extension + native-messaging model:
 - extension installed **manually** from the Firefox Add-ons store (no auto-install)
 - `profile_scan.rs` scans the Firefox profile for extension presence,
   enabled state, and private-browsing allowance
+- the host-backed extension path consumes the same website allowlist semantics
+  as `src-tauri/src/web_automation.rs` (blocklist wins, then allowlist union);
+  only the enforcement location differs
 - enforcer treats Firefox like a Windows browser (extension compliance, not
   Automation TCC)
 

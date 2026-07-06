@@ -1041,15 +1041,18 @@ fn build_blocked_url(block_page_url: &str, original_url: &str, blocks: &[BlockIn
 
 /// Metadata block to attribute a blocked URL to.
 ///
-/// - Blocklist-mode blocks keep current precedence: the first blocklist hit
-///   (soonest-ending because `blocks` is pre-sorted by `endsAt`) wins.
-/// - Allowlist-mode blocks attribute to the earliest-started active allowlist
-///   that does *not* include the host. For schedules this uses the current
-///   active segment's start time from `derive_payload`, so "first in time"
-///   means first enforcement start, not schedule creation order.
+/// Mirrors desktop app composition: blocklist hits win for attribution, then
+/// allowlist-mode blocks attribute to the earliest-started active allowlist
+/// that excludes the host. For schedules this uses the current active segment's
+/// start time from `derive_payload`, so "first in time" means first enforcement
+/// start, not schedule creation order.
 fn block_info_for_url<'a>(url: &str, blocks: &'a [BlockInfo]) -> Option<&'a BlockInfo> {
     let host = hostname_of(url)?;
-    // Blocklist hit takes precedence for metadata.
+    if !url_is_blocked(url, blocks) {
+        return None;
+    }
+
+    // Blocklist hit takes precedence for metadata (same as app watcher).
     if let Some(b) = blocks.iter().find(|b| {
         !native_host::blocklist_mode_is_allowlist(&b.mode)
             && b.domains.iter().any(|d| domain_matches(&host, d))
@@ -1057,9 +1060,9 @@ fn block_info_for_url<'a>(url: &str, blocks: &'a [BlockInfo]) -> Option<&'a Bloc
         return Some(b);
     }
 
-    // Blocked by allowlist — attribute to the earliest-started active
-    // allowlist that excludes the host. Tie-break by soonest-ending block
-    // so the choice stays deterministic when two allowlists started together.
+    // Blocked by allowlist — attribute to the earliest-started active allowlist
+    // that excludes the host. Tie-break by soonest-ending block so the choice
+    // stays deterministic when two allowlists started together.
     blocks
         .iter()
         .filter(|b| {
@@ -1095,6 +1098,11 @@ fn is_protected_host(host: &str) -> bool {
 }
 
 /// Whether a tab URL should redirect to the block page given active blocks.
+///
+/// Composition matches desktop app enforcement:
+/// 1. Blocklist-mode domains always block (blocklist wins over allowlist).
+/// 2. When any allowlist website block is active, the union of allowlisted
+///    domains is allowed; everything else is blocked.
 pub fn url_is_blocked(url: &str, blocks: &[BlockInfo]) -> bool {
     if !is_http_url(url) {
         return false;
@@ -1273,6 +1281,21 @@ fn pct_encode_path_segment(s: &str) -> String {
 mod tests {
     use super::*;
 
+    fn block(id: &str, mode: &str, domains: &[&str], started_at: u64, ends_at: u64) -> BlockInfo {
+        BlockInfo {
+            blocklist_id: id.to_string(),
+            name: Some(id.to_string()),
+            emoji: None,
+            color: None,
+            mode: mode.to_string(),
+            domains: domains.iter().map(|d| (*d).to_string()).collect(),
+            apps: vec![],
+            source: "activeBlock",
+            ends_at: Some(ends_at),
+            started_at: Some(started_at),
+        }
+    }
+
     #[test]
     fn hostname_extraction() {
         assert_eq!(hostname_of("https://www.reddit.com/r/x").as_deref(), Some("www.reddit.com"));
@@ -1300,18 +1323,13 @@ mod tests {
 
     #[test]
     fn allowlist_blocks_non_allowed_hosts() {
-        let blocks = vec![BlockInfo {
-            blocklist_id: "mono".to_string(),
-            name: Some("Mono".to_string()),
-            emoji: None,
-            color: None,
-            mode: "allowlist".to_string(),
-            domains: vec!["youtube.com".to_string(), "ulriklyngs.com".to_string()],
-            apps: vec![],
-            source: "activeBlock",
-            ends_at: Some(999),
-            started_at: Some(0),
-        }];
+        let blocks = vec![block(
+            "mono",
+            "allowlist",
+            &["youtube.com", "ulriklyngs.com"],
+            0,
+            999,
+        )];
         assert!(!url_is_blocked("https://ulriklyngs.com/blog", &blocks));
         assert!(!url_is_blocked("https://www.youtube.com/watch?v=1", &blocks));
         assert!(url_is_blocked("https://twitter.com", &blocks));
@@ -1320,20 +1338,61 @@ mod tests {
 
     #[test]
     fn blocklist_still_blocks_listed_hosts() {
-        let blocks = vec![BlockInfo {
-            blocklist_id: "social".to_string(),
-            name: None,
-            emoji: None,
-            color: None,
-            mode: "blocklist".to_string(),
-            domains: vec!["reddit.com".to_string()],
-            apps: vec![],
-            source: "activeBlock",
-            ends_at: Some(999),
-            started_at: Some(0),
-        }];
+        let blocks = vec![block("social", "blocklist", &["reddit.com"], 0, 999)];
         assert!(url_is_blocked("https://old.reddit.com/", &blocks));
         assert!(!url_is_blocked("https://example.com", &blocks));
+    }
+
+    #[test]
+    fn web_enforcement_is_active_for_allowlist_only_website_blocks() {
+        let blocks = vec![block("allow", "allowlist", &["github.com"], 10, 999)];
+        assert!(web_enforcement_active(&blocks));
+    }
+
+    #[test]
+    fn concurrent_allowlists_union_allowed_domains() {
+        let blocks = vec![
+            block("docs", "allowlist", &["docs.rs"], 100, 500),
+            block("code", "allowlist", &["github.com"], 200, 600),
+        ];
+        assert!(!url_is_blocked("https://docs.rs/", &blocks));
+        assert!(!url_is_blocked("https://gist.github.com/", &blocks));
+        assert!(url_is_blocked("https://reddit.com/", &blocks));
+    }
+
+    #[test]
+    fn allowlist_union_allows_hosts_not_on_blocklist() {
+        let blocks = vec![
+            block("blocked", "blocklist", &["reddit.com"], 50, 400),
+            block("allowed", "allowlist", &["github.com", "stackoverflow.com"], 100, 500),
+        ];
+        assert!(!url_is_blocked("https://github.com/redd", &blocks));
+        assert!(!url_is_blocked("https://stackoverflow.com/q/1", &blocks));
+        assert!(url_is_blocked("https://reddit.com/", &blocks));
+        assert!(url_is_blocked("https://lobste.rs/", &blocks));
+    }
+
+    #[test]
+    fn blocklist_precedence_overrides_allowlist_overlap() {
+        let blocks = vec![
+            block("blocked", "blocklist", &["github.com", "reddit.com"], 50, 400),
+            block("allowed", "allowlist", &["github.com"], 100, 500),
+        ];
+        assert!(url_is_blocked("https://github.com/redd", &blocks));
+        assert!(url_is_blocked("https://reddit.com/", &blocks));
+        assert!(url_is_blocked("https://lobste.rs/", &blocks));
+    }
+
+    #[test]
+    fn blocklist_block_metadata_wins_when_blocklist_and_allowlist_overlap() {
+        let blocks = vec![
+            block("blocked", "blocklist", &["reddit.com"], 10, 500),
+            block("allow-one", "allowlist", &["github.com"], 200, 700),
+            block("allow-two", "allowlist", &["docs.rs"], 100, 600),
+        ];
+
+        let info = block_info_for_url("https://reddit.com", &blocks).expect("blocklist metadata");
+        assert_eq!(info.blocklist_id, "blocked");
     }
 
     #[test]
@@ -1356,34 +1415,25 @@ mod tests {
     #[test]
     fn allowlist_block_metadata_prefers_earliest_started_enforcement() {
         let blocks = vec![
-            BlockInfo {
-                blocklist_id: "one-off".to_string(),
-                name: Some("One-off".to_string()),
-                emoji: None,
-                color: None,
-                mode: "allowlist".to_string(),
-                domains: vec!["apple.com".to_string()],
-                apps: vec![],
-                source: "activeBlock",
-                ends_at: Some(2_000),
-                started_at: Some(11_00),
-            },
-            BlockInfo {
-                blocklist_id: "schedule".to_string(),
-                name: Some("Schedule".to_string()),
-                emoji: None,
-                color: None,
-                mode: "allowlist".to_string(),
-                domains: vec!["google.com".to_string()],
-                apps: vec![],
-                source: "schedule",
-                ends_at: Some(1_500),
-                started_at: Some(10_00),
-            },
+            BlockInfo { source: "activeBlock", ..block("one-off", "allowlist", &["apple.com"], 11_00, 2_000) },
+            BlockInfo { source: "schedule", ..block("schedule", "allowlist", &["google.com"], 10_00, 1_500) },
         ];
 
         let info = block_info_for_url("https://example.com", &blocks).expect("allowlist metadata");
         assert_eq!(info.blocklist_id, "schedule");
+    }
+
+    #[test]
+    fn block_info_for_blocklist_overlap_attributes_to_blocklist() {
+        let blocks = vec![
+            block("blocked", "blocklist", &["github.com"], 10, 500),
+            block("allowed", "allowlist", &["github.com"], 20, 600),
+        ];
+
+        let info =
+            block_info_for_url("https://github.com/redd", &blocks).expect("blocklist metadata");
+        assert_eq!(info.blocklist_id, "blocked");
+        assert_eq!(info.mode, "blocklist");
     }
 
     #[test]
@@ -1421,7 +1471,7 @@ mod tests {
         let p = std::path::Path::new("/Applications/ReDD Blocker.app/Contents/Resources/blocked/blocked.html");
         assert_eq!(
             path_to_file_url(p),
-            "file:///Applications/ReDD%20Block.app/Contents/Resources/blocked/blocked.html"
+            "file:///Applications/ReDD%20Blocker.app/Contents/Resources/blocked/blocked.html"
         );
     }
 }

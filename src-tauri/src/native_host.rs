@@ -164,11 +164,13 @@ fn spawn_stdin_reader(tx: mpsc::Sender<HostEvent>) {
     });
 }
 
-/// Send a payload to the extension over stdout. Emits both the flat
+/// Send a payload to the extension over stdout. Emits both the legacy flat
 /// `blocklist` (domain strings) and the richer `blocks` array
-/// (per-block metadata: name, emoji, color, source, startedAt, endsAt).
-/// `background.js` consumes both; older clients that only know about
-/// `blocklist` ignore `blocks` cleanly.
+/// (per-block metadata: name, emoji, color, mode, source, startedAt, endsAt).
+/// `blocklist` remains the backward-compatible contract: only blocklist-mode
+/// website domains belong there. `blocks` is additive, so allowlist-only
+/// website sessions intentionally serialize as an empty flat `blocklist` plus
+/// one or more allowlist entries in `blocks`.
 fn send_payload(domains: &[String], blocks: &[BlockInfo]) {
     #[derive(Serialize)]
     struct Msg<'a> {
@@ -229,8 +231,10 @@ fn mtime(path: &std::path::Path) -> Option<SystemTime> {
 }
 
 /// Per-block metadata sent alongside the flat `blocklist`. Mirrors the
-/// `blocks[]` shape the ReDD Focus extension reads and forwards to
-/// `blocked.html` for the pill / source / countdown UI.
+/// additive `blocks[]` shape the ReDD Focus extension reads and forwards to
+/// `blocked.html` for the pill / source / countdown UI. Consumers must treat
+/// every field here as optional/backward-compatible and fall back to legacy
+/// flat-blocklist behavior when `blocks` or `mode` are absent.
 #[derive(Debug, Clone, Serialize)]
 pub struct BlockInfo {
     #[serde(rename = "blocklistId")]
@@ -265,10 +269,10 @@ pub fn blocklist_mode_is_allowlist(mode: &str) -> bool {
     mode.eq_ignore_ascii_case("allowlist")
 }
 
-/// Read redd-block-data.json and compute (a) the deduped flat domain list,
-/// (b) the per-block metadata array sorted ascending by `endsAt`. This
-/// is the single source of truth for what the extension sees on every
-/// frame.
+/// Read redd-block-data.json and compute (a) the deduped legacy flat
+/// blocklist domain list, (b) the additive per-block metadata array sorted
+/// ascending by `endsAt`. This is the single source of truth for what the
+/// extension sees on every frame.
 pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInfo>) {
     let raw = match std::fs::read_to_string(data_path) {
         Ok(s) => s,
@@ -834,10 +838,28 @@ pub struct DerivedBlocklist {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde::Deserialize;
+    use serde_json::{json, Value};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[derive(Debug, Deserialize)]
+    struct HostPayloadCompat {
+        blocklist: Vec<String>,
+        #[serde(default)]
+        blocks: Vec<CompatBlockInfo>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct CompatBlockInfo {
+        #[serde(rename = "blocklistId")]
+        blocklist_id: String,
+        #[serde(default = "default_blocklist_mode")]
+        mode: String,
+        #[serde(default)]
+        domains: Vec<String>,
+    }
 
     fn temp_json_path(name: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -845,6 +867,12 @@ mod tests {
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         std::env::temp_dir().join(format!("redd-block-{name}-{unique}.json"))
+    }
+
+    fn write_temp_json(name: &str, data: &Value) -> PathBuf {
+        let path = temp_json_path(name);
+        fs::write(&path, serde_json::to_vec(data).unwrap()).unwrap();
+        path
     }
 
     #[test]
@@ -1028,6 +1056,155 @@ mod tests {
         assert_eq!(blocks[0].domains, vec!["docs.example.com".to_string()]);
         assert_eq!(blocks[0].started_at, Some(active_from));
         assert_eq!(blocks[0].ends_at, Some(active_until));
+    }
+
+    #[test]
+    fn derive_payload_keeps_allowlist_only_websites_out_of_legacy_blocklist() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = write_temp_json(
+            "allowlist-only-active-websites",
+            &json!({
+                "blocklists": [{
+                    "id": "bl-allow-web",
+                    "name": "Allow Websites",
+                    "mode": "allowlist",
+                    "websites": ["github.com", "docs.rs"],
+                    "apps": []
+                }],
+                "activeBlocks": [{
+                    "blocklistId": "bl-allow-web",
+                    "startTime": now.saturating_sub(60_000),
+                    "endTime": now + 60_000
+                }],
+                "schedules": [],
+                "settings": {}
+            }),
+        );
+
+        let (domains, blocks) = derive_payload(&path);
+        let _ = fs::remove_file(&path);
+
+        assert!(domains.is_empty(), "legacy flat blocklist stays empty for allowlist-only website sessions");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].mode, "allowlist");
+        assert_eq!(
+            blocks[0].domains,
+            vec!["github.com".to_string(), "docs.rs".to_string()]
+        );
+    }
+
+    #[test]
+    fn derive_payload_keeps_legacy_flat_blocklist_for_blocklist_mode_only() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = write_temp_json(
+            "mixed-website-payload",
+            &json!({
+                "blocklists": [
+                    {
+                        "id": "bl-block",
+                        "name": "Block Social",
+                        "websites": ["reddit.com"],
+                        "apps": []
+                    },
+                    {
+                        "id": "bl-allow",
+                        "name": "Allow Work",
+                        "mode": "allowlist",
+                        "websites": ["github.com"],
+                        "apps": []
+                    }
+                ],
+                "activeBlocks": [
+                    {
+                        "blocklistId": "bl-block",
+                        "startTime": now.saturating_sub(60_000),
+                        "endTime": now + 60_000
+                    },
+                    {
+                        "blocklistId": "bl-allow",
+                        "startTime": now.saturating_sub(30_000),
+                        "endTime": now + 60_000
+                    }
+                ],
+                "schedules": [],
+                "settings": {}
+            }),
+        );
+
+        let (domains, blocks) = derive_payload(&path);
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(domains, vec!["reddit.com".to_string()]);
+        assert_eq!(blocks.len(), 2);
+        assert!(blocks.iter().any(|b| b.blocklist_id == "bl-block" && b.mode == "blocklist"));
+        assert!(blocks.iter().any(|b| b.blocklist_id == "bl-allow" && b.mode == "allowlist"));
+    }
+
+    #[test]
+    fn current_payload_serializes_empty_legacy_blocklist_with_additive_allowlist_blocks() {
+        #[derive(Serialize)]
+        struct Msg<'a> {
+            blocklist: &'a [String],
+            blocks: &'a [BlockInfo],
+        }
+
+        let domains = Vec::<String>::new();
+        let blocks = vec![BlockInfo {
+            blocklist_id: "allow".to_string(),
+            name: Some("Allow".to_string()),
+            emoji: None,
+            color: None,
+            mode: "allowlist".to_string(),
+            domains: vec!["github.com".to_string()],
+            apps: vec![],
+            source: "activeBlock",
+            ends_at: Some(999),
+            started_at: Some(111),
+        }];
+
+        let payload = serde_json::to_value(Msg {
+            blocklist: &domains,
+            blocks: &blocks,
+        })
+        .unwrap();
+
+        assert_eq!(payload.get("blocklist").unwrap(), &json!([]));
+        assert_eq!(payload["blocks"][0]["mode"], "allowlist");
+        assert_eq!(payload["blocks"][0]["domains"], json!(["github.com"]));
+    }
+
+    #[test]
+    fn extension_payload_compat_accepts_legacy_flat_blocklist_only_shape() {
+        let payload: HostPayloadCompat = serde_json::from_value(json!({
+            "blocklist": ["reddit.com"]
+        }))
+        .unwrap();
+
+        assert_eq!(payload.blocklist, vec!["reddit.com".to_string()]);
+        assert!(payload.blocks.is_empty());
+    }
+
+    #[test]
+    fn extension_payload_compat_defaults_missing_block_mode_to_blocklist() {
+        let payload: HostPayloadCompat = serde_json::from_value(json!({
+            "blocklist": ["reddit.com"],
+            "blocks": [{
+                "blocklistId": "legacy-block",
+                "domains": ["reddit.com"]
+            }]
+        }))
+        .unwrap();
+
+        assert_eq!(payload.blocks.len(), 1);
+        assert_eq!(payload.blocks[0].blocklist_id, "legacy-block");
+        assert_eq!(payload.blocks[0].mode, "blocklist");
+        assert_eq!(payload.blocks[0].domains, vec!["reddit.com".to_string()]);
     }
 
     #[test]
