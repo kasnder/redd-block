@@ -1781,7 +1781,9 @@ body.dark-mode .app-blocking-closedown-banner{
     display: flex;
     flex-direction: column;
     min-height: 0;
+    min-width: 0;
     overflow-y: auto;
+    overflow-x: clip;
     overscroll-behavior-y: none;
     position: relative;
     padding: 0 24px 2px 24px;
@@ -1799,6 +1801,8 @@ body.dark-mode .app-blocking-closedown-banner{
     align-items: start;
     position: relative;
     flex-shrink: 0;
+    min-width: 0;
+    max-width: 100%;
 }
 
 /* Stacked / overview: grid is one column but cards must not stretch past 500px. */
@@ -2340,7 +2344,7 @@ body.ios:not(.ios-phone) .main-content .schedule-pending-save{
     body.ios:not(.ios-phone) .main-content .blocklist-name{
         font-size: 22px;
         gap: 10px;
-        margin-bottom: 4px;
+        margin-bottom: 6px;
     }
 
     body.ios:not(.ios-phone) .main-content .blocklist-meta{
@@ -6797,6 +6801,8 @@ body.dark-mode .schedule-pending-discard:hover{
     /* Move to left column */
     flex: 1;
     min-height: 0;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .blocklists-heading-controls{
@@ -6855,13 +6861,15 @@ body.dark-mode .schedule-pending-discard:hover{
     max-height: var(--blocklists-scroll-max-height);
     /* ~4.5 cards */
     overflow-y: auto;
+    overflow-x: hidden;
+    min-width: 0;
+    max-width: 100%;
     /* Slight top inset for the ENTERING chip; keep constant so cards don't shift on select. */
     padding: 10px 4px 4px;
 }
 
 /* iOS/touch: reliable swipe scroll and momentum */
 body.ios .blocklists-container {
-    overflow-x: hidden;
     -webkit-overflow-scrolling: touch;
 }
 
@@ -6881,9 +6889,11 @@ body.ios .blocklists-container {
     transition: all 0.2s ease;
     cursor: grab;
     position: relative;
+    box-sizing: border-box;
     /* Fill the blocklists column; width is capped by grid / .blocklists-section. */
     max-width: 100%;
     width: 100%;
+    min-width: 0;
 }
 
 .blocklist-card.selected{
@@ -6917,8 +6927,15 @@ body.ios .blocklists-container {
 }
 
 .blocklist-card-active{
-    opacity: 0.7;
     cursor: default;
+}
+
+.blocklist-card-active .blocklist-stripe,
+.blocklist-card-active .blocklist-name,
+.blocklist-card-active .blocklist-meta-sep,
+.blocklist-card-active .blocklist-meta-items,
+.blocklist-card-active .blocklist-actions{
+    opacity: 0.7;
 }
 
 .blocklist-card-active:hover{
@@ -7087,6 +7104,7 @@ body.ios .selection-prompt {
     display: flex;
     flex-direction: column;
     justify-content: center;
+    overflow: hidden;
 }
 
 .blocklist-name{
@@ -7098,7 +7116,7 @@ body.ios .selection-prompt {
     font-weight: 600;
     font-size: 17px;
     color: var(--text-secondary);
-    margin-bottom: 2px;
+    margin-bottom: 5px;
 }
 
 .blocklist-name .blocklist-emoji{
@@ -7135,6 +7153,45 @@ body.ios .selection-prompt {
 .blocklist-meta{
     font-size: 15px;
     color: var(--text-muted);
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+}
+
+.blocklist-meta-line{
+    display: flex;
+    align-items: baseline;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+}
+
+.blocklist-meta-prefix{
+    flex-shrink: 0;
+    font-weight: 600;
+}
+
+.blocklist-meta-prefix--block{
+    color: var(--danger);
+}
+
+.blocklist-meta-prefix--allow{
+    color: var(--success);
+}
+
+.blocklist-meta-sep{
+    flex-shrink: 0;
+    padding-inline: 0.45em;
+}
+
+.blocklist-meta-items{
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 @media (min-width: 768px) {
@@ -7151,6 +7208,7 @@ body.ios .selection-prompt {
     gap: 4px;
     align-items: center;
     align-self: center;
+    flex-shrink: 0;
 }
 
 body.ios .blocklist-actions {

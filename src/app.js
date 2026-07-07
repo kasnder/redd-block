@@ -18588,42 +18588,9 @@ function renderBlocklists() {
     }
 
     container.innerHTML = appData.blocklists.map(bl => {
-        // Build detailed meta text
-        const websiteCount = bl.websites?.length || 0;
-        const regularApps = getBlocklistRegularApps(bl);
-        const screenTimeSelection = getBlocklistIOSScreenTimeSelection(bl);
-        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(screenTimeSelection);
-        const appCount = regularApps.length + (screenTimeLabel ? 1 : 0);
-        const showDetails = bl.showItemDetails !== false; // Default to true
-        let metaParts = [];
+        // Build card summary: "Blocks 5 · instagram, youtube, Firefox"
+        const metaHtml = buildBlocklistCardMetaHtml(bl);
 
-        if (websiteCount > 0) {
-            metaParts.push(formatBlocklistCardSitesSummary(websiteCount, bl.websites, showDetails));
-        }
-
-        if (appCount > 0) {
-            if (screenTimeLabel) {
-                const stText = `${screenTimeLabel.replace(' selected (Screen Time)', '')} via Screen Time`;
-                if (regularApps.length > 0) {
-                    metaParts.push(`${regularApps.length} ${regularApps.length === 1 ? 'app' : 'apps'} + ${stText}`);
-                } else {
-                    metaParts.push(stText);
-                }
-            } else if (showDetails) {
-                const regularAppLabels = regularApps.map(displayNameForBlockedApp);
-                if (appCount <= 2) {
-                    metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${regularAppLabels.join(', ')})`);
-                } else {
-                    metaParts.push(`${appCount} apps (${regularAppLabels.slice(0, 2).join(', ')}, ...)`);
-                }
-            } else {
-                metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'}`);
-            }
-        }
-
-        const metaText = metaParts.length > 0 ? metaParts.join(` ${tSettings('andWord')} `) : tSettings('noItems');
-
-        // Get color for left border
         // Get color for left border
         const borderColor = bl.color || 'linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%)';
 
@@ -18806,7 +18773,7 @@ function renderBlocklists() {
             <span class="blocklist-title-text">${escapeHtml(bl.name)}</span>
             <span class="blocklist-name-badges">${activeBadge}</span>
           </div>
-          <div class="blocklist-meta">${escapeHtml(metaText)}</div>
+          <div class="blocklist-meta">${metaHtml}</div>
         </div>
         <div class="blocklist-actions">
           <div class="blocklist-menu-wrapper">
@@ -20131,6 +20098,8 @@ const SETTINGS_TRANSLATIONS = {
         advancedOptions: 'Advanced options',
         listBlockedOnCard: 'Show names of blocked websites & apps in the overview',
         listAllowedOnCard: 'Show names of allowed websites & apps in the overview',
+        blocklistCardBlocksFmt: 'Blocks {n}',
+        blocklistCardAllowsFmt: 'Allows {n}',
         importWebsitesTitle: 'Import websites',
         browseApplicationsTitle: 'Browse Applications',
         modalPremadeListsCaption: 'Lists',
@@ -20924,6 +20893,8 @@ const SETTINGS_TRANSLATIONS = {
         advancedOptions: 'Avancerede indstillinger',
         listBlockedOnCard: 'Vis navnet på blokerede websites og apps i oversigten',
         listAllowedOnCard: 'Vis navnet på tilladte websites og apps i oversigten',
+        blocklistCardBlocksFmt: 'Blokerer {n}',
+        blocklistCardAllowsFmt: 'Tillader {n}',
         importWebsitesTitle: 'Importér websites',
         browseApplicationsTitle: 'Gennemse programmer',
         modalPremadeListsCaption: 'Lister',
@@ -21838,12 +21809,38 @@ function siteNameForDisplay(url) {
     return parts[parts.length - 2];
 }
 
-/** Room card line, e.g. "3 sites · instagram, youtube, reddit". */
-function formatBlocklistCardSitesSummary(websiteCount, websites, showDetails) {
-    const countLabel = `${websiteCount} ${siteWord(websiteCount)}`;
-    if (!showDetails || websiteCount === 0) return countLabel;
-    const names = (websites || []).map(siteNameForDisplay);
-    return names.length > 0 ? `${countLabel} · ${names.join(', ')}` : countLabel;
+/** Flat comma-separated labels for a focus-space card (websites first, then apps). */
+function collectBlocklistCardSummaryLabels(blocklist) {
+    const labels = [];
+    for (const url of blocklist?.websites || []) {
+        labels.push(siteNameForDisplay(url).toLowerCase());
+    }
+    for (const app of getBlocklistRegularApps(blocklist)) {
+        labels.push(displayNameForBlockedApp(app));
+    }
+    const screenTimeLabel = formatIOSScreenTimeSelectionLabel(
+        getBlocklistIOSScreenTimeSelection(blocklist),
+    );
+    if (screenTimeLabel) labels.push(screenTimeLabel);
+    return labels;
+}
+
+/** Room card line, e.g. "Blocks 5 · instagram, youtube, Firefox". */
+function buildBlocklistCardMetaHtml(blocklist) {
+    const isAllow = isBlocklistAllowlistMode(blocklist);
+    const showDetails = blocklist?.showItemDetails !== false;
+    const labels = collectBlocklistCardSummaryLabels(blocklist);
+    const count = labels.length;
+    const prefixKey = isAllow ? 'blocklistCardAllowsFmt' : 'blocklistCardBlocksFmt';
+    const prefixClass = isAllow ? 'blocklist-meta-prefix--allow' : 'blocklist-meta-prefix--block';
+    const prefix = escapeHtml(tSettingsFmt(prefixKey, { n: String(count) }));
+
+    if (!showDetails || count === 0) {
+        return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix ${prefixClass}">${prefix}</span></span>`;
+    }
+
+    const items = escapeHtml(labels.join(', '));
+    return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix ${prefixClass}">${prefix}</span><span class="blocklist-meta-sep">·</span><span class="blocklist-meta-items">${items}</span></span>`;
 }
 
 function formatCurrentVersionText(version) {
