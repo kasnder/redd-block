@@ -84,7 +84,10 @@ No browser extension — ReDD Blocker uses **Screen Time** to shield websites an
 
 Android uses the shared Tauri webview UI plus a local Android plugin. The plugin keeps the enforcement work in Kotlin/Java Android components: an AccessibilityService applies the block/friction gate, WorkManager handles schedule transitions, and Rust only exposes the Tauri command bridge used by the UI.
 
-You can open `src-tauri/gen/android/` in Android Studio to inspect, run, and build the generated project. Android Studio is still building the Tauri Android app: the Gradle project invokes the Tauri/Rust build steps and packages the shared frontend assets together with the native Android plugin.
+You can open `src-tauri/gen/android/` in Android Studio to inspect, run, and build the generated project. Android Studio is still building the Tauri Android app: the Gradle project invokes the Tauri/Rust build steps and packages the shared frontend assets together with the native Android plugin. Two things are required for builds from Android Studio to work:
+
+1. **Keep the Tauri CLI running** in a terminal while you build: `npm run tauri -- android dev --open`. The Gradle Rust task calls back into this process to fetch its build options; without it the build fails with a "failed to read CLI options" panic.
+2. **`node`/`npm` and `cargo` must be on Gradle's PATH.** Android Studio launched from the Dock doesn't inherit your shell PATH, so `buildSrc/.../BuildTask.kt` is patched to prepend the nvm, cargo, and Homebrew bin directories. Note that re-running `tauri android init` regenerates that file and drops the patch — alternatively, launch Android Studio from a terminal (`open -a "Android Studio"`), which inherits your shell PATH.
 
 ### Permissions (desktop)
 
@@ -173,9 +176,13 @@ npm run build:win-store
 # iOS: Build IPA for App Store upload (via Transporter)
 npm run build:ios
 
-# Android: Build through Tauri/Gradle
+# Android: Build through Tauri/Gradle (release; unsigned)
 npm run build:android
 ```
+
+For Android — required environment variables (`ANDROID_HOME`/`NDK_HOME`/`JAVA_HOME`,
+not set by `npm install`), debug-APK builds, single-ABI targeting, and the
+install/`adb logcat` loop — see [docs/android-build.md](docs/android-build.md).
 
 For Store builds, set `WINDOWS_IDENTITY_NAME` and `WINDOWS_PUBLISHER` in `.env` (Partner Center → Product identity) and upload the `.msix` from `for-distribution/x86_64-pc-windows-msvc/`. Run `node scripts/generate-icons-from-svg.js` first if `assets/icons/1024x1024.png` is missing.
 
