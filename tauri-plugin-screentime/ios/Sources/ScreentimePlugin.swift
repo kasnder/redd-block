@@ -695,29 +695,50 @@ class ScreentimePlugin: Plugin {
         }
         let args = try invoke.parseArgs(StartBlockArgs.self)
         
-        // Block websites (only when domains provided); for app-only blocks, clear web filter
+        // Allowlist websites: never truncate — clamping an allow list over-blocks.
+        // JS pre-validates; this is the native double-check.
+        let allowedDomains = args.allowedDomains ?? []
+        guard allowedDomains.count <= IOSWebPolicyApplier.exceptionLimit else {
+            invoke.resolve([
+                "success": false,
+                "error": "Allow lists support up to 50 websites on iOS (\(allowedDomains.count) allowed)."
+            ])
+            return
+        }
+        
         let truncated = args.domains.count > 50
         let webDomains = Set(args.domains.prefix(50).map { WebDomain(domain: $0) })
-        if webDomains.isEmpty {
-            store.webContent.blockedByFilter = nil
-        } else {
-            store.webContent.blockedByFilter = .specific(webDomains)
-        }
         
         let appTokens = decodeApplicationTokens(args.appTokenData)
         let categoryTokens = decodeCategoryTokens(args.categoryTokenData)
         store.shield.applications = appTokens.isEmpty ? nil : appTokens
         store.shield.applicationCategories = categoryTokens.isEmpty ? nil : .specific(categoryTokens)
         
-        // Persist current manual block state to App Group so extension can merge on resume/block-end
+        // Persist current manual block state to App Group so extension can merge on resume/block-end.
+        // This record holds BLOCKED items only (mode nil); allowed items live in the
+        // separate allowlist record so merge/subtract math never mixes semantics.
         let manualState = buildScheduleData(
             domains: args.domains,
             appTokenData: args.appTokenData,
             categoryTokenData: args.categoryTokenData,
-            days: nil,
-            mode: args.mode
+            days: nil
         )
         SharedManualBlockStore.saveManualBlockState(manualState)
+        if allowedDomains.isEmpty {
+            SharedManualBlockStore.clearManualAllowlistState()
+        } else {
+            SharedManualBlockStore.saveManualAllowlistState(
+                buildScheduleData(
+                    domains: allowedDomains,
+                    appTokenData: nil,
+                    categoryTokenData: nil,
+                    days: nil,
+                    mode: "allowlist"
+                )
+            )
+        }
+        // Web filter is derived state: recompute both channels from the App Group.
+        IOSWebPolicyApplier.reapplyWebPolicy()
 
         persistManualShieldSnapshot(
             replaceDomains: Array(args.domains.prefix(50)),
@@ -751,6 +772,7 @@ class ScreentimePlugin: Plugin {
         
         // Clear manual block state in App Group so extension has no stale data
         SharedManualBlockStore.saveManualBlockState(ScheduleBlockData(domains: [], appTokenData: [], categoryTokenData: [], days: nil))
+        SharedManualBlockStore.clearManualAllowlistState()
 
         persistManualShieldSnapshot(replaceDomains: [], replaceAppTokens: [], replaceCategoryTokens: [])
         
@@ -939,6 +961,8 @@ class ScreentimePlugin: Plugin {
         let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
         scheduleStore.clearAllSettings()
         ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [])
+        // Removed schedules may change the cross-channel allowlist union.
+        IOSWebPolicyApplier.reapplyWebPolicy()
         invoke.resolve(["success": true])
     }
     
@@ -1129,66 +1153,23 @@ class ScreentimePlugin: Plugin {
     
     // MARK: - Re-apply active schedule blocks after clear (pause / setSchedules with removal)
     
-    /// Current weekday in same encoding as frontend/extension: Mon=0 … Sun=6.
-    private static func currentWeekdayMon0() -> Int {
-        let weekday = Calendar.current.component(.weekday, from: Date())
-        return (weekday - 2 + 7) % 7
-    }
-
-    private func isPauseActive(isPaused: Bool?, pauseEndTimestampMs: Double?, nowMs: Double) -> Bool {
-        guard isPaused == true else { return false }
-        guard let pauseEndTimestampMs else { return true }
-        return pauseEndTimestampMs > nowMs
-    }
-    
-    /// True if the segment's time window and day filter include the current time.
-    private func isSegmentActiveNow(entry: ScheduleEntry) -> Bool {
-        let now = Date()
-        let nowMs = now.timeIntervalSince1970 * 1000.0
-        if isPauseActive(isPaused: entry.isPaused, pauseEndTimestampMs: entry.pauseEndTimestampMs, nowMs: nowMs) {
-            return false
-        }
-        if let activeFrom = entry.activeFromTimestampMs, nowMs < activeFrom {
-            return false
-        }
-        if let activeUntil = entry.activeUntilTimestampMs, nowMs > activeUntil {
-            return false
-        }
-        let today = Self.currentWeekdayMon0()
-        if let days = entry.days, !days.isEmpty {
-            if !days.contains(today) {
-                return false
-            }
-        }
-        let currentMins = Calendar.current.component(.hour, from: now) * 60 + Calendar.current.component(.minute, from: now)
-        let startMins = entry.startHour * 60 + entry.startMinute
-        let endMins = entry.endHour * 60 + entry.endMinute
-        if endMins > startMins {
-            return currentMins >= startMins && currentMins < endMins
-        }
-        let yesterdayDay = today == 0 ? 6 : today - 1
-        if let days = entry.days, !days.isEmpty {
-            let inEvening = days.contains(today) && currentMins >= startMins
-            let inMorning = days.contains(yesterdayDay) && currentMins < endMins
-            return inEvening || inMorning
-        }
-        return currentMins >= startMins || currentMins < endMins
-    }
-    
     /// After clearing the schedule store, re-apply the union of blocks for all remaining
-    /// segments that are currently in their active time window.
+    /// segments that are currently in their active time window. Web content is derived
+    /// state handled by IOSWebPolicyApplier (allowlist-aware, cross-channel); this
+    /// method owns the schedule store's app/category shields and the shield snapshot.
+    /// Allowlist entries contribute no app shields in Pass 2 (apps land in Pass 3) and
+    /// no snapshot rows yet (allowlist attribution lands in Pass 5).
     private func reapplyActiveScheduleBlocksToStore(entries: [ScheduleEntry]) {
         let now = Date()
-        var allDomains = Set<WebDomain>()
         var allAppTokens = Set<ApplicationToken>()
         var allCategoryTokens = Set<ActivityCategoryToken>()
-        var activePairs: [(String, ScheduleBlockData)] = []
-        for entry in entries where isSegmentActiveNow(entry: entry) {
-            guard let data = SharedScheduleStore.load(id: entry.id) else { continue }
-            activePairs.append((entry.id, data))
-            for domain in data.domains.prefix(50) {
-                allDomains.insert(WebDomain(domain: domain))
-            }
+        var blocklistPairs: [(String, ScheduleBlockData)] = []
+        var hasActiveEntries = false
+        for entry in entries {
+            guard let data = SharedScheduleStore.load(id: entry.id), data.isActiveNow(now: now) else { continue }
+            hasActiveEntries = true
+            if data.isAllowlist { continue }
+            blocklistPairs.append((entry.id, data))
             for tokenString in data.appTokenData {
                 if let tokenData = Data(base64Encoded: tokenString),
                    let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
@@ -1203,28 +1184,16 @@ class ScreentimePlugin: Plugin {
             }
         }
         let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
-        if allDomains.isEmpty && allAppTokens.isEmpty && allCategoryTokens.isEmpty {
+        if !hasActiveEntries {
             scheduleStore.clearAllSettings()
             ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [], now: now)
+            IOSWebPolicyApplier.reapplyWebPolicy(now: now)
             return
         }
-        let domainArray = Array(allDomains.prefix(50))
-        if domainArray.isEmpty {
-            scheduleStore.webContent.blockedByFilter = nil
-        } else {
-            scheduleStore.webContent.blockedByFilter = .specific(Set(domainArray))
-        }
-        if allAppTokens.isEmpty {
-            scheduleStore.shield.applications = nil
-        } else {
-            scheduleStore.shield.applications = allAppTokens
-        }
-        if allCategoryTokens.isEmpty {
-            scheduleStore.shield.applicationCategories = nil
-        } else {
-            scheduleStore.shield.applicationCategories = .specific(allCategoryTokens)
-        }
-        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: activePairs, now: now)
+        scheduleStore.shield.applications = allAppTokens.isEmpty ? nil : allAppTokens
+        scheduleStore.shield.applicationCategories = allCategoryTokens.isEmpty ? nil : .specific(allCategoryTokens)
+        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: blocklistPairs, now: now)
+        IOSWebPolicyApplier.reapplyWebPolicy(now: now)
     }
     
     private func statusString(_ status: AuthorizationStatus) -> String {
