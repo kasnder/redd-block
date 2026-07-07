@@ -53,6 +53,20 @@ open class BuildTask : DefaultTask() {
         project.exec {
             workingDir(File(project.projectDir, rootDirRel))
             executable(executable)
+            // Android Studio launched from the Dock doesn't inherit the shell PATH,
+            // so node (nvm) and cargo would not be found without this.
+            val home = System.getProperty("user.home")
+            val nodeBin = File("$home/.nvm/versions/node")
+                .listFiles { f -> f.isDirectory }
+                ?.maxByOrNull { f ->
+                    f.name.removePrefix("v").split(".")
+                        .map { it.toIntOrNull() ?: 0 }
+                        .let { v -> v.getOrElse(0) { 0 } * 1_000_000 + v.getOrElse(1) { 0 } * 1_000 + v.getOrElse(2) { 0 } }
+                }
+                ?.let { "${it.absolutePath}/bin" }
+            val extraPaths = listOfNotNull(nodeBin, "$home/.cargo/bin", "/opt/homebrew/bin", "/usr/local/bin")
+                .filter { File(it).isDirectory }
+            environment("PATH", (extraPaths + System.getenv("PATH")).joinToString(File.pathSeparator))
             args(args)
             if (project.logger.isEnabled(LogLevel.DEBUG)) {
                 args("-vv")

@@ -29,7 +29,10 @@ export const state = {
     /** MSIX / Microsoft Store install — updates come from the Store, not GitHub. */
     isMicrosoftStorePackage: null,
     screentimeAuthorized: false, // Track if Screen Time is authorized (iOS)
-    androidPermissionsGranted: false, // Track if Accessibility is granted (Android)
+    // null = not checked yet. Avoid showing the Android Accessibility
+    // onboarding screen during startup before the native permission check
+    // has had a chance to answer.
+    androidPermissionsGranted: null,
     /** When character count >= OVERRIDE_PREVIEW_TRUNCATE_AT, preview text is frozen (no more regeneration) for random words and gibberish. */
     overridePreviewFrozenByType: { 'random-words': null, 'gibberish': null },
     lastOverridePreviewType: null,

@@ -1039,6 +1039,13 @@ export function findAndroidBlockingTarget(nativeScheduleId) {
 // (`<scheduleId>-<segmentIndex>`). Manual blocks can still be stopped; schedule
 // blocks only offer a pause from this interruption surface.
 export function openAndroidFrictionGateModal(event) {
+    // A friction-gate event is emitted by BlockerService itself, so the
+    // Accessibility permission is active even if the startup permission
+    // check has not completed yet. Hide any stale onboarding guess before
+    // opening the challenge surface.
+    state.androidPermissionsGranted = true;
+    updateOnboardingVisibility();
+
     delete window.overrideScheduleId;
     state.overrideBlockId = null;
     state.overrideBlocklistIdForHelper = null;
@@ -1107,7 +1114,8 @@ export function updateOnboardingVisibility() {
     const main = document.getElementById('main-content');
     const showEula = !hasAcceptedEula();
     const showScreentime = state.isIOS && !showEula && !state.screentimeAuthorized;
-    const showAndroidPermissions = state.isAndroid && !showEula && !state.androidPermissionsGranted;
+    const androidPermissionsUnknown = state.isAndroid && !showEula && state.androidPermissionsGranted == null;
+    const showAndroidPermissions = state.isAndroid && !showEula && state.androidPermissionsGranted === false;
     const keepEulaVisibleForPendingSetup = !state.isIOS
         && !state.isAndroid
         && isFirstRunOnboardingInProgress()
@@ -1115,6 +1123,7 @@ export function updateOnboardingVisibility() {
     const showEulaScreen = showEula || keepEulaVisibleForPendingSetup;
     const blockMainUi = showEulaScreen
         || showScreentime
+        || androidPermissionsUnknown
         || showAndroidPermissions
         || state.migrationOnboardingActive
         || (!state.isIOS && !state.isAndroid && isFirstRunOnboardingInProgress());
