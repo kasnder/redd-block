@@ -5,10 +5,8 @@ import android.app.NotificationManager
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
-import android.util.Base64
 import android.util.Log
 import android.webkit.WebView
-import androidx.core.graphics.drawable.toBitmap
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -25,7 +23,6 @@ import net.kollnig.reddblockandroid.service.BlockerService
 import net.kollnig.reddblockandroid.util.isAccessibilityServiceEnabled
 import net.kollnig.reddblockandroid.util.isPrefsInitialized
 import net.kollnig.reddblockandroid.util.prefs
-import java.io.ByteArrayOutputStream
 import java.time.DayOfWeek
 
 @InvokeArg
@@ -328,14 +325,6 @@ class BlockerPlugin(private val activity: Activity) : Plugin(activity) {
             val appEntry = JSObject()
             appEntry.put("label", info.loadLabel(pm).toString())
             appEntry.put("packageName", pkg)
-            try {
-                val icon = info.loadIcon(pm).toBitmap(width = 96, height = 96)
-                val stream = ByteArrayOutputStream()
-                icon.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
-                appEntry.put("iconBase64", Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP))
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed to load icon for $pkg", e)
-            }
             arr.put(appEntry)
         }
 

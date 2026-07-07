@@ -92,8 +92,6 @@ pub struct NativeSchedulesResponse {
 pub struct InstalledApp {
     pub label: String,
     pub package_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub icon_base64: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

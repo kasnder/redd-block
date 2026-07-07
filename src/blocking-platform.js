@@ -684,7 +684,6 @@ export async function ensureInstalledAppsCache() {
             state.installedAppsCache = (result?.apps || []).map((app) => ({
                 display_name: app.label || app.packageName,
                 process_name: app.packageName,
-                icon_base64: app.iconBase64 || null,
             }))
                 .filter((app) => app.process_name)
                 .sort((a, b) => a.display_name.localeCompare(b.display_name));
