@@ -10401,6 +10401,18 @@ body:not(.ios) #blocklist-modal .tags-input-stacked .browse-btn{
     border-color: transparent;
 }
 
+#blocklist-modal .tags-input-stacked .browse-btn-apps{
+    background: var(--button-bg);
+    border-color: transparent;
+    color: white;
+}
+
+#blocklist-modal .tags-input-stacked .browse-btn-apps:hover{
+    background: var(--button-hover);
+    color: white;
+    border-color: transparent;
+}
+
 #blocklist-modal .tags-input-stacked .browse-btn-caption{
     display: inline;
 }
@@ -10611,6 +10623,10 @@ body.ios #blocklist-modal .tags-input-stacked .browse-btn {
 body.handset-device #blocklist-modal .tags-input-stacked .browse-btn{
     padding: 8px 10px;
     gap: 6px;
+}
+
+body.ios #blocklist-modal .tags-input-stacked .apps-picker-only .browse-btn{
+    width: 100%;
 }
 
 body.ios #blocklist-modal .tags-input-container .browse-btn-caption {

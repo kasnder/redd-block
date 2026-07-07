@@ -434,7 +434,7 @@ function updateBlocklistModalModeLabels(mode) {
     }
     const appInput = document.getElementById('modal-app-input');
     if (appInput) {
-        appInput.placeholder = tSettings(isAllow ? 'placeholderAppAllow' : 'placeholderAppBlock');
+        syncModalAppPlaceholder();
     }
 }
 
@@ -7354,7 +7354,10 @@ function detectPlatform() {
         const appInput = document.getElementById('app-input');
         if (appInput) appInput.style.display = 'none';
         const modalAppInput = document.getElementById('modal-app-input');
-        if (modalAppInput) modalAppInput.style.display = 'none';
+        if (modalAppInput) {
+            modalAppInput.style.display = 'none';
+            modalAppInput.closest('.apps-input-with-button')?.classList.add('apps-picker-only');
+        }
 
 
 
@@ -7687,6 +7690,7 @@ function setupEventListeners() {
         }
         if ((target === appInput || document.activeElement === appInput) && appHasPending) {
             appInput.value = '';
+            syncModalAppPlaceholder();
             e.preventDefault();
             e.stopPropagation();
             return;
@@ -7702,6 +7706,7 @@ function setupEventListeners() {
         }
         if (appHasPending) {
             appInput.value = '';
+            syncModalAppPlaceholder();
             e.preventDefault();
             e.stopPropagation();
             return;
@@ -8460,7 +8465,7 @@ function setupModalListeners() {
                 modalAppInput.placeholder = tSettings('cannotBlockSelfAppPlaceholder');
                 modalAppInput.classList.add('input-error');
                 setTimeout(() => {
-                    modalAppInput.placeholder = tSettings('placeholderAppExample');
+                    syncModalAppPlaceholder();
                     modalAppInput.classList.remove('input-error');
                 }, 2000);
                 return;
@@ -9040,6 +9045,7 @@ function setupModalListeners() {
         });
 
         syncModalWebsitePlaceholder();
+        syncModalAppPlaceholder();
     };
 
     // Esc inside the modal clears any active tag selection (it does NOT close
@@ -20081,7 +20087,7 @@ const SETTINGS_TRANSLATIONS = {
         importWebsitesTitle: 'Import websites',
         browseApplicationsTitle: 'Browse Applications',
         modalPremadeListsCaption: 'Lists',
-        modalBrowseAppsCaption: 'Select Apps',
+        modalBrowseAppsCaption: 'Apps',
         modalBrowseAppsTitleIos: 'Select Apps (Screen Time)',
         importWebsitesPickFileTitle: 'Select a file with one domain per line',
         importWebsitesFromFile: 'From text file…',
@@ -20872,7 +20878,7 @@ const SETTINGS_TRANSLATIONS = {
         importWebsitesTitle: 'Importér websites',
         browseApplicationsTitle: 'Gennemse programmer',
         modalPremadeListsCaption: 'Lister',
-        modalBrowseAppsCaption: 'Vælg apps',
+        modalBrowseAppsCaption: 'Apps',
         modalBrowseAppsTitleIos: 'Vælg apps (Screen Time)',
         importWebsitesPickFileTitle: 'Vælg en fil med ét domæne pr. linje',
         importWebsitesFromFile: 'Fra tekstfil…',
@@ -21829,6 +21835,13 @@ function syncModalWebsitePlaceholder() {
     el.placeholder = tSettings('placeholderWebsiteExample');
 }
 
+/** Blocklist modal: always show the example placeholder in the apps input row. */
+function syncModalAppPlaceholder() {
+    const el = document.getElementById('modal-app-input');
+    if (!el || el.classList.contains('input-error')) return;
+    el.placeholder = tSettings('placeholderAppExample');
+}
+
 function applySettingsLanguage() {
     const setText = (id, text) => {
         const el = document.getElementById(id);
@@ -21931,7 +21944,7 @@ function applySettingsLanguage() {
         if (el) el.placeholder = text;
     };
     setPlaceholder('blocklist-name', tSettings('placeholderNameExample'));
-    setPlaceholder('modal-app-input', tSettings('placeholderAppExample'));
+    syncModalAppPlaceholder();
     syncModalWebsitePlaceholder();
     setPlaceholder('challenge-input', tSettings('typeHere'));
     setPlaceholder('pause-challenge-input', tSettings('typeHere'));
