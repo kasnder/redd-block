@@ -11,7 +11,7 @@ import { tSettings, tSettingsFmt } from './i18n.js';
 import { isProtectedApp } from './blocklist-utils.js';
 import { generateGibberish, generateRandomWords } from './override-challenge.js';
 import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncSchedulesToHelper } from './schedule-engine.js';
-import { saveData, updateHostsFile } from './persistence.js';
+import { saveData, updateHostsFile, createDefaultBlocklist } from './persistence.js';
 import { render } from './render.js';
 import { renderBlocklists } from './blocklists.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
@@ -669,6 +669,10 @@ export function displayNameForBlockedApp(processName) {
     );
     if (match?.display_name) return match.display_name;
 
+    // Unknown app (not installed / not in the cache). Package-style ids
+    // (Android, e.g. app.vanadium.browser) read worse when title-cased, so
+    // leave them as-is; only prettify bare desktop process names ("chrome").
+    if (key.includes('.')) return key;
     return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
@@ -802,6 +806,10 @@ export async function checkAndroidPermissions() {
 }
 
 export async function initializeAndroidBlockingState() {
+    // Preload installed-app labels (package name -> friendly name) so blocklist
+    // cards show "Vanadium" rather than the raw "app.vanadium.browser" package
+    // id. Desktop does this in its startup branch; Android needs it too.
+    await ensureInstalledAppsCache();
     await migrateAndroidNativeSchedules();
     await syncSchedulesToHelper();
 }
@@ -888,6 +896,11 @@ export async function migrateAndroidNativeSchedules() {
 
         if (!state.appData.settings) state.appData.settings = {};
         state.appData.settings.androidMigrationDone = true;
+        // No legacy data to import (genuinely fresh Android install) — create
+        // the default space here, since loadData deferred it pending migration.
+        if (state.appData.blocklists.length === 0) {
+            createDefaultBlocklist();
+        }
         await saveData();
         console.log('[migrateAndroidNativeSchedules] Imported', legacySchedules.length, 'legacy schedules');
     } catch (e) {

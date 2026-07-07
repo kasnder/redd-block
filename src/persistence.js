@@ -60,29 +60,41 @@ export async function loadData() {
     }
 
 
-    // Create default blocklist on first launch (no blocklists yet)
-    if (state.appData.blocklists.length === 0) {
-        state.appData.blocklists.push({
-            id: generateId(),
-            name: 'Distractions',
-            mode: 'blocklist',
-            // First colour in the palette (matches the openBlocklistModal default).
-            color: '#B8D1DE',
-            emoji: '📱',
-            websites: ['instagram.com', 'youtube.com', 'reddit.com'],
-            apps: [],
-            iosScreenTimeSelection: null,
-            overrideDifficulty: {
-                type: 'random-words',
-                count: (state.isIOS) ? 25 : 50
-            }
-        });
+    // Create default blocklist on first launch (no blocklists yet).
+    // On Android, defer until the native-schedule migration has had a chance
+    // to run (migrateAndroidNativeSchedules), otherwise users upgrading from
+    // the legacy app get a spurious "Distractions" default alongside their
+    // imported spaces — the migration (which runs later, post-onboarding)
+    // creates the default itself if there's no legacy data to import.
+    const androidMigrationPending = state.isAndroid && !state.appData.settings?.androidMigrationDone;
+    if (state.appData.blocklists.length === 0 && !androidMigrationPending) {
+        createDefaultBlocklist();
         shouldSave = true;
     }
 
     if (shouldSave) {
         await saveData();
     }
+}
+
+// The first-launch default "Distractions" space. Shared by loadData and the
+// Android native-schedule migration (which owns default creation on Android).
+export function createDefaultBlocklist() {
+    state.appData.blocklists.push({
+        id: generateId(),
+        name: 'Distractions',
+        mode: 'blocklist',
+        // First colour in the palette (matches the openBlocklistModal default).
+        color: '#B8D1DE',
+        emoji: '📱',
+        websites: ['instagram.com', 'youtube.com', 'reddit.com'],
+        apps: [],
+        iosScreenTimeSelection: null,
+        overrideDifficulty: {
+            type: 'random-words',
+            count: (state.isIOS) ? 25 : 50
+        }
+    });
 }
 
 // Save data to main process
