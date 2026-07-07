@@ -84,15 +84,27 @@ const PROTECTED: &[&str] = &[
     "ReDD Blocker", "Fristed", "ReDD Block", "redd-block", "ReddBlock",
     "System Events", "Finder", "loginwindow", "WindowServer",
     "explorer.exe", "dwm.exe", "winlogon.exe", "svchost.exe",
+    "Taskmgr", "Task Manager",
 ];
 
 fn is_protected(name: &str) -> bool {
     is_protected_app_name(name)
 }
 
+fn is_self_pid(pid: sysinfo::Pid) -> bool {
+    std::process::id() == pid.as_u32()
+}
+
+fn is_protected_process(name: &str, pid: sysinfo::Pid) -> bool {
+    is_self_pid(pid) || is_protected(name)
+}
+
 /// Whether an app label must never be killed by the watcher.
 pub fn is_protected_app_name(name: &str) -> bool {
-    PROTECTED.iter().any(|p| name.eq_ignore_ascii_case(p))
+    let stem = name.strip_suffix(".exe").unwrap_or(name);
+    PROTECTED
+        .iter()
+        .any(|p| name.eq_ignore_ascii_case(p) || stem.eq_ignore_ascii_case(p))
 }
 
 /// Match a running process against a user-facing app label.
@@ -636,7 +648,7 @@ fn sweep(
 
     for (pid, proc_) in sys.processes() {
         let name = proc_.name().to_string_lossy().to_string();
-        if name.is_empty() || is_protected(&name) {
+        if name.is_empty() || is_protected_process(&name, *pid) {
             continue;
         }
         let proc_exe = proc_.exe();
@@ -952,7 +964,7 @@ fn sweep_allowlist(
     let mut block_start_warning_raised = false;
 
     for (pid, proc_name, display_name) in targets {
-        if is_protected(&proc_name) {
+        if is_protected_process(&proc_name, pid) {
             continue;
         }
         if !allowlist_entry_still_user_facing(pid, allowlist_window_pids) {
@@ -1043,7 +1055,7 @@ fn frontmost_non_allowed_app(_allowed: &[String]) -> Vec<(sysinfo::Pid, String, 
     let Some((pid, proc_name, display_name)) = frontmost_app_pid_and_name() else {
         return Vec::new();
     };
-    if proc_name.is_empty() || is_protected(&proc_name) {
+    if proc_name.is_empty() || is_protected_process(&proc_name, pid) {
         return Vec::new();
     }
     vec![(pid, proc_name, display_name)]
@@ -1053,7 +1065,7 @@ fn frontmost_non_allowed_app(_allowed: &[String]) -> Vec<(sysinfo::Pid, String, 
 fn visible_non_allowed_regular_apps(allowed: &[String]) -> Vec<(sysinfo::Pid, String, String)> {
     let mut out = Vec::new();
     for (pid, proc_name, display_name, bundle_path) in visible_regular_running_apps() {
-        if is_protected(&proc_name) {
+        if is_protected_process(&proc_name, pid) {
             continue;
         }
         let bundle_ref = bundle_path.as_deref();
@@ -1312,7 +1324,7 @@ fn visible_regular_running_apps() -> Vec<(sysinfo::Pid, String, String, Option<s
             continue;
         };
         let proc_name = proc_.name().to_string_lossy().to_string();
-        if proc_name.is_empty() || is_protected(&proc_name) {
+        if proc_name.is_empty() || is_protected_process(&proc_name, pid) {
             continue;
         }
         let proc_path = proc_.exe().map(|p| p.to_path_buf());
@@ -1399,7 +1411,7 @@ fn frontmost_app_pid_and_name() -> Option<(sysinfo::Pid, String, String)> {
     );
     let proc_ = sys.process(pid)?;
     let proc_name = proc_.name().to_string_lossy().to_string();
-    if proc_name.is_empty() || is_protected(&proc_name) {
+    if proc_name.is_empty() || is_protected_process(&proc_name, pid) {
         return None;
     }
     let proc_path = proc_.exe().map(|p| p.to_path_buf());
