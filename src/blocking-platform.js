@@ -9,14 +9,13 @@ import { tauriAPI, openUrl } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { isProtectedApp } from './blocklist-utils.js';
-import { generateGibberish, generateRandomWords } from './override-challenge.js';
 import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile, createDefaultBlocklist } from './persistence.js';
 import { render } from './render.js';
 import { renderBlocklists } from './blocklists.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { applyScheduleStartOverlayPresentation, getScheduleStartOverlayForWarningApps, playAppBlockingLetsGoVoice } from './schedule-overlay.js';
-import { closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal } from './confirm-modals.js';
+import { closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, initializeOverrideModalChallenge, openPauseModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
 import { updateManageSectionVisibility } from './settings.js';
 import { CURRENT_EULA_REVISION, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress } from './onboarding.js';
 import { generateId, runPostAcceptanceStartup } from './app.js';
@@ -1036,15 +1035,16 @@ export function findAndroidBlockingTarget(nativeScheduleId) {
     return null;
 }
 
-// Shows the shared override-challenge UI for a block that fired on Android.
+// Shows the shared challenge UI for a block that fired on Android.
 // Kotlin sends either the manual block id or the flattened schedule-segment id
-// (`<scheduleId>-<segmentIndex>`). Route both back into the same JS-owned stop
-// flows used elsewhere so the visible app state and native blocking state stay
-// in lockstep.
+// (`<scheduleId>-<segmentIndex>`). Manual blocks can still be stopped; schedule
+// blocks only offer a pause from this interruption surface.
 export function openAndroidFrictionGateModal(event) {
     delete window.overrideScheduleId;
     state.overrideBlockId = null;
     state.overrideBlocklistIdForHelper = null;
+    state.pauseBlockId = null;
+    state.pauseScheduleData = null;
 
     const target = findAndroidBlockingTarget(event.scheduleId);
     if (!target) {
@@ -1056,41 +1056,31 @@ export function openAndroidFrictionGateModal(event) {
         return;
     }
 
-    let blocklist = null;
-    let actionLabel = tSettings('stopSchedule');
-
     if (target.type === 'block') {
         state.overrideBlockId = target.block.id;
-        blocklist = state.appData.blocklists.find(bl => bl.id === target.block.blocklistId);
-        actionLabel = tSettings('stopBlock');
-    } else {
-        window.overrideScheduleId = target.schedule.id || target.schedule.blocklistId;
-        blocklist = state.appData.blocklists.find(bl => bl.id === target.schedule.blocklistId);
-        actionLabel = tSettings('stopSchedule');
+        state.overrideBlocklistIdForHelper = target.block.blocklistId;
+        const blocklist = state.appData.blocklists.find(bl => bl.id === target.block.blocklistId);
+        if (!blocklist) {
+            console.error('[friction-gate] No matching blocklist for block:', target.block.blocklistId);
+            return;
+        }
+        const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 15 };
+        populateOverrideConfirmModalContent(blocklist, { block: target.block });
+        initializeOverrideModalChallenge(difficulty, blocklist.color);
+        return;
     }
 
-    const blocklistName = blocklist?.name || event.scheduleName || 'ReDD Block';
+    const scheduleBlocklist = state.appData.blocklists.find(bl => bl.id === target.schedule.blocklistId);
+    if (!scheduleBlocklist) {
+        console.error('[friction-gate] No matching blocklist for schedule:', target.schedule.blocklistId);
+        return;
+    }
 
-    const difficulty = blocklist?.overrideDifficulty || { type: 'random-words', count: 15 };
-    const charCount = difficulty.count || 15;
-    const isRandom = difficulty.type === 'gibberish';
-
-    state.challengeText = isRandom ? generateGibberish(charCount) : generateRandomWords(charCount);
-
-    const confirmBtn = document.getElementById('confirm-override-btn');
-    if (confirmBtn) confirmBtn.textContent = actionLabel;
-
-    const titleEl = document.getElementById('override-modal-title');
-    if (titleEl) titleEl.textContent = `${actionLabel} ${blocklistName}`;
-
-    const challengeTextEl = document.getElementById('challenge-text');
-    if (challengeTextEl) challengeTextEl.textContent = state.challengeText;
-    const challengeInput = document.getElementById('challenge-input');
-    if (challengeInput) challengeInput.value = '';
-    const progressBar = document.getElementById('challenge-progress-bar');
-    if (progressBar) progressBar.style.width = '0%';
-
-    document.getElementById('override-modal').classList.remove('hidden');
+    state.pauseScheduleData = {
+        blocklistId: target.schedule.blocklistId,
+        isActiveNow: isScheduleSegmentActiveNow(target.schedule)
+    };
+    openPauseModal(null);
 }
 
 export async function initializeIOSBlockingState() {
