@@ -20269,8 +20269,8 @@ const SETTINGS_TRANSLATIONS = {
         appsTooltip: 'Enter the exact name of the application (e.g. \'Safari\'). You can also use the folder button to find the app.',
         appsAllowTooltip: 'Only these apps can stay in the foreground. Background apps (Dropbox, sync tools, etc.) keep running.',
         blocklistModeLabel: 'Mode',
-        blocklistModeBlocklist: 'Block list',
-        blocklistModeAllowlist: 'Allow list',
+        blocklistModeBlocklist: 'Block',
+        blocklistModeAllowlist: 'Allow',
         blocklistModalSummaryBlocks: 'Blocks',
         blocklistModalSummaryAllows: 'Allows',
         blocklistModeHint: 'Only the websites and apps you add will be blocked.',
@@ -21060,8 +21060,8 @@ const SETTINGS_TRANSLATIONS = {
         appsTooltip: 'Indtast det præcise navn på appen (fx "Safari"). Du kan også bruge mappeknappen til at finde appen.',
         appsAllowTooltip: 'Kun disse apps må være forrest. Baggrundsapps (Dropbox, synk-værktøjer osv.) kører videre.',
         blocklistModeLabel: 'Tilstand',
-        blocklistModeBlocklist: 'Blokeringsliste',
-        blocklistModeAllowlist: 'Tilladelsesliste',
+        blocklistModeBlocklist: 'Bloker',
+        blocklistModeAllowlist: 'Tillad',
         blocklistModalSummaryBlocks: 'Blokerer',
         blocklistModalSummaryAllows: 'Tillader',
         blocklistModeHint: 'Kun de hjemmesider og apps du tilføjer bliver blokeret.',
@@ -22168,8 +22168,8 @@ function applySettingsLanguage() {
     setText('active-blocklist-warning-text', tSettings('activeBlocklistWarning'));
     setText('blocklist-name-label', tSettings('name'));
     setText('blocklist-mode-label', tSettings('blocklistModeLabel'));
-    setText('blocklist-mode-blocklist', tSettings('blocklistModeBlocklist'));
-    setText('blocklist-mode-allowlist', tSettings('blocklistModeAllowlist'));
+    setText('blocklist-mode-blocklist-label', tSettings('blocklistModeBlocklist'));
+    setText('blocklist-mode-allowlist-label', tSettings('blocklistModeAllowlist'));
     updateBlocklistModalModeLabels(getSelectedBlocklistModalMode());
     setText('override-difficulty-label', tSettings('overrideDifficulty'));
     setText('override-method-label', tSettings('overrideMethod'));

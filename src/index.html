@@ -1115,9 +1115,24 @@ the apps and websites that pull you away.</p>
                     <label id="blocklist-mode-label">Mode</label>
                     <div class="mode-toggle" id="blocklist-mode-toggle">
                         <button type="button" class="mode-btn radio-option active" data-mode="blocklist"
-                            id="blocklist-mode-blocklist">Block list</button>
+                            id="blocklist-mode-blocklist">
+                            <svg class="mode-btn-icon mode-btn-icon--block" width="16" height="16" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="m4.9 4.9 14.2 14.2"></path>
+                            </svg>
+                            <span class="mode-btn-label" id="blocklist-mode-blocklist-label">Block</span>
+                        </button>
                         <button type="button" class="mode-btn radio-option" data-mode="allowlist"
-                            id="blocklist-mode-allowlist">Allow list</button>
+                            id="blocklist-mode-allowlist">
+                            <svg class="mode-btn-icon mode-btn-icon--allow" width="18" height="18" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" aria-hidden="true">
+                                <path d="M20 6 9 17l-5-5"></path>
+                            </svg>
+                            <span class="mode-btn-label" id="blocklist-mode-allowlist-label">Allow</span>
+                        </button>
                     </div>
                     <p class="form-hint" id="blocklist-mode-hint">Only the websites and apps you add will be blocked.</p>
                 </div>

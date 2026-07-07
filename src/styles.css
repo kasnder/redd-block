@@ -10665,6 +10665,10 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
 
 .mode-btn{
     flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
     padding: 8px 12px;
     border: none;
     border-radius: 6px;
@@ -10674,6 +10678,24 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
     color: var(--text-muted);
     cursor: pointer;
     transition: all 0.2s ease;
+}
+
+.mode-btn-icon{
+    flex-shrink: 0;
+}
+
+.mode-btn-icon--block{
+    color: #ef4444;
+}
+
+.mode-btn-icon--allow{
+    color: #22c55e;
+    width: 18px;
+    height: 18px;
+}
+
+.mode-btn-label{
+    line-height: 1;
 }
 
 .mode-btn.active{
