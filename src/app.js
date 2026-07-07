@@ -599,6 +599,7 @@ function normalizeBlocklist(blocklist) {
 function collectActiveIOSManualBlockPayload(now = Date.now()) {
     const allDomains = new Set();
     const allowedDomains = new Set();
+    const allowedAppTokenData = new Set();
     const appTokenData = new Set();
     const categoryTokenData = new Set();
 
@@ -620,10 +621,13 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
         }
 
         if (isBlocklistAllowlistMode(blocklist)) {
-            // Allow-mode focus space: websites are ALLOWED items. App tokens are
-            // intentionally excluded until iOS app allowlists land (Pass 3).
+            // Allow-mode focus space: websites and app tokens are ALLOWED items.
+            // Category tokens cannot be allowlist exceptions on iOS and are ignored.
             for (const domain of blocklist.websites || []) {
                 if (!isProtectedDomain(domain)) allowedDomains.add(domain);
+            }
+            for (const token of getBlocklistIOSPayload(blocklist).appTokenData) {
+                allowedAppTokenData.add(token);
             }
             continue;
         }
@@ -637,12 +641,14 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
         for (const token of iosPayload.categoryTokenData) categoryTokenData.add(token);
     }
 
-    // Blocklist wins on overlap: an explicitly blocked domain is never an exception.
+    // Blocklist wins on overlap: an explicitly blocked item is never an exception.
     for (const domain of allDomains) allowedDomains.delete(domain);
+    for (const token of appTokenData) allowedAppTokenData.delete(token);
 
     const out = {
         domains: Array.from(allDomains).sort(),
         allowedDomains: Array.from(allowedDomains).sort(),
+        allowedAppTokenData: Array.from(allowedAppTokenData),
         appTokenData: Array.from(appTokenData),
         categoryTokenData: Array.from(categoryTokenData)
     };
@@ -660,18 +666,20 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
 }
 
 /**
- * iOS start gate for allow-mode focus spaces. Pass 2 supports websites-only
- * allowlists; app allow lists land in Pass 3. Alerts and returns false when
- * the focus space cannot be started on iOS yet.
+ * iOS start gate for allow-mode focus spaces. Websites and Screen Time app
+ * tokens are enforceable; desktop app names and Screen Time categories are not
+ * (categories cannot be `.all(except:)` exceptions). Alerts and returns false
+ * when the focus space cannot be started on iOS; confirms a websites-only
+ * start when its apps cannot be allowlist-enforced.
  */
-function ensureIOSAllowlistStartable(blocklist) {
+async function ensureIOSAllowlistStartable(blocklist) {
     if (!isIOS || !isBlocklistAllowlistMode(blocklist)) return true;
-    if (hasUsableIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(blocklist))) {
-        alert(tSettings('allowlistIosAppsUnavailable'));
-        return false;
-    }
+    const selection = getBlocklistIOSScreenTimeSelection(blocklist);
+    const appTokens = selection?.applicationTokens || [];
+    const categoryTokens = selection?.categoryTokens || [];
     const enforceableWebsites = (blocklist?.websites || []).filter(d => !isProtectedDomain(d));
-    if (enforceableWebsites.length === 0) {
+
+    if (appTokens.length === 0 && enforceableWebsites.length === 0) {
         alert(tSettings('allowlistIosNeedsWebsites'));
         return false;
     }
@@ -679,16 +687,35 @@ function ensureIOSAllowlistStartable(blocklist) {
         alert(tSettings('allowlistIosDomainLimit').replace('{n}', String(enforceableWebsites.length)));
         return false;
     }
+    if (appTokens.length > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
+        alert(tSettings('allowlistIosTokenLimit').replace('{n}', String(appTokens.length)));
+        return false;
+    }
+    if (appTokens.length > 0 && categoryTokens.length > 0) {
+        // Warn, then proceed with app tokens only.
+        alert(tSettings('allowlistIosCategoriesIgnored'));
+    }
+    // Desktop app names (or a categories-only Screen Time selection) cannot be
+    // allowlist-enforced on iOS: never silently pretend they are allowed.
+    const hasUnenforceableApps = getBlocklistRegularApps(blocklist).length > 0 || categoryTokens.length > 0;
+    if (appTokens.length === 0 && hasUnenforceableApps) {
+        const proceed = await ask(tSettings('allowlistIosWebOnlyConfirm'), {
+            title: blocklist?.name || 'Allow list',
+            kind: 'warning'
+        });
+        if (!proceed) return false;
+    }
     return true;
 }
 
-// ---- iOS effective-policy derivation (allowlist groundwork) ----------------
+// ---- iOS effective-policy derivation --------------------------------------
 //
 // Pure helpers that resolve the set of currently active enforcement sources
 // into one effective Screen Time policy per resource type. Mirrors desktop
 // semantics: concurrent allowlists union; explicit blocklist wins on overlap;
-// resource types (websites vs apps) compose independently. Wired into the
-// live iOS payload builders in later passes; unused-by-callers in Pass 1.
+// resource types (websites vs apps) compose independently. Used to pre-validate
+// the cross-channel policy before applying (the Swift IOSPolicyResolver is the
+// enforcement-side mirror).
 
 /** Apple caps `.all(except:)` exceptions at 50 domains / 50 tokens per store. */
 const IOS_ALLOWLIST_EXCEPTION_LIMIT = 50;
@@ -949,17 +976,22 @@ async function syncSchedulesToHelper() {
                 const isAllowlist = isBlocklistAllowlistMode(blocklist);
                 const mode = isAllowlist ? 'allowlist' : null;
                 const rawDomains = blocklist?.websites || [];
-                // Allowlist entries: domains are ALLOWED items; app tokens are excluded
-                // until iOS app allowlists land (Pass 3). Never send an entry the
-                // extension would have to truncate (truncating an allow list over-blocks).
+                // Allowlist entries: domains and app tokens are ALLOWED items;
+                // category tokens cannot be allowlist exceptions and are dropped.
+                // Never send an entry the extension would have to truncate
+                // (truncating an allow list over-blocks).
                 const domains = isAllowlist ? rawDomains.filter(d => !isProtectedDomain(d)) : rawDomains;
                 if (isAllowlist && domains.length > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
                     console.warn('[syncSchedulesToHelper] iOS: skipping allowlist schedule over the 50-domain cap:', schedule.id, domains.length);
                     continue;
                 }
                 const iosPayload = isAllowlist
-                    ? { appTokenData: [], categoryTokenData: [] }
+                    ? { appTokenData: getBlocklistIOSPayload(blocklist).appTokenData, categoryTokenData: [] }
                     : getBlocklistIOSPayload(blocklist);
+                if (isAllowlist && iosPayload.appTokenData.length > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
+                    console.warn('[syncSchedulesToHelper] iOS: skipping allowlist schedule over the 50-app cap:', schedule.id, iosPayload.appTokenData.length);
+                    continue;
+                }
                 const blocklistEmoji = blocklist?.emoji ?? null;
                 const blocklistName = blocklist?.name ?? null;
                 const bc = blocklist?.color;
@@ -11514,7 +11546,7 @@ async function startSchedule() {
         return;
     }
 
-    if (!ensureIOSAllowlistStartable(blocklist)) return;
+    if (!(await ensureIOSAllowlistStartable(blocklist))) return;
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
 
     // Normal start mode - check that at least one segment has days
@@ -13948,7 +13980,7 @@ async function proceedWithSchedule() {
 
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
-    if (!ensureIOSAllowlistStartable(blocklist)) return;
+    if (!(await ensureIOSAllowlistStartable(blocklist))) return;
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
     appBlockingWarningSessionBlocklistId = selectedBlocklistId;
 
@@ -15213,7 +15245,7 @@ async function proceedWithBlock() {
         return;
     }
     appBlockingWarningSessionBlocklistId = selectedBlocklistId;
-    if (!ensureIOSAllowlistStartable(blocklist)) {
+    if (!(await ensureIOSAllowlistStartable(blocklist))) {
         startBtn.disabled = false;
         startBtn.innerHTML = getStartBlockButtonHTML();
         return;
@@ -15273,11 +15305,12 @@ async function proceedWithBlock() {
                 // Register one-off DeviceActivity so block ends at endTime when app is closed (Option B: store this block's payload to remove)
                 if (!block.isAlwaysOn && block.endTime < ALWAYS_ON_END_TIME) {
                     try {
-                        // Allowlist blocks: domains are ALLOWED items (subtracted from the
-                        // allowlist record at block end); no app tokens until Pass 3.
+                        // Allowlist blocks: domains and app tokens are ALLOWED items
+                        // (subtracted from the allowlist record at block end);
+                        // category tokens cannot be allowlist exceptions.
                         const endIsAllowlist = isBlocklistAllowlistMode(blocklist);
                         const iosPayload = endIsAllowlist
-                            ? { appTokenData: [], categoryTokenData: [] }
+                            ? { appTokenData: getBlocklistIOSPayload(blocklist).appTokenData, categoryTokenData: [] }
                             : getBlocklistIOSPayload(blocklist);
                         await tauriAPI.screentimeSetBlockEndState({
                             blockId: block.id,
@@ -15568,17 +15601,25 @@ async function updateHostsFile(silent = false) {
             // Allowlist safety: never send an exception set Apple would truncate
             // (truncating an allow list over-blocks). Validate the cross-channel
             // effective policy, not just this payload.
-            const webPolicy = deriveIOSEffectiveWebsitePolicy(collectActiveIOSEnforcementSources(now));
-            const limitCheck = validateIOSAllowlistLimits(webPolicy);
-            if (!limitCheck.ok) {
-                console.error('[updateHostsFile] iOS: allowlist exceeds Screen Time cap:', limitCheck);
+            const enforcementSources = collectActiveIOSEnforcementSources(now);
+            const webLimitCheck = validateIOSAllowlistLimits(deriveIOSEffectiveWebsitePolicy(enforcementSources));
+            if (!webLimitCheck.ok) {
+                console.error('[updateHostsFile] iOS: allowlist exceeds Screen Time domain cap:', webLimitCheck);
                 return {
                     success: false,
-                    error: tSettings('allowlistIosDomainLimit').replace('{n}', String(limitCheck.count))
+                    error: tSettings('allowlistIosDomainLimit').replace('{n}', String(webLimitCheck.count))
                 };
             }
-            if (manualPayload.allowedDomains.length > 0) {
-                console.log('[updateHostsFile] iOS: starting Screen Time allowlist —', manualPayload.allowedDomains.length, 'allowed,', manualPayload.domains.length, 'explicitly blocked');
+            const appLimitCheck = validateIOSAllowlistLimits(deriveIOSEffectiveAppPolicy(enforcementSources));
+            if (!appLimitCheck.ok) {
+                console.error('[updateHostsFile] iOS: allowlist exceeds Screen Time app cap:', appLimitCheck);
+                return {
+                    success: false,
+                    error: tSettings('allowlistIosTokenLimit').replace('{n}', String(appLimitCheck.count))
+                };
+            }
+            if (manualPayload.allowedDomains.length > 0 || manualPayload.allowedAppTokenData.length > 0) {
+                console.log('[updateHostsFile] iOS: starting Screen Time allowlist —', manualPayload.allowedDomains.length, 'allowed sites,', manualPayload.allowedAppTokenData.length, 'allowed apps,', manualPayload.domains.length, 'explicitly blocked sites');
             } else if (manualPayload.domains.length === 0) {
                 console.log('[updateHostsFile] iOS: active blocks with no domains (app-only), applying app shield');
             } else {
@@ -16717,11 +16758,12 @@ async function proceedWithPause() {
             if (block && block.pauseEndTime) {
                 try {
                     const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
-                    // Allowlist blocks: domains are ALLOWED items (merged back into the
-                    // allowlist record on resume); no app tokens until Pass 3.
+                    // Allowlist blocks: domains and app tokens are ALLOWED items
+                    // (merged back into the allowlist record on resume);
+                    // category tokens cannot be allowlist exceptions.
                     const resumeIsAllowlist = isBlocklistAllowlistMode(blocklist);
                     const iosPayload = resumeIsAllowlist
-                        ? { appTokenData: [], categoryTokenData: [] }
+                        ? { appTokenData: getBlocklistIOSPayload(blocklist).appTokenData, categoryTokenData: [] }
                         : getBlocklistIOSPayload(blocklist);
                     await tauriAPI.screentimeSetResumePayload({
                         blockId: pauseBlockId,
@@ -20265,8 +20307,11 @@ const SETTINGS_TRANSLATIONS = {
         placeholderAppAllow: 'e.g., Microsoft Word',
         allowlistIosUnavailable: 'Allow list mode is not yet available on iOS. Use a block list focus space instead, or start this allow-list focus space on macOS.',
         allowlistIosAppsUnavailable: 'App allow lists are not yet available on iOS. Remove the selected apps from this focus space to run it as a website allow list, or start it on macOS.',
-        allowlistIosNeedsWebsites: 'Add at least one website to this allow list to start it on iOS. App allow lists are not yet available on iOS.',
+        allowlistIosNeedsWebsites: 'Add at least one website, or select apps with the Screen Time picker, to start this allow list on iOS.',
         allowlistIosDomainLimit: 'iOS allow lists support up to 50 websites, but this would allow {n}. Remove some websites and try again.',
+        allowlistIosTokenLimit: 'iOS allow lists support up to 50 apps, but this would allow {n}. Remove some apps and try again.',
+        allowlistIosWebOnlyConfirm: 'The apps in this allow list can’t be kept usable on iOS — they need a Screen Time app selection. Start it as a website-only allow list? Websites outside the list will be blocked, and all apps will stay usable.',
+        allowlistIosCategoriesIgnored: 'Screen Time categories can’t be used as allow-list exceptions on iOS. The selected categories will be ignored — only the individually selected apps will stay usable.',
         overrideDifficulty: 'Stop Difficulty',
         overrideMethod: 'Method',
         overrideWordsToType: 'Words to type',
@@ -21063,8 +21108,11 @@ const SETTINGS_TRANSLATIONS = {
         placeholderAppAllow: 'fx Microsoft Word',
         allowlistIosUnavailable: 'Tilladelsesliste er endnu ikke tilgængelig på iOS. Brug en blokeringsliste på iOS, eller start denne tilladelsesliste på macOS.',
         allowlistIosAppsUnavailable: 'App-tilladelseslister er endnu ikke tilgængelige på iOS. Fjern de valgte apps fra dette fokusrum for at køre det som en hjemmeside-tilladelsesliste, eller start det på macOS.',
-        allowlistIosNeedsWebsites: 'Tilføj mindst én hjemmeside til denne tilladelsesliste for at starte den på iOS. App-tilladelseslister er endnu ikke tilgængelige på iOS.',
+        allowlistIosNeedsWebsites: 'Tilføj mindst én hjemmeside, eller vælg apps med Screen Time-vælgeren, for at starte denne tilladelsesliste på iOS.',
         allowlistIosDomainLimit: 'iOS-tilladelseslister understøtter op til 50 hjemmesider, men denne ville tillade {n}. Fjern nogle hjemmesider og prøv igen.',
+        allowlistIosTokenLimit: 'iOS-tilladelseslister understøtter op til 50 apps, men denne ville tillade {n}. Fjern nogle apps og prøv igen.',
+        allowlistIosWebOnlyConfirm: 'Apps i denne tilladelsesliste kan ikke holdes brugbare på iOS — de kræver et Screen Time-appvalg. Vil du starte den som en tilladelsesliste kun for hjemmesider? Hjemmesider uden for listen blokeres, og alle apps forbliver brugbare.',
+        allowlistIosCategoriesIgnored: 'Screen Time-kategorier kan ikke bruges som undtagelser i tilladelseslister på iOS. De valgte kategorier ignoreres — kun de individuelt valgte apps forbliver brugbare.',
         overrideDifficulty: 'Stop-sværhedsgrad',
         overrideMethod: 'Metode',
         overrideWordsToType: 'Ord at taste',

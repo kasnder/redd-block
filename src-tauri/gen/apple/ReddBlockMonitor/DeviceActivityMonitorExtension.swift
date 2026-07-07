@@ -58,6 +58,14 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         )
     }
     
+    /// Re-derive both channels' web filters and app/category shields from
+    /// App Group state (allowlist-aware, cross-channel). Callers must persist
+    /// their record updates BEFORE calling this.
+    private func reapplyDerivedPolicies(now: Date = Date()) {
+        IOSWebPolicyApplier.reapplyWebPolicy(now: now)
+        IOSAppPolicyApplier.reapplyAppPolicy(now: now)
+    }
+
     /// Handle one-off resume: merge the resume payload into the record matching its
     /// mode (blocked vs allowed are separate App Group records), re-apply, clean up.
     private func handleResumeOneOff(blockId: String) {
@@ -68,16 +76,15 @@ class ReddBlockMonitor: DeviceActivityMonitor {
             let base = SharedManualBlockStore.loadManualAllowlistState()
             let merged = taggedAllowlist(mergePayloads(base: base, extra: resumePayload))
             SharedManualBlockStore.saveManualAllowlistState(merged)
-            IOSWebPolicyApplier.reapplyWebPolicy()
         } else {
             let base = SharedManualBlockStore.loadManualBlockState()
             let merged = mergePayloads(base: base, extra: resumePayload)
-            applyToDefaultStore(from: merged)
             SharedManualBlockStore.saveManualBlockState(merged)
         }
+        reapplyDerivedPolicies()
         SharedManualBlockStore.removeResumePayload(blockId: blockId)
     }
-    
+
     /// Handle one-off block end (Option B): subtract this block's payload from the
     /// record matching its mode, re-apply, write back.
     private func handleBlockEndOneOff(blockId: String) {
@@ -93,13 +100,17 @@ class ReddBlockMonitor: DeviceActivityMonitor {
             } else {
                 SharedManualBlockStore.saveManualAllowlistState(newState)
             }
-            IOSWebPolicyApplier.reapplyWebPolicy()
         } else {
             let current = SharedManualBlockStore.loadManualBlockState()
             let newState = subtractPayloads(current: current ?? emptyPayload, subtract: toRemove)
-            applyToDefaultStore(from: newState)
             SharedManualBlockStore.saveManualBlockState(newState)
+            if newState.isEmptyPayload {
+                // Clear residual default-store settings; the derived reapply
+                // below restores anything a still-active source needs.
+                defaultStore.clearAllSettings()
+            }
         }
+        reapplyDerivedPolicies()
         SharedManualBlockStore.removeBlockEndState(blockId: blockId)
     }
     
@@ -137,45 +148,6 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         )
     }
     
-    /// Apply the manual BLOCKED record's app/category shields to the default store.
-    /// Web content is derived state owned by IOSWebPolicyApplier (allowlist-aware,
-    /// cross-channel), recomputed at the end so a clearAllSettings here can never
-    /// leave an active allowlist web filter wiped.
-    private func applyToDefaultStore(from data: ManualBlockStatePayload) {
-        if data.domains.isEmpty && data.appTokenData.isEmpty && data.categoryTokenData.isEmpty {
-            defaultStore.shield.applications = nil
-            defaultStore.shield.applicationCategories = nil
-            defaultStore.clearAllSettings()
-            IOSWebPolicyApplier.reapplyWebPolicy()
-            return
-        }
-        var appTokens = Set<ApplicationToken>()
-        for tokenString in data.appTokenData {
-            if let tokenData = Data(base64Encoded: tokenString),
-               let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
-                appTokens.insert(token)
-            }
-        }
-        if appTokens.isEmpty {
-            defaultStore.shield.applications = nil
-        } else {
-            defaultStore.shield.applications = appTokens
-        }
-        var categoryTokens = Set<ActivityCategoryToken>()
-        for tokenString in data.categoryTokenData {
-            if let tokenData = Data(base64Encoded: tokenString),
-               let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
-                categoryTokens.insert(token)
-            }
-        }
-        if categoryTokens.isEmpty {
-            defaultStore.shield.applicationCategories = nil
-        } else {
-            defaultStore.shield.applicationCategories = .specific(categoryTokens)
-        }
-        IOSWebPolicyApplier.reapplyWebPolicy()
-    }
-    
     /// Called by the system when a scheduled DeviceActivity interval ends.
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
@@ -207,16 +179,15 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     
     // MARK: - Helpers
     
-    /// Recompute and apply the union of all schedule entries that are active at "now".
-    /// This prevents stale shields and keeps overlap handling consistent on start/end
-    /// events. Web content is derived state owned by IOSWebPolicyApplier (allowlist-
-    /// aware, cross-channel). Allowlist entries contribute no app shields in Pass 2
-    /// (apps land in Pass 3) and no snapshot rows yet (attribution lands in Pass 5).
+    /// Recompute enforcement for all schedule entries that are active at "now".
+    /// This prevents stale shields and keeps overlap handling consistent on
+    /// start/end events. Web content and app/category shields are derived state
+    /// owned by the shared appliers (allowlist-aware, cross-channel); this
+    /// method owns clearing when nothing is active and the shield snapshot.
+    /// Allowlist entries contribute no snapshot rows yet (attribution lands in Pass 5).
     private func recomputeActiveScheduleUnion(now: Date = Date()) {
         let allSchedules = SharedScheduleStore.loadAll()
         NSLog("[ReDD Schedule] recomputeActiveScheduleUnion schedules=%d", allSchedules.count)
-        var activeAppTokens = Set<ApplicationToken>()
-        var activeCategoryTokens = Set<ActivityCategoryToken>()
         var blocklistPairs: [(String, ScheduleBlockData)] = []
         var hasActiveEntries = false
 
@@ -228,28 +199,13 @@ class ReddBlockMonitor: DeviceActivityMonitor {
             )
             if data.isAllowlist { continue }
             blocklistPairs.append((id, data))
-            for tokenString in data.appTokenData {
-                if let tokenData = Data(base64Encoded: tokenString),
-                   let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
-                    activeAppTokens.insert(token)
-                }
-            }
-            for tokenString in data.categoryTokenData {
-                if let tokenData = Data(base64Encoded: tokenString),
-                   let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
-                    activeCategoryTokens.insert(token)
-                }
-            }
         }
 
         if !hasActiveEntries {
             store.clearAllSettings()
-        } else {
-            store.shield.applications = activeAppTokens.isEmpty ? nil : activeAppTokens
-            store.shield.applicationCategories = activeCategoryTokens.isEmpty ? nil : .specific(activeCategoryTokens)
         }
         ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: blocklistPairs, now: now)
-        IOSWebPolicyApplier.reapplyWebPolicy(now: now)
+        reapplyDerivedPolicies(now: now)
     }
 
     /// Extract a schedule ID from a DeviceActivityName.

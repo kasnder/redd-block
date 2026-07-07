@@ -695,7 +695,7 @@ class ScreentimePlugin: Plugin {
         }
         let args = try invoke.parseArgs(StartBlockArgs.self)
         
-        // Allowlist websites: never truncate — clamping an allow list over-blocks.
+        // Allowlist exceptions: never truncate — clamping an allow list over-blocks.
         // JS pre-validates; this is the native double-check.
         let allowedDomains = args.allowedDomains ?? []
         guard allowedDomains.count <= IOSWebPolicyApplier.exceptionLimit else {
@@ -705,15 +705,21 @@ class ScreentimePlugin: Plugin {
             ])
             return
         }
-        
+        let allowedAppTokenData = args.allowedAppTokenData ?? []
+        guard allowedAppTokenData.count <= IOSAppPolicyApplier.exceptionLimit else {
+            invoke.resolve([
+                "success": false,
+                "error": "Allow lists support up to 50 apps on iOS (\(allowedAppTokenData.count) allowed)."
+            ])
+            return
+        }
+
         let truncated = args.domains.count > 50
         let webDomains = Set(args.domains.prefix(50).map { WebDomain(domain: $0) })
-        
+
         let appTokens = decodeApplicationTokens(args.appTokenData)
         let categoryTokens = decodeCategoryTokens(args.categoryTokenData)
-        store.shield.applications = appTokens.isEmpty ? nil : appTokens
-        store.shield.applicationCategories = categoryTokens.isEmpty ? nil : .specific(categoryTokens)
-        
+
         // Persist current manual block state to App Group so extension can merge on resume/block-end.
         // This record holds BLOCKED items only (mode nil); allowed items live in the
         // separate allowlist record so merge/subtract math never mixes semantics.
@@ -724,21 +730,23 @@ class ScreentimePlugin: Plugin {
             days: nil
         )
         SharedManualBlockStore.saveManualBlockState(manualState)
-        if allowedDomains.isEmpty {
+        if allowedDomains.isEmpty && allowedAppTokenData.isEmpty {
             SharedManualBlockStore.clearManualAllowlistState()
         } else {
             SharedManualBlockStore.saveManualAllowlistState(
                 buildScheduleData(
                     domains: allowedDomains,
-                    appTokenData: nil,
+                    appTokenData: allowedAppTokenData,
                     categoryTokenData: nil,
                     days: nil,
                     mode: "allowlist"
                 )
             )
         }
-        // Web filter is derived state: recompute both channels from the App Group.
+        // Web filter and app shields are derived state: recompute both channels
+        // from the App Group.
         IOSWebPolicyApplier.reapplyWebPolicy()
+        IOSAppPolicyApplier.reapplyAppPolicy()
 
         persistManualShieldSnapshot(
             replaceDomains: Array(args.domains.prefix(50)),
@@ -963,6 +971,7 @@ class ScreentimePlugin: Plugin {
         ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [])
         // Removed schedules may change the cross-channel allowlist union.
         IOSWebPolicyApplier.reapplyWebPolicy()
+        IOSAppPolicyApplier.reapplyAppPolicy()
         invoke.resolve(["success": true])
     }
     
@@ -1153,16 +1162,14 @@ class ScreentimePlugin: Plugin {
     
     // MARK: - Re-apply active schedule blocks after clear (pause / setSchedules with removal)
     
-    /// After clearing the schedule store, re-apply the union of blocks for all remaining
-    /// segments that are currently in their active time window. Web content is derived
-    /// state handled by IOSWebPolicyApplier (allowlist-aware, cross-channel); this
-    /// method owns the schedule store's app/category shields and the shield snapshot.
-    /// Allowlist entries contribute no app shields in Pass 2 (apps land in Pass 3) and
-    /// no snapshot rows yet (allowlist attribution lands in Pass 5).
+    /// After clearing the schedule store, re-derive enforcement for all remaining
+    /// segments that are currently in their active time window. Web content and
+    /// app/category shields are derived state handled by the shared appliers
+    /// (allowlist-aware, cross-channel); this method owns clearing when nothing
+    /// is active and the shield snapshot. Allowlist entries contribute no
+    /// snapshot rows yet (allowlist attribution lands in Pass 5).
     private func reapplyActiveScheduleBlocksToStore(entries: [ScheduleEntry]) {
         let now = Date()
-        var allAppTokens = Set<ApplicationToken>()
-        var allCategoryTokens = Set<ActivityCategoryToken>()
         var blocklistPairs: [(String, ScheduleBlockData)] = []
         var hasActiveEntries = false
         for entry in entries {
@@ -1170,30 +1177,14 @@ class ScreentimePlugin: Plugin {
             hasActiveEntries = true
             if data.isAllowlist { continue }
             blocklistPairs.append((entry.id, data))
-            for tokenString in data.appTokenData {
-                if let tokenData = Data(base64Encoded: tokenString),
-                   let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
-                    allAppTokens.insert(token)
-                }
-            }
-            for tokenString in data.categoryTokenData {
-                if let tokenData = Data(base64Encoded: tokenString),
-                   let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
-                    allCategoryTokens.insert(token)
-                }
-            }
         }
-        let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
         if !hasActiveEntries {
+            let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
             scheduleStore.clearAllSettings()
-            ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [], now: now)
-            IOSWebPolicyApplier.reapplyWebPolicy(now: now)
-            return
         }
-        scheduleStore.shield.applications = allAppTokens.isEmpty ? nil : allAppTokens
-        scheduleStore.shield.applicationCategories = allCategoryTokens.isEmpty ? nil : .specific(allCategoryTokens)
         ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: blocklistPairs, now: now)
         IOSWebPolicyApplier.reapplyWebPolicy(now: now)
+        IOSAppPolicyApplier.reapplyAppPolicy(now: now)
     }
     
     private func statusString(_ status: AuthorizationStatus) -> String {

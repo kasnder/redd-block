@@ -363,6 +363,18 @@ enum EffectiveWebPolicy {
     case allExcept(Set<String>)
 }
 
+/// Resolved app-shield policy for one store. Mirrors EffectiveWebPolicy:
+/// concurrent allowlists union; explicit blocklist wins on overlap.
+enum EffectiveAppPolicy {
+    /// No active allowlist app tokens anywhere: each channel keeps its own
+    /// blocked-token specific shields (legacy stacking behavior).
+    case specificBlock
+    /// At least one active allowlist has app tokens: shield every app except
+    /// the cross-channel allowed union minus explicitly blocked tokens.
+    /// Values are base64-encoded ApplicationToken data.
+    case allExcept(Set<String>)
+}
+
 enum IOSPolicyResolver {
     /// Every currently-active enforcement payload across BOTH channels:
     /// manual blocked record, manual allowlist record, and active schedule entries.
@@ -388,6 +400,20 @@ enum IOSPolicyResolver {
                 allowed.formUnion(entry.domains)
             } else {
                 blocked.formUnion(entry.domains)
+            }
+        }
+        if allowed.isEmpty { return .specificBlock }
+        return .allExcept(allowed.subtracting(blocked))
+    }
+
+    static func effectiveAppPolicy(entries: [ScheduleBlockData]) -> EffectiveAppPolicy {
+        var blocked = Set<String>()
+        var allowed = Set<String>()
+        for entry in entries {
+            if entry.isAllowlist {
+                allowed.formUnion(entry.appTokenData)
+            } else {
+                blocked.formUnion(entry.appTokenData)
             }
         }
         if allowed.isEmpty { return .specificBlock }
@@ -469,6 +495,111 @@ enum IOSWebPolicyApplier {
                     }
                 }
                 scheduleStore.webContent.blockedByFilter = scheduleWeb.isEmpty ? nil : .specific(scheduleWeb)
+            }
+        }
+    }
+}
+
+/// Applies the effective app policy to BOTH ManagedSettingsStore channels from
+/// current App Group state — the app-shield counterpart to IOSWebPolicyApplier
+/// (see its doc for why both stores must carry the same exception union).
+/// Category tokens only shield in specific-block mode: Apple's `.all(except:)`
+/// takes application tokens, and category shields are redundant once every
+/// app is shielded.
+enum IOSAppPolicyApplier {
+    /// Apple caps `.all(except:)` at 50 exception tokens per store.
+    static let exceptionLimit = 50
+
+    private static func decodeAppTokens(_ tokenData: [String]) -> Set<ApplicationToken> {
+        var tokens = Set<ApplicationToken>()
+        for tokenString in tokenData {
+            if let data = Data(base64Encoded: tokenString),
+               let token = try? JSONDecoder().decode(ApplicationToken.self, from: data) {
+                tokens.insert(token)
+            }
+        }
+        return tokens
+    }
+
+    private static func decodeCategoryTokens(_ tokenData: [String]) -> Set<ActivityCategoryToken> {
+        var tokens = Set<ActivityCategoryToken>()
+        for tokenString in tokenData {
+            if let data = Data(base64Encoded: tokenString),
+               let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: data) {
+                tokens.insert(token)
+            }
+        }
+        return tokens
+    }
+
+    /// Legacy behavior for the manual channel: shields from the manual blocked record.
+    private static func applyLegacyManualShields(to store: ManagedSettingsStore) {
+        let manual = SharedManualBlockStore.loadManualBlockState()
+        let appTokens = decodeAppTokens(manual?.appTokenData ?? [])
+        let categoryTokens = decodeCategoryTokens(manual?.categoryTokenData ?? [])
+        store.shield.applications = appTokens.isEmpty ? nil : appTokens
+        store.shield.applicationCategories = categoryTokens.isEmpty ? nil : .specific(categoryTokens)
+    }
+
+    /// Legacy behavior for the schedule channel: shields from the union of
+    /// active blocklist schedule entries.
+    private static func applyLegacyScheduleShields(to store: ManagedSettingsStore, now: Date) {
+        var appTokens = Set<ApplicationToken>()
+        var categoryTokens = Set<ActivityCategoryToken>()
+        for (_, data) in SharedScheduleStore.loadAll()
+        where data.isActiveNow(now: now) && !data.isAllowlist {
+            appTokens.formUnion(decodeAppTokens(data.appTokenData))
+            categoryTokens.formUnion(decodeCategoryTokens(data.categoryTokenData))
+        }
+        store.shield.applications = appTokens.isEmpty ? nil : appTokens
+        store.shield.applicationCategories = categoryTokens.isEmpty ? nil : .specific(categoryTokens)
+    }
+
+    static func reapplyAppPolicy(now: Date = Date()) {
+        let manualStore = ManagedSettingsStore()
+        let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
+        let entries = IOSPolicyResolver.allActiveEntries(now: now)
+
+        switch IOSPolicyResolver.effectiveAppPolicy(entries: entries) {
+        case .specificBlock:
+            applyLegacyManualShields(to: manualStore)
+            applyLegacyScheduleShields(to: scheduleStore, now: now)
+
+        case .allExcept(let allowedTokenData):
+            var exceptionData = allowedTokenData
+            if exceptionData.count > exceptionLimit {
+                // Fail-safe direction for a blocker: over-block deterministically
+                // rather than drop the allowlist. JS validation prevents reaching
+                // this state; this is a belt-and-braces guard.
+                NSLog(
+                    "[ReDD Allowlist] exception set of %d exceeds the 50-app Screen Time cap; clamping (over-blocking)",
+                    exceptionData.count
+                )
+                exceptionData = Set(exceptionData.sorted().prefix(exceptionLimit))
+            }
+            let exceptions = decodeAppTokens(Array(exceptionData))
+            // A channel with no active app allowlist keeps its legacy specific
+            // shields; a channel WITH one carries the full cross-channel
+            // exception union (see IOSWebPolicyApplier doc).
+            let manualHasAllowlist = !(SharedManualBlockStore.loadManualAllowlistState()?.appTokenData.isEmpty ?? true)
+            let scheduleHasAllowlist = SharedScheduleStore.loadAll().contains {
+                $0.value.isActiveNow(now: now) && $0.value.isAllowlist && !$0.value.appTokenData.isEmpty
+            }
+
+            if manualHasAllowlist {
+                // Per Apple DTS: one store, one policy — explicit application
+                // shields would fight the exception list.
+                manualStore.shield.applications = nil
+                manualStore.shield.applicationCategories = .all(except: exceptions)
+            } else {
+                applyLegacyManualShields(to: manualStore)
+            }
+
+            if scheduleHasAllowlist {
+                scheduleStore.shield.applications = nil
+                scheduleStore.shield.applicationCategories = .all(except: exceptions)
+            } else {
+                applyLegacyScheduleShields(to: scheduleStore, now: now)
             }
         }
     }
