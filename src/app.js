@@ -6642,11 +6642,14 @@ function renderAppBlockingWarningOverlay() {
         isAllowlistWarning,
         headingEl,
         summaryEl,
+        allowlistAppsEl: document.getElementById('app-blocking-warning-allowlist-apps'),
+        allowlistPillsEl: document.getElementById('app-blocking-warning-allowlist-pills'),
         emojiWrapEl,
         emojiEl,
         imageEl,
         letsGoLabelEl,
         letsGoVoiceIconEl,
+        noteEl: document.getElementById('app-blocking-warning-note'),
     }).then((activeOverlay) => {
         appBlockingActiveStartOverlay = activeOverlay;
         applyWarningOverlayPresence();
@@ -11737,18 +11740,29 @@ function buildDefaultWarningSummaryHtml(names, blocklistName, letsGoLabel) {
     return tSettingsFmt(summaryKey, { blocklist: bl, letsGo, apps });
 }
 
-function buildAllowlistWarningSummaryHtml(allowedNames, warnedNames, letsGoLabel) {
+function getAllowlistWarningAppInitial(name) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) return '?';
+    return Array.from(trimmed)[0].toLocaleUpperCase();
+}
+
+function buildAllowlistWarningAppsHtml(allowedNames) {
+    return allowedNames.map((name) => (
+        `<span class="app-blocking-allowlist-pill"><span class="app-blocking-allowlist-pill-icon">${escapeHtml(getAllowlistWarningAppInitial(name))}</span><span>${escapeHtml(name)}</span></span>`
+    )).join('');
+}
+
+function buildAllowlistWarningNoteHtml(warnedNames, letsGoLabel) {
     const oxford = { oxford: true };
-    const allowedApps = joinAppListWithLimit(allowedNames, allowedNames.length, oxford);
     const letsGo = escapeHtml(letsGoLabel || tSettings('appBlockingLetsGo'));
     if (warnedNames.length === 0) {
-        return tSettingsFmt('appBlockingAllowlistSummaryNoWarnedHtml', { allowedApps, letsGo });
+        return tSettingsFmt('appBlockingAllowlistActionNoWarnedHtml', { letsGo });
     }
     const warnedApps = joinAppListWithLimit(warnedNames, warnedNames.length, oxford);
     const summaryKey = warnedNames.length === 1
-        ? 'appBlockingAllowlistSummarySingleWarnedHtml'
-        : 'appBlockingAllowlistSummaryMultiWarnedHtml';
-    return tSettingsFmt(summaryKey, { allowedApps, warnedApps, letsGo });
+        ? 'appBlockingAllowlistActionSingleWarnedHtml'
+        : 'appBlockingAllowlistActionMultiWarnedHtml';
+    return tSettingsFmt(summaryKey, { warnedApps, letsGo });
 }
 
 function getScheduleOverlayAppsPreviewList(blocklist) {
@@ -11970,11 +11984,14 @@ async function applyScheduleStartOverlayPresentation({
     isAllowlistWarning = false,
     headingEl,
     summaryEl,
+    allowlistAppsEl,
+    allowlistPillsEl,
     emojiWrapEl,
     emojiEl,
     imageEl,
     letsGoLabelEl,
     letsGoVoiceIconEl,
+    noteEl,
 }) {
     const defaultLetsGo = tSettings('appBlockingLetsGo');
     const useCustom = !!(overlay?.custom && scheduleStartOverlayHasCustomContent(overlay));
@@ -11992,11 +12009,7 @@ async function applyScheduleStartOverlayPresentation({
 
     if (summaryEl) {
         if (isAllowlistWarning) {
-            summaryEl.innerHTML = buildAllowlistWarningSummaryHtml(
-                allowedAppNames,
-                appNames,
-                letsGoText,
-            );
+            summaryEl.textContent = tSettings('appBlockingAllowlistIntro');
         } else if (useCustom && overlay.message) {
             summaryEl.innerHTML = formatScheduleOverlayCustomMessageHtml(
                 overlay.message,
@@ -12005,6 +12018,24 @@ async function applyScheduleStartOverlayPresentation({
             );
         } else {
             summaryEl.innerHTML = buildDefaultWarningSummaryHtml(appNames, blocklistName, letsGoText);
+        }
+    }
+
+    if (allowlistAppsEl) {
+        allowlistAppsEl.classList.toggle('hidden', !isAllowlistWarning);
+    }
+    if (allowlistPillsEl) {
+        allowlistPillsEl.innerHTML = isAllowlistWarning
+            ? buildAllowlistWarningAppsHtml(allowedAppNames)
+            : '';
+    }
+    if (noteEl) {
+        if (isAllowlistWarning) {
+            noteEl.innerHTML = buildAllowlistWarningNoteHtml(appNames, letsGoText);
+            noteEl.classList.remove('hidden');
+        } else {
+            noteEl.textContent = '';
+            noteEl.classList.add('hidden');
         }
     }
 
@@ -12230,19 +12261,25 @@ async function renderScheduleOverlayCustomisePreview(blocklist, draft) {
     const names = getBlocklistDisplayApps(blocklist);
     const previewNames = names.length > 0 ? names : [tSettings('appBlockingUnknownApp')];
     const normalized = normalizeScheduleStartOverlay(draft);
+    const isAllowlistPreview = isBlocklistAllowlistMode(blocklist);
 
     await applyScheduleStartOverlayPresentation({
         overlay: normalized,
         blocklistName: blocklist.name,
         blocklistEmoji: blocklist.emoji || '🎯',
         appNames: previewNames,
+        allowedAppNames: isAllowlistPreview ? previewNames : [],
+        isAllowlistWarning: isAllowlistPreview,
         headingEl: document.getElementById('schedule-overlay-preview-heading'),
         summaryEl: document.getElementById('schedule-overlay-preview-summary'),
+        allowlistAppsEl: document.getElementById('schedule-overlay-preview-allowlist-apps'),
+        allowlistPillsEl: document.getElementById('schedule-overlay-preview-allowlist-pills'),
         emojiWrapEl: document.getElementById('schedule-overlay-preview-emoji-wrap'),
         emojiEl: document.getElementById('schedule-overlay-preview-emoji'),
         imageEl: document.getElementById('schedule-overlay-preview-image'),
         letsGoLabelEl: document.getElementById('schedule-overlay-preview-lets-go-label'),
         letsGoVoiceIconEl: document.getElementById('schedule-overlay-preview-voice-icon'),
+        noteEl: document.getElementById('schedule-overlay-preview-note'),
     });
 
     const imagePreview = document.getElementById('schedule-overlay-image-preview');
@@ -19970,12 +20007,14 @@ const SETTINGS_TRANSLATIONS = {
             '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
         appBlockingWarningSummaryMultiHtml:
             '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
-        appBlockingAllowlistSummaryNoWarnedHtml:
-            'Your device will become a toolkit that only has {allowedApps}.<br>When you click <strong>{letsGo}</strong>, all other apps will be closed when you try to open them.',
-        appBlockingAllowlistSummarySingleWarnedHtml:
-            'Your device will become a toolkit that only has {allowedApps}.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close it for you.',
-        appBlockingAllowlistSummaryMultiWarnedHtml:
-            'Your device will become a toolkit that only has {allowedApps}.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close them for you.',
+        appBlockingAllowlistIntro:
+            'Your device will become a toolkit with just the apps you\'ve allowed yourself to use.',
+        appBlockingAllowlistActionNoWarnedHtml:
+            'When you click <strong>{letsGo}</strong>, all other apps will be closed when you try to open them.',
+        appBlockingAllowlistActionSingleWarnedHtml:
+            'When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close it for you.',
+        appBlockingAllowlistActionMultiWarnedHtml:
+            'When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close them for you.',
         appBlockingClosedownCountdownHtml:
             'Closing {apps} in <strong>{seconds}s</strong> — save your work now.',
         appBlockingClosedownFinalSingleHtml: 'Closing {apps} now…',
@@ -20762,12 +20801,14 @@ const SETTINGS_TRANSLATIONS = {
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
         appBlockingWarningSummaryMultiHtml:
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
-        appBlockingAllowlistSummaryNoWarnedHtml:
-            'Din enhed bliver et værktøjssæt, der kun har {allowedApps}.<br>Når du klikker på <strong>{letsGo}</strong>, lukkes alle andre apps, når du forsøger at åbne dem.',
-        appBlockingAllowlistSummarySingleWarnedHtml:
-            'Din enhed bliver et værktøjssæt, der kun har {allowedApps}.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes den ned.',
-        appBlockingAllowlistSummaryMultiWarnedHtml:
-            'Din enhed bliver et værktøjssæt, der kun har {allowedApps}.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes de ned.',
+        appBlockingAllowlistIntro:
+            'Din enhed bliver et værktøjssæt med kun de apps, du har givet dig selv lov til at bruge.',
+        appBlockingAllowlistActionNoWarnedHtml:
+            'Når du klikker på <strong>{letsGo}</strong>, lukkes alle andre apps, når du forsøger at åbne dem.',
+        appBlockingAllowlistActionSingleWarnedHtml:
+            'Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes den ned.',
+        appBlockingAllowlistActionMultiWarnedHtml:
+            'Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes de ned.',
         appBlockingClosedownCountdownHtml:
             'Lukker {apps} om <strong>{seconds} sek.</strong> — gem dit arbejde nu.',
         appBlockingClosedownFinalSingleHtml: 'Lukker {apps} nu…',

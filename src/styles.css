@@ -15855,6 +15855,51 @@ body.app-blocking-warning-window-mode #app-blocking-warning-overlay.hidden{
     margin-bottom: 0;
 }
 
+.app-blocking-allowlist-apps{
+    width: 100%;
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.app-blocking-allowlist-pills{
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+}
+
+.app-blocking-allowlist-pill{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid var(--border-color-medium);
+    background: var(--panel-bg);
+    color: var(--text-primary);
+    font-size: 0.98rem;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.app-blocking-allowlist-pill-icon{
+    width: 20px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--redd-warm-grey);
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
 .app-blocking-warning-actions{
     margin-top: 8px;
     align-self: stretch;
@@ -15873,6 +15918,19 @@ body.app-blocking-warning-window-mode #app-blocking-warning-overlay.hidden{
     flex: 1 1 0;
     min-width: 0;
     max-width: 100%;
+}
+
+.app-blocking-warning-note{
+    margin: -6px 0 0;
+    max-width: 520px;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+}
+
+.app-blocking-warning-note strong{
+    font-weight: 700;
+    color: var(--text-primary);
 }
 
 .app-blocking-snooze-btn{
@@ -15925,6 +15983,21 @@ body.dark-mode .schedule-badge-snoozed .app-blocking-snooze-icon {
     flex: 0 1 auto;
     min-width: 200px;
     max-width: 280px;
+}
+
+/* Allowlist start overlay: teal CTA and a wider single-button layout. */
+.app-blocking-warning-card:has(.app-blocking-allowlist-apps:not(.hidden)) .app-blocking-lets-go-btn{
+    flex: 0 1 auto;
+    min-width: 300px;
+    max-width: 420px;
+    background: var(--accent-color);
+    border-color: transparent;
+    color: #ffffff;
+}
+
+.app-blocking-warning-card:has(.app-blocking-allowlist-apps:not(.hidden)) .app-blocking-lets-go-btn:hover:not([disabled]){
+    background: var(--accent-hover);
+    color: #ffffff;
 }
 
 .app-blocking-warning-actions .modal-btn.primary-btn[disabled]{
