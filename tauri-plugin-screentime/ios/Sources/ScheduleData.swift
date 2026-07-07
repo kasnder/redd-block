@@ -46,6 +46,12 @@ struct ScheduleBlockData: Codable {
     let blocklistEmoji: String?
     let blocklistName: String?
     let blocklistColorHex: String?
+    /// "allowlist" when this entry's domains/tokens are ALLOWED items;
+    /// nil/"blocklist" = blocked items (legacy semantics).
+    let mode: String?
+
+    /// True when this entry carries allowlist (allowed-items) semantics.
+    var isAllowlist: Bool { mode == "allowlist" }
 
     init(
         domains: [String],
@@ -62,7 +68,8 @@ struct ScheduleBlockData: Codable {
         pauseEndTimestampMs: Double? = nil,
         blocklistEmoji: String? = nil,
         blocklistName: String? = nil,
-        blocklistColorHex: String? = nil
+        blocklistColorHex: String? = nil,
+        mode: String? = nil
     ) {
         self.domains = domains
         self.appTokenData = appTokenData
@@ -79,6 +86,7 @@ struct ScheduleBlockData: Codable {
         self.blocklistEmoji = blocklistEmoji
         self.blocklistName = blocklistName
         self.blocklistColorHex = blocklistColorHex
+        self.mode = mode
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -97,6 +105,7 @@ struct ScheduleBlockData: Codable {
         case blocklistEmoji
         case blocklistName
         case blocklistColorHex
+        case mode
     }
 
     init(from decoder: Decoder) throws {
@@ -116,6 +125,7 @@ struct ScheduleBlockData: Codable {
         self.blocklistEmoji = try container.decodeIfPresent(String.self, forKey: .blocklistEmoji)
         self.blocklistName = try container.decodeIfPresent(String.self, forKey: .blocklistName)
         self.blocklistColorHex = try container.decodeIfPresent(String.self, forKey: .blocklistColorHex)
+        self.mode = try container.decodeIfPresent(String.self, forKey: .mode)
     }
 }
 

@@ -607,6 +607,9 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
         const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
         if (!blocklist) continue;
+        // Allowlist-mode focus spaces list ALLOWED items; sending them here would
+        // enforce them as blocked. Skip until iOS allowlist enforcement lands (Pass 2+).
+        if (isBlocklistAllowlistMode(blocklist)) continue;
 
         const bid = String(block.blocklistId ?? '');
         if (
@@ -642,6 +645,113 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
         out.blockEndMs = block.endTime;
     }
     return out;
+}
+
+// ---- iOS effective-policy derivation (allowlist groundwork) ----------------
+//
+// Pure helpers that resolve the set of currently active enforcement sources
+// into one effective Screen Time policy per resource type. Mirrors desktop
+// semantics: concurrent allowlists union; explicit blocklist wins on overlap;
+// resource types (websites vs apps) compose independently. Wired into the
+// live iOS payload builders in later passes; unused-by-callers in Pass 1.
+
+/** Apple caps `.all(except:)` exceptions at 50 domains / 50 tokens per store. */
+const IOS_ALLOWLIST_EXCEPTION_LIMIT = 50;
+
+/**
+ * Snapshot every currently active iOS enforcement source (manual blocks and
+ * active schedule segments), each tagged with its focus-space mode.
+ * Returns [{ kind: 'manual'|'schedule', blocklist, block?, schedule? }].
+ */
+function collectActiveIOSEnforcementSources(now = Date.now()) {
+    const sources = [];
+    for (const block of appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+        if (!blocklist) continue;
+        sources.push({ kind: 'manual', blocklist, block });
+    }
+    const nowDate = new Date(now);
+    for (const schedule of appData.schedules || []) {
+        if (!schedule.segments || schedule.segments.length === 0) continue;
+        if (schedule.isPaused && schedule.pauseEndTime > now) continue;
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        if (!blocklist) continue;
+        sources.push({ kind: 'schedule', blocklist, schedule });
+    }
+    return sources;
+}
+
+/**
+ * Resolve active sources into the effective iOS website policy.
+ * - No active allowlist websites: { kind: 'specific-block', domains } (today's behavior).
+ * - Any active allowlist websites: { kind: 'all-except', domains: allowed − blocked }.
+ *   An empty exception set is legal and means "block every website".
+ */
+function deriveIOSEffectiveWebsitePolicy(sources) {
+    const blocked = new Set();
+    const allowed = new Set();
+    for (const { blocklist } of sources || []) {
+        const target = isBlocklistAllowlistMode(blocklist) ? allowed : blocked;
+        for (const domain of blocklist?.websites || []) {
+            if (!isProtectedDomain(domain)) target.add(domain);
+        }
+    }
+    if (allowed.size === 0) {
+        return { kind: 'specific-block', domains: Array.from(blocked).sort() };
+    }
+    for (const domain of blocked) allowed.delete(domain);
+    return { kind: 'all-except', domains: Array.from(allowed).sort() };
+}
+
+/**
+ * Resolve active sources into the effective iOS app-shield policy.
+ * - No active allowlist app tokens: { kind: 'specific-block', appTokenData, categoryTokenData }.
+ * - Any active allowlist app tokens: { kind: 'all-except', appTokenData, categoryTokenData: [] }
+ *   (Apple's `.all(except:)` takes application tokens; category tokens cannot be
+ *   exceptions, and category shields are redundant once everything is shielded).
+ */
+function deriveIOSEffectiveAppPolicy(sources) {
+    const blockedApps = new Set();
+    const blockedCategories = new Set();
+    const allowedApps = new Set();
+    for (const { blocklist } of sources || []) {
+        const payload = getBlocklistIOSPayload(blocklist);
+        if (isBlocklistAllowlistMode(blocklist)) {
+            for (const token of payload.appTokenData) allowedApps.add(token);
+        } else {
+            for (const token of payload.appTokenData) blockedApps.add(token);
+            for (const token of payload.categoryTokenData) blockedCategories.add(token);
+        }
+    }
+    if (allowedApps.size === 0) {
+        return {
+            kind: 'specific-block',
+            appTokenData: Array.from(blockedApps),
+            categoryTokenData: Array.from(blockedCategories)
+        };
+    }
+    for (const token of blockedApps) allowedApps.delete(token);
+    return { kind: 'all-except', appTokenData: Array.from(allowedApps), categoryTokenData: [] };
+}
+
+/**
+ * Check a derived policy against Apple's 50-exception cap. Allowlist policies
+ * must fail loudly rather than truncate (truncation would over-block).
+ * Blocklist-mode policies keep today's prefix-50 truncation and always pass.
+ */
+function validateIOSAllowlistLimits(policy) {
+    if (!policy || policy.kind !== 'all-except') return { ok: true };
+    const domainCount = policy.domains?.length ?? 0;
+    if (domainCount > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
+        return { ok: false, reason: 'domains', count: domainCount };
+    }
+    const tokenCount = policy.appTokenData?.length ?? 0;
+    if (tokenCount > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
+        return { ok: false, reason: 'tokens', count: tokenCount };
+    }
+    return { ok: true };
 }
 
 function isNonRepeatingSchedule(schedule) {
@@ -801,6 +911,9 @@ async function syncSchedulesToHelper() {
             for (const schedule of appData.schedules || []) {
                 if (!schedule.segments || schedule.segments.length === 0) continue;
                 const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+                // Allowlist-mode schedules must never reach the Screen Time extension as
+                // blocklists. Skip until iOS allowlist enforcement lands (Pass 2+).
+                if (isBlocklistAllowlistMode(blocklist)) continue;
                 const domains = blocklist?.websites || [];
                 const iosPayload = getBlocklistIOSPayload(blocklist);
                 const blocklistEmoji = blocklist?.emoji ?? null;
@@ -11355,6 +11468,10 @@ async function startSchedule() {
         return;
     }
 
+    if (isIOS && isBlocklistAllowlistMode(blocklist)) {
+        alert(tSettings('allowlistIosUnavailable'));
+        return;
+    }
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
 
     // Normal start mode - check that at least one segment has days
@@ -13788,6 +13905,10 @@ async function proceedWithSchedule() {
 
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
+    if (isIOS && isBlocklistAllowlistMode(blocklist)) {
+        alert(tSettings('allowlistIosUnavailable'));
+        return;
+    }
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
     appBlockingWarningSessionBlocklistId = selectedBlocklistId;
 

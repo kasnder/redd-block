@@ -23,6 +23,7 @@ class BlockAppsForTokensArgs: Decodable {
 class UnblockAppsArgs: Decodable {}
 
 class StartBlockArgs: Decodable {
+    /// Legacy field: domains to BLOCK (blocklist semantics). Kept for back-compat.
     let domains: [String]
     let appTokenData: [String]?
     let categoryTokenData: [String]?
@@ -31,6 +32,14 @@ class StartBlockArgs: Decodable {
     let blocklistColorHex: String?
     let blockStartMs: Double?
     let blockEndMs: Double?
+    /// Allowlist groundwork: pre-resolved blocked/allowed split of the active
+    /// manual union. Optional so older payloads decode unchanged; enforcement
+    /// of the allowed_* fields lands in Pass 2+.
+    let mode: String?
+    let blockedDomains: [String]?
+    let allowedDomains: [String]?
+    let blockedAppTokenData: [String]?
+    let allowedAppTokenData: [String]?
 }
 
 class ScheduleBlockArgs: Decodable {
@@ -72,6 +81,9 @@ class ScheduleEntry: Decodable {
     let blocklistEmoji: String?
     let blocklistName: String?
     let blocklistColorHex: String?
+    /// "allowlist" when this entry's domains/tokens are ALLOWED items;
+    /// nil/"blocklist" = blocked items (legacy semantics).
+    let mode: String?
 }
 
 class SetSchedulesArgs: Decodable {
@@ -94,6 +106,8 @@ class SetResumePayloadArgs: Decodable {
     let domains: [String]
     let appTokenData: [String]?
     let categoryTokenData: [String]?
+    /// "allowlist" when this payload's items are ALLOWED items (Pass 2+).
+    let mode: String?
 }
 
 class SetBlockEndStateArgs: Decodable {
@@ -101,6 +115,8 @@ class SetBlockEndStateArgs: Decodable {
     let domains: [String]
     let appTokenData: [String]?
     let categoryTokenData: [String]?
+    /// "allowlist" when this payload's items are ALLOWED items (Pass 2+).
+    let mode: String?
 }
 
 // MARK: - Activity Picker SwiftUI View
@@ -698,7 +714,8 @@ class ScreentimePlugin: Plugin {
             domains: args.domains,
             appTokenData: args.appTokenData,
             categoryTokenData: args.categoryTokenData,
-            days: nil
+            days: nil,
+            mode: args.mode
         )
         SharedManualBlockStore.saveManualBlockState(manualState)
 
@@ -858,7 +875,8 @@ class ScreentimePlugin: Plugin {
                 pauseEndTimestampMs: entry.pauseEndTimestampMs,
                 blocklistEmoji: entry.blocklistEmoji,
                 blocklistName: entry.blocklistName,
-                blocklistColorHex: entry.blocklistColorHex
+                blocklistColorHex: entry.blocklistColorHex,
+                mode: entry.mode
             )
             SharedScheduleStore.save(id: entry.id, data: scheduleData)
             
@@ -980,7 +998,8 @@ class ScreentimePlugin: Plugin {
             domains: args.domains,
             appTokenData: args.appTokenData,
             categoryTokenData: args.categoryTokenData,
-            days: nil
+            days: nil,
+            mode: args.mode
         )
         SharedManualBlockStore.saveResumePayload(blockId: args.blockId, payload)
         invoke.resolve(["success": true])
@@ -997,7 +1016,8 @@ class ScreentimePlugin: Plugin {
             domains: args.domains,
             appTokenData: args.appTokenData,
             categoryTokenData: args.categoryTokenData,
-            days: nil
+            days: nil,
+            mode: args.mode
         )
         SharedManualBlockStore.saveBlockEndState(blockId: args.blockId, payload)
         invoke.resolve(["success": true])
@@ -1021,7 +1041,8 @@ class ScreentimePlugin: Plugin {
         pauseEndTimestampMs: Double? = nil,
         blocklistEmoji: String? = nil,
         blocklistName: String? = nil,
-        blocklistColorHex: String? = nil
+        blocklistColorHex: String? = nil,
+        mode: String? = nil
     ) -> ScheduleBlockData {
         return ScheduleBlockData(
             domains: domains ?? [],
@@ -1038,7 +1059,8 @@ class ScreentimePlugin: Plugin {
             pauseEndTimestampMs: pauseEndTimestampMs,
             blocklistEmoji: blocklistEmoji,
             blocklistName: blocklistName,
-            blocklistColorHex: blocklistColorHex
+            blocklistColorHex: blocklistColorHex,
+            mode: mode
         )
     }
 

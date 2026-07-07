@@ -29,14 +29,14 @@ struct ScheduleBlockData: Codable {
     /// Optional weekday filter: Mon=0 … Sun=6. If present and non-empty, extension only applies when current day is in this list.
     let days: [Int]?
     /// Optional start time for this schedule segment (hour/minute).
-    /// Used by the extension to recompute active schedule union on interval transitions.
+    /// Used by extension-side recompute logic for active schedule union.
     let startHour: Int?
     let startMinute: Int?
     /// Optional end time for this schedule segment (hour/minute).
     let endHour: Int?
     let endMinute: Int?
     /// Optional active window start/end (epoch milliseconds).
-    /// Used to enforce non-repeating and date-limited schedules in extension.
+    /// Used to enforce non-repeating and date-limited schedules.
     let activeFromTimestampMs: Double?
     let activeUntilTimestampMs: Double?
     /// Optional pause state for schedule-backed entries.
@@ -46,6 +46,12 @@ struct ScheduleBlockData: Codable {
     let blocklistEmoji: String?
     let blocklistName: String?
     let blocklistColorHex: String?
+    /// "allowlist" when this entry's domains/tokens are ALLOWED items;
+    /// nil/"blocklist" = blocked items (legacy semantics).
+    let mode: String?
+
+    /// True when this entry carries allowlist (allowed-items) semantics.
+    var isAllowlist: Bool { mode == "allowlist" }
 
     init(
         domains: [String],
@@ -62,7 +68,8 @@ struct ScheduleBlockData: Codable {
         pauseEndTimestampMs: Double? = nil,
         blocklistEmoji: String? = nil,
         blocklistName: String? = nil,
-        blocklistColorHex: String? = nil
+        blocklistColorHex: String? = nil,
+        mode: String? = nil
     ) {
         self.domains = domains
         self.appTokenData = appTokenData
@@ -79,6 +86,7 @@ struct ScheduleBlockData: Codable {
         self.blocklistEmoji = blocklistEmoji
         self.blocklistName = blocklistName
         self.blocklistColorHex = blocklistColorHex
+        self.mode = mode
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -97,6 +105,7 @@ struct ScheduleBlockData: Codable {
         case blocklistEmoji
         case blocklistName
         case blocklistColorHex
+        case mode
     }
 
     init(from decoder: Decoder) throws {
@@ -116,6 +125,7 @@ struct ScheduleBlockData: Codable {
         self.blocklistEmoji = try container.decodeIfPresent(String.self, forKey: .blocklistEmoji)
         self.blocklistName = try container.decodeIfPresent(String.self, forKey: .blocklistName)
         self.blocklistColorHex = try container.decodeIfPresent(String.self, forKey: .blocklistColorHex)
+        self.mode = try container.decodeIfPresent(String.self, forKey: .mode)
     }
 }
 
