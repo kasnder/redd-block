@@ -11742,7 +11742,7 @@ function buildAllowlistWarningSummaryHtml(allowedNames, warnedNames, letsGoLabel
     const allowedApps = joinAppListWithLimit(allowedNames, allowedNames.length, oxford);
     const letsGo = escapeHtml(letsGoLabel || tSettings('appBlockingLetsGo'));
     if (warnedNames.length === 0) {
-        return tSettingsFmt('appBlockingAllowlistSummaryNoWarnedHtml', { allowedApps });
+        return tSettingsFmt('appBlockingAllowlistSummaryNoWarnedHtml', { allowedApps, letsGo });
     }
     const warnedApps = joinAppListWithLimit(warnedNames, warnedNames.length, oxford);
     const summaryKey = warnedNames.length === 1
@@ -19971,11 +19971,11 @@ const SETTINGS_TRANSLATIONS = {
         appBlockingWarningSummaryMultiHtml:
             '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
         appBlockingAllowlistSummaryNoWarnedHtml:
-            'You will only be allowed to use {allowedApps}. All other apps will be closed when you try to open them.',
+            'Your device will become a toolkit that only has {allowedApps}.<br>When you click <strong>{letsGo}</strong>, all other apps will be closed when you try to open them.',
         appBlockingAllowlistSummarySingleWarnedHtml:
-            'You will only be allowed to use {allowedApps}. When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close it for you.',
+            'Your device will become a toolkit that only has {allowedApps}.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close it for you.',
         appBlockingAllowlistSummaryMultiWarnedHtml:
-            'You will only be allowed to use {allowedApps}. When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close them for you.',
+            'Your device will become a toolkit that only has {allowedApps}.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close them for you.',
         appBlockingClosedownCountdownHtml:
             'Closing {apps} in <strong>{seconds}s</strong> — save your work now.',
         appBlockingClosedownFinalSingleHtml: 'Closing {apps} now…',
@@ -20763,11 +20763,11 @@ const SETTINGS_TRANSLATIONS = {
         appBlockingWarningSummaryMultiHtml:
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
         appBlockingAllowlistSummaryNoWarnedHtml:
-            'Du må kun bruge {allowedApps}. Alle andre apps lukkes, når du forsøger at åbne dem.',
+            'Din enhed bliver et værktøjssæt, der kun har {allowedApps}.<br>Når du klikker på <strong>{letsGo}</strong>, lukkes alle andre apps, når du forsøger at åbne dem.',
         appBlockingAllowlistSummarySingleWarnedHtml:
-            'Du må kun bruge {allowedApps}. Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes den ned.',
+            'Din enhed bliver et værktøjssæt, der kun har {allowedApps}.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes den ned.',
         appBlockingAllowlistSummaryMultiWarnedHtml:
-            'Du må kun bruge {allowedApps}. Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes de ned.',
+            'Din enhed bliver et værktøjssæt, der kun har {allowedApps}.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes de ned.',
         appBlockingClosedownCountdownHtml:
             'Lukker {apps} om <strong>{seconds} sek.</strong> — gem dit arbejde nu.',
         appBlockingClosedownFinalSingleHtml: 'Lukker {apps} nu…',
