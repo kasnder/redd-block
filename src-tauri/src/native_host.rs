@@ -445,7 +445,10 @@ fn match_schedule_now(schedule: &Value, now_ms: u64) -> Option<ScheduleMatch> {
     if paused && pause_end > now_ms {
         return None;
     }
-    let segments = schedule.get("segments").and_then(|v| v.as_array())?;
+    let segments = schedule
+        .get("resolvedSegments")
+        .and_then(|v| v.as_array())
+        .or_else(|| schedule.get("segments").and_then(|v| v.as_array()))?;
     let (wd, hour, minute, sec) = local_time_components_full(now_ms)?;
     let now_min = hour as u32 * 60 + minute as u32;
 
@@ -458,6 +461,19 @@ fn match_schedule_now(schedule: &Value, now_ms: u64) -> Option<ScheduleMatch> {
     let yesterday_midnight_ms = midnight_today_ms.saturating_sub(86_400_000);
 
     for seg in segments {
+        if let (Some(active_from), Some(active_until)) = (
+            seg.get("activeFromTimestampMs").and_then(|v| v.as_u64()),
+            seg.get("activeUntilTimestampMs").and_then(|v| v.as_u64()),
+        ) {
+            if now_ms >= active_from && now_ms < active_until {
+                return Some(ScheduleMatch {
+                    started_at: Some(active_from),
+                    ends_at: Some(active_until),
+                });
+            }
+            continue;
+        }
+
         let sh = seg.get("startHour").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let sm = seg.get("startMinute").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
         let eh = seg.get("endHour").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
@@ -653,4 +669,99 @@ fn log_to_file(msg: &str) {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DerivedBlocklist {
     pub domains: Vec<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_json_path(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("redd-block-{name}-{unique}.json"))
+    }
+
+    #[test]
+    fn match_schedule_now_prefers_resolved_one_shot_windows() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let schedule = json!({
+            "isPaused": false,
+            "resolvedSegments": [{
+                "startHour": 0,
+                "startMinute": 0,
+                "endHour": 0,
+                "endMinute": 0,
+                "days": [],
+                "activeFromTimestampMs": now.saturating_sub(60_000),
+                "activeUntilTimestampMs": now + 60_000
+            }],
+            "segments": [{
+                "startHour": 0,
+                "startMinute": 0,
+                "endHour": 0,
+                "endMinute": 0,
+                "days": []
+            }]
+        });
+
+        let matched = match_schedule_now(&schedule, now).expect("resolved one-shot should match");
+        assert_eq!(matched.started_at, Some(now.saturating_sub(60_000)));
+        assert_eq!(matched.ends_at, Some(now + 60_000));
+    }
+
+    #[test]
+    fn derive_blocked_apps_uses_resolved_one_shot_windows() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = temp_json_path("resolved-one-shot");
+        let data = json!({
+            "blocklists": [{
+                "id": "bl-1",
+                "name": "Test",
+                "websites": [],
+                "apps": ["Notes"]
+            }],
+            "activeBlocks": [],
+            "schedules": [{
+                "id": "sch-1",
+                "blocklistId": "bl-1",
+                "repeatType": "no",
+                "createdAt": now.saturating_sub(3_600_000),
+                "segments": [{
+                    "startHour": 0,
+                    "startMinute": 0,
+                    "endHour": 0,
+                    "endMinute": 0,
+                    "days": [0]
+                }],
+                "resolvedSegments": [{
+                    "startHour": 0,
+                    "startMinute": 0,
+                    "endHour": 0,
+                    "endMinute": 0,
+                    "days": [],
+                    "activeFromTimestampMs": now.saturating_sub(60_000),
+                    "activeUntilTimestampMs": now + 60_000
+                }]
+            }],
+            "settings": {}
+        });
+
+        fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        let apps = derive_blocked_apps(&path);
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(apps, vec!["Notes".to_string()]);
+    }
 }

@@ -3,7 +3,7 @@
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { normalizeBlocklist, isProtectedDomain, collectActiveIOSManualBlockPayload } from './blocklist-utils.js';
-import { isSchedulePausedNow, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
+import { isSchedulePausedNow, syncActiveBlocksToHelper, syncSchedulesToHelper, buildPersistedAppData } from './schedule-engine.js';
 import { generateId } from './app.js';
 import { updateBlockedApps } from './blocking-platform.js';
 import { normalizeLoadedEulaState } from './onboarding.js';
@@ -87,7 +87,7 @@ export async function loadData() {
 
 // Save data to main process
 export async function saveData() {
-    await tauriAPI.saveData(state.appData);
+    await tauriAPI.saveData(buildPersistedAppData());
 }
 
 
