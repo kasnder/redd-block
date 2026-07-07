@@ -6236,6 +6236,10 @@ function isAllowlistIntentionWarningRow(row) {
     return row?.intentionOnly === true;
 }
 
+function isAppBlockingWarningRowAwaitingAck(row) {
+    return !!row && !row.ackedDeadlineMs && row.dismissed !== true;
+}
+
 /** Invoke `fn(blocklist, source, manualStartTime)` for each active allowlist enforcement source. */
 function eachActiveAllowlistEnforcement(now, nowDate, fn) {
     for (const block of appData.activeBlocks || []) {
@@ -6391,7 +6395,7 @@ function onAppBlockingSnoozeExpired() {
     if (typeof renderBlocklists === 'function') renderBlocklists();
 
     const unackedPids = [...appBlockingWarningRows.entries()]
-        .filter(([, row]) => !row.ackedDeadlineMs)
+        .filter(([, row]) => isAppBlockingWarningRowAwaitingAck(row))
         .map(([pid]) => pid);
     if (unackedPids.length === 0) return;
 
@@ -6435,6 +6439,7 @@ function setupAppBlockingWarningOverlay() {
             name: p.name || 'App',
             intentionOnly: Number(pid) === ALLOWLIST_INTENTION_WARNING_PID
                 || p.name === ALLOWLIST_INTENTION_WARNING_NAME,
+            dismissed: false,
         });
         renderAppBlockingWarningOverlay();
         renderAppBlockingClosedownBanner();
@@ -6483,7 +6488,10 @@ function setupAppBlockingWarningOverlay() {
         void playAppBlockingLetsGoVoice();
         const ackedDeadlineMs = Date.now() + APP_BLOCKING_CLOSEDOWN_PREQUIT_MS;
         for (const row of appBlockingWarningRows.values()) {
-            if (!row.ackedDeadlineMs && !isAllowlistIntentionWarningRow(row)) {
+            if (!isAppBlockingWarningRowAwaitingAck(row)) continue;
+            if (isAllowlistIntentionWarningRow(row)) {
+                row.dismissed = true;
+            } else {
                 row.ackedDeadlineMs = ackedDeadlineMs;
             }
         }
@@ -6586,14 +6594,14 @@ function renderAppBlockingWarningOverlay() {
     const unknownApp = tSettings('appBlockingUnknownApp');
     const rawNames = [];
     for (const [, row] of appBlockingWarningRows) {
-        if (row.ackedDeadlineMs) continue;
+        if (!isAppBlockingWarningRowAwaitingAck(row)) continue;
         if (isAllowlistIntentionWarningRow(row)) continue;
         const n = (row.name || unknownApp).trim() || unknownApp;
         rawNames.push(n);
     }
     const names = uniqueBlockedAppDisplayNames(rawNames);
     const hasIntentionOnly = [...appBlockingWarningRows.values()].some(
-        (row) => !row.ackedDeadlineMs && isAllowlistIntentionWarningRow(row),
+        (row) => isAppBlockingWarningRowAwaitingAck(row) && isAllowlistIntentionWarningRow(row),
     );
     if (names.length === 0 && !hasIntentionOnly) {
         appBlockingActiveStartOverlay = null;
@@ -6677,7 +6685,7 @@ function applyWarningOverlayPresence() {
     // `ackedDeadlineMs` and migrates from the overlay to the banner.
     // Also hide while a schedule snooze is active.
     const hasUnackedRows = [...appBlockingWarningRows.values()]
-        .some((row) => !row.ackedDeadlineMs);
+        .some((row) => isAppBlockingWarningRowAwaitingAck(row));
     const isSnoozed = appBlockingWarningSnoozedUntilMs > Date.now();
 
     overlay.classList.toggle('hidden', !hasUnackedRows || isSnoozed);

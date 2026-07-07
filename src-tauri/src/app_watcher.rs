@@ -819,6 +819,14 @@ fn sweep(
         }
     }
 
+    // Allowlist block-start with no apps to close uses a sentinel PID, not a
+    // real process — keep it off the "process is gone" cleanup path until ack.
+    for (pid, entry) in entries.iter() {
+        if entry.intention_only && matches!(entry.phase, PidPhase::AwaitingUserAck) {
+            still_alive.insert(*pid);
+        }
+    }
+
     // PIDs we were tracking that are no longer alive — they exited
     // (cleanly via the user saving + quitting, or via SIGKILL when the
     // PostQuit grace elapsed). Hide any in-flight warning UI for them.
