@@ -2944,12 +2944,22 @@ function siteWord(count) {
 }
 
 /** Short label from a blocked domain, e.g. instagram.com → instagram. */
+// Second-level public-suffix labels: for hosts like bbc.co.uk / abc.com.au
+// the registrable name sits one label further left than usual. Small curated
+// set (no full Public Suffix List) covering the common ccTLD second levels.
+const SECOND_LEVEL_PUBLIC_SUFFIXES = new Set([
+    'co', 'com', 'org', 'net', 'gov', 'edu', 'ac', 'or', 'ne', 'go', 'gob',
+]);
+
 function siteNameForDisplay(url) {
     const host = cleanUrlForDisplay(url).split('/')[0].split(':')[0];
     const parts = host.split('.').filter(Boolean);
-    if (parts.length === 0) return host;
-    if (parts.length === 1) return parts[0];
-    return parts[parts.length - 2];
+    if (parts.length <= 1) return parts[0] || host;
+    // e.g. bbc.co.uk -> "bbc" (skip the co.uk two-level suffix), but
+    // theguardian.com -> "theguardian".
+    const suffixDepth = (parts.length >= 3 && SECOND_LEVEL_PUBLIC_SUFFIXES.has(parts[parts.length - 2]))
+        ? 3 : 2;
+    return parts[parts.length - suffixDepth];
 }
 
 /** Room card line, e.g. "3 sites · instagram, youtube, reddit". */
