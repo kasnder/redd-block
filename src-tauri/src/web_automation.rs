@@ -1236,7 +1236,7 @@ mod tests {
         let p = std::path::Path::new("/Applications/ReDD Blocker.app/Contents/Resources/blocked/blocked.html");
         assert_eq!(
             path_to_file_url(p),
-            "file:///Applications/ReDD%20Block.app/Contents/Resources/blocked/blocked.html"
+            "file:///Applications/ReDD%20Blocker.app/Contents/Resources/blocked/blocked.html"
         );
     }
 }
