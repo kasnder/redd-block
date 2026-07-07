@@ -1215,6 +1215,28 @@ fn is_windows_shell_input_surface(
         && class_name.eq_ignore_ascii_case("Windows.UI.Core.CoreWindow")
 }
 
+/// DWM-cloaked windows report `IsWindowVisible` but are hidden from the
+/// user (background UWP hosts like Realtek Audio Console, shell surfaces).
+#[cfg(target_os = "windows")]
+fn is_windows_cloaked_window(hwnd: windows::Win32::Foundation::HWND) -> bool {
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+
+    let mut cloaked = 0u32;
+    unsafe {
+        if DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED,
+            &mut cloaked as *mut _ as *mut _,
+            std::mem::size_of::<u32>() as u32,
+        )
+        .is_err()
+        {
+            return false;
+        }
+    }
+    cloaked != 0
+}
+
 #[cfg(target_os = "windows")]
 fn collect_user_facing_windows() -> Vec<UserFacingWindow> {
     use windows::core::BOOL;
@@ -1232,6 +1254,9 @@ fn collect_user_facing_windows() -> Vec<UserFacingWindow> {
     unsafe extern "system" fn collect_top_level(hwnd: HWND, lparam: LPARAM) -> BOOL {
         let ctx = &mut *(lparam.0 as *mut CollectCtx);
         if !IsWindowVisible(hwnd).as_bool() {
+            return BOOL(1);
+        }
+        if is_windows_cloaked_window(hwnd) {
             return BOOL(1);
         }
         let owner = GetWindow(hwnd, GW_OWNER).unwrap_or(HWND::default());
