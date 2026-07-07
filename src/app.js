@@ -405,12 +405,6 @@ function setBlocklistModalMode(mode) {
         btn.classList.toggle('active', btn.dataset.mode === normalized);
     });
     updateBlocklistModalModeLabels(normalized);
-    if (typeof window.clearModalTagSelections === 'function') {
-        window.clearModalTagSelections();
-    }
-    if (typeof window.renderModalTags === 'function') {
-        window.renderModalTags();
-    }
 }
 
 function updateBlocklistModalModeLabels(mode) {
@@ -544,56 +538,9 @@ function formatIOSScreenTimeSelectionLabel(selection) {
     return parts.length > 0 ? `${parts.join(', ')} selected (Screen Time)` : '';
 }
 
-function getBlocklistBlockWebsites(blocklist) {
-    return Array.isArray(blocklist?.websites) ? blocklist.websites : [];
-}
-
-function getStoredBlockWebsites(blocklist) {
-    if (Array.isArray(blocklist?.blockWebsites)) return blocklist.blockWebsites;
-    return isBlocklistAllowlistMode(blocklist) ? [] : getBlocklistBlockWebsites(blocklist);
-}
-
-function getBlocklistAllowWebsites(blocklist) {
-    return Array.isArray(blocklist?.allowWebsites) ? blocklist.allowWebsites : [];
-}
-
-function getBlocklistWebsitesForMode(blocklist, mode) {
-    return mode === 'allowlist' ? getBlocklistAllowWebsites(blocklist) : getBlocklistBlockWebsites(blocklist);
-}
-
-function getBlocklistWebsites(blocklist) {
-    return getBlocklistWebsitesForMode(
-        blocklist,
-        isBlocklistAllowlistMode(blocklist) ? 'allowlist' : 'blocklist',
-    );
-}
-
 function getBlocklistRegularApps(blocklist) {
     if (!Array.isArray(blocklist?.apps)) return [];
     return blocklist.apps.filter(app => typeof app === 'string' && !isScreenTimeSummaryEntry(app));
-}
-
-function getStoredBlockApps(blocklist) {
-    if (!Array.isArray(blocklist?.blockApps)) {
-        return isBlocklistAllowlistMode(blocklist) ? [] : getBlocklistRegularApps(blocklist);
-    }
-    return blocklist.blockApps.filter(app => typeof app === 'string' && !isScreenTimeSummaryEntry(app));
-}
-
-function getBlocklistRegularAllowApps(blocklist) {
-    if (!Array.isArray(blocklist?.allowApps)) return [];
-    return blocklist.allowApps.filter(app => typeof app === 'string' && !isScreenTimeSummaryEntry(app));
-}
-
-function getBlocklistAppsForMode(blocklist, mode) {
-    return mode === 'allowlist' ? getBlocklistRegularAllowApps(blocklist) : getBlocklistRegularApps(blocklist);
-}
-
-function getBlocklistApps(blocklist) {
-    return getBlocklistAppsForMode(
-        blocklist,
-        isBlocklistAllowlistMode(blocklist) ? 'allowlist' : 'blocklist',
-    );
 }
 
 function getBlocklistIOSScreenTimeSelection(blocklist) {
@@ -603,36 +550,9 @@ function getBlocklistIOSScreenTimeSelection(blocklist) {
     return normalizeIOSScreenTimeSelection(blocklist?.iosScreenTimeSelection, legacySummaryEntries);
 }
 
-function getStoredBlockIOSScreenTimeSelection(blocklist) {
-    if ('blockIosScreenTimeSelection' in (blocklist || {})) {
-        return normalizeIOSScreenTimeSelection(blocklist?.blockIosScreenTimeSelection);
-    }
-    return isBlocklistAllowlistMode(blocklist) ? null : getBlocklistIOSScreenTimeSelection(blocklist);
-}
-
-function getBlocklistAllowIOSScreenTimeSelection(blocklist) {
-    const legacySummaryEntries = Array.isArray(blocklist?.allowApps)
-        ? blocklist.allowApps.filter(isScreenTimeSummaryEntry)
-        : [];
-    return normalizeIOSScreenTimeSelection(blocklist?.allowIosScreenTimeSelection, legacySummaryEntries);
-}
-
-function getBlocklistIOSScreenTimeSelectionForMode(blocklist, mode) {
-    return mode === 'allowlist'
-        ? getBlocklistAllowIOSScreenTimeSelection(blocklist)
-        : getBlocklistIOSScreenTimeSelection(blocklist);
-}
-
-function getBlocklistActiveIOSScreenTimeSelection(blocklist) {
-    return getBlocklistIOSScreenTimeSelectionForMode(
-        blocklist,
-        isBlocklistAllowlistMode(blocklist) ? 'allowlist' : 'blocklist',
-    );
-}
-
 function getBlocklistDisplayApps(blocklist) {
-    const apps = getBlocklistApps(blocklist).map(displayNameForBlockedApp);
-    const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getBlocklistActiveIOSScreenTimeSelection(blocklist));
+    const apps = getBlocklistRegularApps(blocklist).map(displayNameForBlockedApp);
+    const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getBlocklistIOSScreenTimeSelection(blocklist));
     if (screenTimeLabel) {
         apps.push(screenTimeLabel);
     }
@@ -640,14 +560,14 @@ function getBlocklistDisplayApps(blocklist) {
 }
 
 function getBlocklistModalLockedApps(blocklist) {
-    const locked = [...getBlocklistApps(blocklist)];
-    const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getBlocklistActiveIOSScreenTimeSelection(blocklist));
+    const locked = [...getBlocklistRegularApps(blocklist)];
+    const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getBlocklistIOSScreenTimeSelection(blocklist));
     if (screenTimeLabel) locked.push(screenTimeLabel);
     return locked;
 }
 
 function getBlocklistIOSPayload(blocklist) {
-    const selection = getBlocklistActiveIOSScreenTimeSelection(blocklist);
+    const selection = getBlocklistIOSScreenTimeSelection(blocklist);
     return {
         appTokenData: selection?.applicationTokens || [],
         categoryTokenData: selection?.categoryTokens || []
@@ -655,7 +575,7 @@ function getBlocklistIOSPayload(blocklist) {
 }
 
 function blocklistNeedsIOSSelectionRefresh(blocklist) {
-    const selection = getBlocklistActiveIOSScreenTimeSelection(blocklist);
+    const selection = getBlocklistIOSScreenTimeSelection(blocklist);
     return !!selection && selection.requiresReselection === true && !hasUsableIOSScreenTimeSelection(selection);
 }
 
@@ -669,69 +589,11 @@ function ensureIOSBlocklistSelectionReady(blocklist, actionLabel) {
     return false;
 }
 
-function migrateBlocklistDualStorage(blocklist) {
-    const normalized = { ...blocklist };
-    let migrated = false;
-
-    if (!Array.isArray(normalized.blockWebsites)) {
-        normalized.blockWebsites = isBlocklistAllowlistMode(normalized)
-            ? []
-            : [...getBlocklistBlockWebsites(normalized)];
-        migrated = true;
-    }
-    if (!Array.isArray(normalized.blockApps)) {
-        normalized.blockApps = isBlocklistAllowlistMode(normalized)
-            ? []
-            : [...getBlocklistRegularApps(normalized)];
-        migrated = true;
-    }
-    if (!('blockIosScreenTimeSelection' in normalized)) {
-        normalized.blockIosScreenTimeSelection = isBlocklistAllowlistMode(normalized)
-            ? null
-            : cloneIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(normalized));
-        migrated = true;
-    }
-    if (!Array.isArray(normalized.allowWebsites)) normalized.allowWebsites = [];
-    if (!Array.isArray(normalized.allowApps)) normalized.allowApps = [];
-    if (!('allowIosScreenTimeSelection' in normalized)) {
-        normalized.allowIosScreenTimeSelection = null;
-        migrated = true;
-    }
-
-    const legacyAllowItems =
-        isBlocklistAllowlistMode(normalized)
-        && blocklist.allowWebsites === undefined
-        && blocklist.allowApps === undefined
-        && (
-            getBlocklistBlockWebsites(normalized).length > 0
-            || getBlocklistRegularApps(normalized).length > 0
-            || getBlocklistIOSScreenTimeSelection(normalized)
-        );
-
-    if (legacyAllowItems) {
-        normalized.allowWebsites = [...getBlocklistBlockWebsites(normalized)];
-        normalized.allowApps = [...getBlocklistRegularApps(normalized)];
-        normalized.allowIosScreenTimeSelection = cloneIOSScreenTimeSelection(
-            getBlocklistIOSScreenTimeSelection(normalized),
-        );
-        migrated = true;
-    }
-
-    normalized.websites = getBlocklistBlockWebsites(normalized);
-    normalized.apps = getBlocklistRegularApps(normalized);
-    normalized.iosScreenTimeSelection = getBlocklistIOSScreenTimeSelection(normalized);
-    normalized.blockWebsites = getStoredBlockWebsites(normalized);
-    normalized.blockApps = getStoredBlockApps(normalized);
-    normalized.blockIosScreenTimeSelection = getStoredBlockIOSScreenTimeSelection(normalized);
-    normalized.allowWebsites = getBlocklistAllowWebsites(normalized);
-    normalized.allowApps = getBlocklistRegularAllowApps(normalized);
-    normalized.allowIosScreenTimeSelection = getBlocklistAllowIOSScreenTimeSelection(normalized);
-    normalized.__dualStorageMigrated = migrated;
-    return normalized;
-}
-
 function normalizeBlocklist(blocklist) {
-    return migrateBlocklistDualStorage(blocklist);
+    const normalizedBlocklist = { ...blocklist };
+    normalizedBlocklist.apps = getBlocklistRegularApps(blocklist);
+    normalizedBlocklist.iosScreenTimeSelection = getBlocklistIOSScreenTimeSelection(blocklist);
+    return normalizedBlocklist;
 }
 
 function collectActiveIOSManualBlockPayload(now = Date.now()) {
@@ -7197,10 +7059,6 @@ async function loadData() {
         shouldSave = true;
     }
     appData.blocklists = (appData.blocklists || []).map(normalizeBlocklist);
-    if (appData.blocklists.some((bl) => bl.__dualStorageMigrated)) {
-        appData.blocklists = appData.blocklists.map(({ __dualStorageMigrated, ...bl }) => bl);
-        shouldSave = true;
-    }
     if (migrateBlocklistStartOverlaysToGlobal()) {
         shouldSave = true;
     }
@@ -7220,13 +7078,7 @@ async function loadData() {
             emoji: '📱',
             websites: ['instagram.com', 'youtube.com', 'reddit.com'],
             apps: [],
-            blockWebsites: ['instagram.com', 'youtube.com', 'reddit.com'],
-            blockApps: [],
-            blockIosScreenTimeSelection: null,
-            allowWebsites: [],
-            allowApps: [],
             iosScreenTimeSelection: null,
-            allowIosScreenTimeSelection: null,
             overrideDifficulty: {
                 type: 'random-words',
                 count: (isIOS) ? 25 : 50
@@ -8174,35 +8026,13 @@ function setupWebsitesImportMenu({ addDomainsToModal }) {
 
 // Modal listeners
 function setupModalListeners() {
-    let modalBlockWebsites = [];
-    let modalBlockApps = [];
-    let modalBlockIOSScreenTimeSelection = null;
-    let modalAllowWebsites = [];
-    let modalAllowApps = [];
-    let modalAllowIOSScreenTimeSelection = null;
-
-    const getModalWebsites = () => (
-        getSelectedBlocklistModalMode() === 'allowlist' ? modalAllowWebsites : modalBlockWebsites
-    );
-    const getModalApps = () => (
-        getSelectedBlocklistModalMode() === 'allowlist' ? modalAllowApps : modalBlockApps
-    );
-    const getModalIOSScreenTimeSelection = () => (
-        getSelectedBlocklistModalMode() === 'allowlist'
-            ? modalAllowIOSScreenTimeSelection
-            : modalBlockIOSScreenTimeSelection
-    );
-    const setModalIOSScreenTimeSelection = (selection) => {
-        if (getSelectedBlocklistModalMode() === 'allowlist') {
-            modalAllowIOSScreenTimeSelection = selection;
-        } else {
-            modalBlockIOSScreenTimeSelection = selection;
-        }
-    };
+    let modalWebsites = [];
+    let modalApps = [];
+    let modalIOSScreenTimeSelection = null;
 
     const getModalDisplayApps = () => {
-        const displayApps = getModalApps().map(displayNameForBlockedApp);
-        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getModalIOSScreenTimeSelection());
+        const displayApps = modalApps.map(displayNameForBlockedApp);
+        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
         if (screenTimeLabel) {
             displayApps.push(screenTimeLabel);
         }
@@ -8210,7 +8040,7 @@ function setupModalListeners() {
     };
 
     const getModalLockedAppDisplayItems = () => {
-        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getModalIOSScreenTimeSelection());
+        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
         return (window.lockedApps || []).map((app) => (
             app === screenTimeLabel ? app : displayNameForBlockedApp(app)
         ));
@@ -8244,18 +8074,18 @@ function setupModalListeners() {
 
     const selectAllUnlockedWebsites = () => {
         selectedWebsites.clear();
-        getModalWebsites().forEach(w => {
+        modalWebsites.forEach(w => {
             if (!isWebsiteLocked(w)) selectedWebsites.add(w);
         });
         window.renderModalTags();
     };
     const selectAllUnlockedApps = () => {
         selectedApps.clear();
-        getModalApps().forEach(a => {
+        modalApps.forEach(a => {
             if (!isAppLocked(a)) selectedApps.add(displayNameForBlockedApp(a));
         });
         // Also include the iOS Screen Time aggregate label if present.
-        const iosLabel = formatIOSScreenTimeSelectionLabel(getModalIOSScreenTimeSelection());
+        const iosLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
         if (iosLabel && !isAppLocked(iosLabel)) selectedApps.add(iosLabel);
         window.renderModalTags();
     };
@@ -8265,7 +8095,7 @@ function setupModalListeners() {
     // backspace" mental model in a text editor.
     const deleteSelectedWebsites = () => {
         if (selectedWebsites.size === 0) return false;
-        const toDelete = getModalWebsites().filter(w => selectedWebsites.has(w) && !isWebsiteLocked(w));
+        const toDelete = modalWebsites.filter(w => selectedWebsites.has(w) && !isWebsiteLocked(w));
         if (toDelete.length === 0) {
             selectedWebsites.clear();
             window.renderModalTags();
@@ -8274,13 +8104,13 @@ function setupModalListeners() {
         const restoreCopy = [...toDelete];
         pushModalUndo('website-bulk', () => {
             restoreCopy.forEach(w => {
-                if (!getModalWebsites().includes(w)) getModalWebsites().push(w);
+                if (!modalWebsites.includes(w)) modalWebsites.push(w);
             });
             window.renderModalTags();
         });
         toDelete.forEach(w => {
-            const i = getModalWebsites().indexOf(w);
-            if (i !== -1) getModalWebsites().splice(i, 1);
+            const i = modalWebsites.indexOf(w);
+            if (i !== -1) modalWebsites.splice(i, 1);
         });
         selectedWebsites.clear();
         window.renderModalTags();
@@ -8346,7 +8176,7 @@ function setupModalListeners() {
     };
 
     const moveWebsiteSelection = (direction) => {
-        const result = moveSelectionInList(getModalWebsites(), isWebsiteLocked, selectedWebsites, direction);
+        const result = moveSelectionInList(modalWebsites, isWebsiteLocked, selectedWebsites, direction);
         if (result) {
             window.renderModalTags();
             if (result === 'deselected') modalWebsiteInput.focus();
@@ -8367,8 +8197,8 @@ function setupModalListeners() {
 
     const deleteSelectedApps = () => {
         if (selectedApps.size === 0) return false;
-        const iosLabel = formatIOSScreenTimeSelectionLabel(getModalIOSScreenTimeSelection());
-        const toDeleteApps = getModalApps().filter(
+        const iosLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
+        const toDeleteApps = modalApps.filter(
             a => selectedApps.has(displayNameForBlockedApp(a)) && !isAppLocked(a),
         );
         const shouldDeleteIos = iosLabel && selectedApps.has(iosLabel) && !isAppLocked(iosLabel);
@@ -8377,22 +8207,22 @@ function setupModalListeners() {
             window.renderModalTags();
             return false;
         }
-        const previousIosSelection = shouldDeleteIos ? cloneIOSScreenTimeSelection(getModalIOSScreenTimeSelection()) : null;
+        const previousIosSelection = shouldDeleteIos ? cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection) : null;
         const restoredApps = [...toDeleteApps];
         pushModalUndo('app-bulk', () => {
             restoredApps.forEach(a => {
-                if (!getModalApps().includes(a)) getModalApps().push(a);
+                if (!modalApps.includes(a)) modalApps.push(a);
             });
             if (previousIosSelection) {
-                setModalIOSScreenTimeSelection(cloneIOSScreenTimeSelection(previousIosSelection));
+                modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousIosSelection);
             }
             window.renderModalTags();
         });
         toDeleteApps.forEach(a => {
-            const i = getModalApps().indexOf(a);
-            if (i !== -1) getModalApps().splice(i, 1);
+            const i = modalApps.indexOf(a);
+            if (i !== -1) modalApps.splice(i, 1);
         });
-        if (shouldDeleteIos) setModalIOSScreenTimeSelection(null);
+        if (shouldDeleteIos) modalIOSScreenTimeSelection = null;
         selectedApps.clear();
         window.renderModalTags();
         return true;
@@ -8454,13 +8284,13 @@ function setupModalListeners() {
             const toAddCopy = [...result.toAdd];
             pushModalUndo('website', () => {
                 toAddCopy.forEach(w => {
-                    const i = getModalWebsites().indexOf(w);
-                    if (i !== -1) getModalWebsites().splice(i, 1);
+                    const i = modalWebsites.indexOf(w);
+                    if (i !== -1) modalWebsites.splice(i, 1);
                 });
                 window.renderModalTags();
             });
             result.toAdd.forEach(website => {
-                if (!getModalWebsites().includes(website)) getModalWebsites().push(website);
+                if (!modalWebsites.includes(website)) modalWebsites.push(website);
             });
             window.renderModalTags();
         }
@@ -8530,15 +8360,15 @@ function setupModalListeners() {
         }
 
         // Backspace on empty input removes the last website tag (if not locked)
-        if (e.key === 'Backspace' && !modalWebsiteInput.value.length && getModalWebsites().length > 0) {
-            const lastIdx = getModalWebsites().length - 1;
-            const last = getModalWebsites()[lastIdx];
+        if (e.key === 'Backspace' && !modalWebsiteInput.value.length && modalWebsites.length > 0) {
+            const lastIdx = modalWebsites.length - 1;
+            const last = modalWebsites[lastIdx];
             if (!window.lockedWebsites || !window.lockedWebsites.includes(last)) {
                 pushModalUndo('website', () => {
-                    getModalWebsites().splice(lastIdx, 0, last);
+                    modalWebsites.splice(lastIdx, 0, last);
                     window.renderModalTags();
                 });
-                getModalWebsites().splice(lastIdx, 1);
+                modalWebsites.splice(lastIdx, 1);
                 window.renderModalTags();
                 e.preventDefault();
             }
@@ -8563,18 +8393,18 @@ function setupModalListeners() {
             const cleaned = (rawDomains || [])
                 .map(d => cleanDomainInput(d))
                 .filter(d => isValidDomain(d) && !isProtectedDomain(d));
-            const newDomains = cleaned.filter(d => !getModalWebsites().includes(d));
+            const newDomains = cleaned.filter(d => !modalWebsites.includes(d));
             if (newDomains.length === 0) return;
 
             const addedCopy = [...newDomains];
             pushModalUndo('website', () => {
                 addedCopy.forEach(w => {
-                    const i = getModalWebsites().indexOf(w);
-                    if (i !== -1) getModalWebsites().splice(i, 1);
+                    const i = modalWebsites.indexOf(w);
+                    if (i !== -1) modalWebsites.splice(i, 1);
                 });
                 window.renderModalTags();
             });
-            newDomains.forEach(w => getModalWebsites().push(w));
+            newDomains.forEach(w => modalWebsites.push(w));
             window.renderModalTags();
         }
     });
@@ -8604,15 +8434,15 @@ function setupModalListeners() {
         }
 
         // Backspace on empty input removes the last app tag (if not locked)
-        if (e.key === 'Backspace' && !modalAppInput.value.length && getModalApps().length > 0) {
-            const lastIdx = getModalApps().length - 1;
-            const last = getModalApps()[lastIdx];
+        if (e.key === 'Backspace' && !modalAppInput.value.length && modalApps.length > 0) {
+            const lastIdx = modalApps.length - 1;
+            const last = modalApps[lastIdx];
             if (!window.lockedApps || !window.lockedApps.includes(last)) {
                 pushModalUndo('app', () => {
-                    getModalApps().splice(lastIdx, 0, last);
+                    modalApps.splice(lastIdx, 0, last);
                     window.renderModalTags();
                 });
-                getModalApps().splice(lastIdx, 1);
+                modalApps.splice(lastIdx, 1);
                 window.renderModalTags();
                 e.preventDefault();
             }
@@ -8635,13 +8465,13 @@ function setupModalListeners() {
                 }, 2000);
                 return;
             }
-            if (!getModalApps().includes(app)) {
+            if (!modalApps.includes(app)) {
                 pushModalUndo('app', () => {
-                    const i = getModalApps().indexOf(app);
-                    if (i !== -1) getModalApps().splice(i, 1);
+                    const i = modalApps.indexOf(app);
+                    if (i !== -1) modalApps.splice(i, 1);
                     window.renderModalTags();
                 });
-                getModalApps().push(app);
+                modalApps.push(app);
                 window.renderModalTags();
             }
             modalAppInput.value = '';
@@ -8654,30 +8484,30 @@ function setupModalListeners() {
         modalBrowseBtn.addEventListener('click', async () => {
             try {
                 const result = await tauriAPI.showActivityPicker({
-                    initialApplicationTokenData: getModalIOSScreenTimeSelection()?.applicationTokens || [],
-                    initialCategoryTokenData: getModalIOSScreenTimeSelection()?.categoryTokens || []
+                    initialApplicationTokenData: modalIOSScreenTimeSelection?.applicationTokens || [],
+                    initialCategoryTokenData: modalIOSScreenTimeSelection?.categoryTokens || []
                 });
                 if (!result.cancelled && (result.applicationCount > 0 || result.categoryCount > 0)) {
-                    const previousSelection = cloneIOSScreenTimeSelection(getModalIOSScreenTimeSelection());
+                    const previousSelection = cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection);
                     pushModalUndo('ios-screentime-selection', () => {
-                        setModalIOSScreenTimeSelection(cloneIOSScreenTimeSelection(previousSelection));
+                        modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousSelection);
                         window.renderModalTags();
                     });
-                    setModalIOSScreenTimeSelection(normalizeIOSScreenTimeSelection({
+                    modalIOSScreenTimeSelection = normalizeIOSScreenTimeSelection({
                         applicationTokens: result.applicationTokens || [],
                         categoryTokens: result.categoryTokens || [],
                         applicationCount: result.applicationCount || 0,
                         categoryCount: result.categoryCount || 0,
                         requiresReselection: false
-                    }));
+                    });
                     window.renderModalTags();
-                } else if (!result.cancelled && getModalIOSScreenTimeSelection()) {
-                    const previousSelection = cloneIOSScreenTimeSelection(getModalIOSScreenTimeSelection());
+                } else if (!result.cancelled && modalIOSScreenTimeSelection) {
+                    const previousSelection = cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection);
                     pushModalUndo('ios-screentime-selection-clear', () => {
-                        setModalIOSScreenTimeSelection(cloneIOSScreenTimeSelection(previousSelection));
+                        modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousSelection);
                         window.renderModalTags();
                     });
-                    setModalIOSScreenTimeSelection(null);
+                    modalIOSScreenTimeSelection = null;
                     window.renderModalTags();
                 }
             } catch (err) {
@@ -9005,13 +8835,13 @@ function setupModalListeners() {
         nameInput.value = name;
 
         const pendingApp = modalAppInput.value.trim();
-        if (pendingApp && !isProtectedApp(pendingApp) && !getModalApps().includes(pendingApp)) {
+        if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
             pushModalUndo('app', () => {
-                const i = getModalApps().indexOf(pendingApp);
-                if (i !== -1) getModalApps().splice(i, 1);
+                const i = modalApps.indexOf(pendingApp);
+                if (i !== -1) modalApps.splice(i, 1);
                 window.renderModalTags();
             });
-            getModalApps().push(pendingApp);
+            modalApps.push(pendingApp);
             modalAppInput.value = '';
             window.renderModalTags();
         } else {
@@ -9063,17 +8893,9 @@ function setupModalListeners() {
             mode,
             color,
             emoji,
-            websites: mode === 'allowlist' ? [...modalAllowWebsites] : [...modalBlockWebsites],
-            apps: mode === 'allowlist' ? [...modalAllowApps] : [...modalBlockApps],
-            iosScreenTimeSelection: cloneIOSScreenTimeSelection(
-                mode === 'allowlist' ? modalAllowIOSScreenTimeSelection : modalBlockIOSScreenTimeSelection,
-            ),
-            blockWebsites: [...modalBlockWebsites],
-            blockApps: [...modalBlockApps],
-            blockIosScreenTimeSelection: cloneIOSScreenTimeSelection(modalBlockIOSScreenTimeSelection),
-            allowWebsites: [...modalAllowWebsites],
-            allowApps: [...modalAllowApps],
-            allowIosScreenTimeSelection: cloneIOSScreenTimeSelection(modalAllowIOSScreenTimeSelection),
+            websites: [...modalWebsites],
+            apps: [...modalApps],
+            iosScreenTimeSelection: cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection),
             showItemDetails,
             alwaysShowInSchedule,
             overrideDifficulty: overrideDifficultyPayload
@@ -9138,7 +8960,7 @@ function setupModalListeners() {
     });
 
     // Store references for modal functions
-    window.getModalApps = getModalApps;
+    window.getModalApps = () => modalApps;
     window.lockedWebsites = [];
     window.lockedApps = [];
     window.clearModalTagSelections = () => {
@@ -9147,21 +8969,21 @@ function setupModalListeners() {
     };
 
     window.renderModalTags = () => {
-        renderTags(modalWebsitesTags, getModalWebsites(), (idx) => {
-            const value = getModalWebsites()[idx];
+        renderTags(modalWebsitesTags, modalWebsites, (idx) => {
+            const value = modalWebsites[idx];
             if (window.lockedWebsites && window.lockedWebsites.includes(value)) {
                 return; // Do not remove locked items; do not push undo.
             }
             pushModalUndo('website', () => {
-                getModalWebsites().splice(idx, 0, value);
+                modalWebsites.splice(idx, 0, value);
                 window.renderModalTags();
             });
-            getModalWebsites().splice(idx, 1);
+            modalWebsites.splice(idx, 1);
             window.renderModalTags();
         }, window.lockedWebsites, {
             selectedItems: selectedWebsites,
             onTagClick: (idx) => {
-                const value = getModalWebsites()[idx];
+                const value = modalWebsites[idx];
                 if (!value || isWebsiteLocked(value)) return;
                 if (selectedWebsites.has(value)) {
                     selectedWebsites.delete(value);
@@ -9175,26 +8997,26 @@ function setupModalListeners() {
         });
 
         const displayApps = getModalDisplayApps();
-        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getModalIOSScreenTimeSelection());
+        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(modalIOSScreenTimeSelection);
         renderTags(modalAppsTags, displayApps, (idx) => {
             if (displayApps[idx] === screenTimeLabel) {
                 if (isAppLocked(screenTimeLabel)) return;
-                const previousSelection = cloneIOSScreenTimeSelection(getModalIOSScreenTimeSelection());
+                const previousSelection = cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection);
                 pushModalUndo('ios-screentime-selection-remove', () => {
-                    setModalIOSScreenTimeSelection(cloneIOSScreenTimeSelection(previousSelection));
+                    modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(previousSelection);
                     window.renderModalTags();
                 });
-                setModalIOSScreenTimeSelection(null);
+                modalIOSScreenTimeSelection = null;
             } else {
-                const processName = getModalApps()[idx];
+                const processName = modalApps[idx];
                 if (!processName || isAppLocked(processName)) return;
-                const appIdx = getModalApps().indexOf(processName);
+                const appIdx = modalApps.indexOf(processName);
                 if (appIdx === -1) return;
                 pushModalUndo('app', () => {
-                    getModalApps().splice(appIdx, 0, processName);
+                    modalApps.splice(appIdx, 0, processName);
                     window.renderModalTags();
                 });
-                getModalApps().splice(appIdx, 1);
+                modalApps.splice(appIdx, 1);
             }
             window.renderModalTags();
         }, getModalLockedAppDisplayItems(), {
@@ -9204,7 +9026,7 @@ function setupModalListeners() {
                 if (!value) return;
                 if (value === screenTimeLabel) {
                     if (isAppLocked(screenTimeLabel)) return;
-                } else if (isAppLocked(getModalApps()[idx])) {
+                } else if (isAppLocked(modalApps[idx])) {
                     return;
                 }
                 if (selectedApps.has(value)) {
@@ -9229,31 +9051,17 @@ function setupModalListeners() {
         if (clearedWebsites || clearedApps) e.stopPropagation();
     });
 
-    window.setModalData = (
-        blockWebsites,
-        blockApps,
-        blockIosScreenTimeSelection = null,
-        allowWebsites = [],
-        allowApps = [],
-        allowIosScreenTimeSelection = null,
-        lockedWebsitesList = [],
-        lockedAppsList = [],
-    ) => {
-        modalBlockWebsites.length = 0;
-        modalBlockApps.length = 0;
-        modalAllowWebsites.length = 0;
-        modalAllowApps.length = 0;
+    window.setModalData = (websites, apps, iosScreenTimeSelection = null, lockedWebsitesList = [], lockedAppsList = []) => {
+        modalWebsites.length = 0;
+        modalApps.length = 0;
         selectedWebsites.clear();
         selectedApps.clear();
-        modalBlockIOSScreenTimeSelection = cloneIOSScreenTimeSelection(blockIosScreenTimeSelection);
-        modalAllowIOSScreenTimeSelection = cloneIOSScreenTimeSelection(allowIosScreenTimeSelection);
+        modalIOSScreenTimeSelection = cloneIOSScreenTimeSelection(iosScreenTimeSelection);
         window.lockedWebsites = lockedWebsitesList;
         window.lockedApps = lockedAppsList;
 
-        blockWebsites.forEach((w) => modalBlockWebsites.push(w));
-        blockApps.forEach((a) => modalBlockApps.push(a));
-        allowWebsites.forEach((w) => modalAllowWebsites.push(w));
-        allowApps.forEach((a) => modalAllowApps.push(a));
+        websites.forEach(w => modalWebsites.push(w));
+        apps.forEach(a => modalApps.push(a));
         window.renderModalTags();
     };
 }
@@ -15935,13 +15743,10 @@ function openBlocklistModal(blocklist = null) {
 
         // Pass existing items as locked (active mode only — mode toggle is disabled)
         window.setModalData(
-            getStoredBlockWebsites(blocklist),
-            getStoredBlockApps(blocklist),
-            getStoredBlockIOSScreenTimeSelection(blocklist),
-            getBlocklistAllowWebsites(blocklist),
-            getBlocklistRegularAllowApps(blocklist),
-            getBlocklistAllowIOSScreenTimeSelection(blocklist),
-            getBlocklistWebsites(blocklist),
+            blocklist.websites || [],
+            getBlocklistRegularApps(blocklist),
+            getBlocklistIOSScreenTimeSelection(blocklist),
+            blocklist.websites || [],
             getBlocklistModalLockedApps(blocklist),
         );
     } else {
@@ -15968,12 +15773,9 @@ function openBlocklistModal(blocklist = null) {
         document.getElementById('override-count-plus')?.toggleAttribute('disabled', !!maxDifficultyOn);
 
         window.setModalData(
-            getStoredBlockWebsites(blocklist),
-            getStoredBlockApps(blocklist),
-            getStoredBlockIOSScreenTimeSelection(blocklist),
-            getBlocklistAllowWebsites(blocklist),
-            getBlocklistRegularAllowApps(blocklist),
-            getBlocklistAllowIOSScreenTimeSelection(blocklist),
+            blocklist?.websites || [],
+            getBlocklistRegularApps(blocklist),
+            getBlocklistIOSScreenTimeSelection(blocklist),
         );
     }
 
@@ -16047,7 +15849,7 @@ function closeBlocklistModal() {
     applyModalBlocklistTint(null);
     editingBlocklistId = null;
     document.getElementById('blocklist-name').value = '';
-    window.setModalData([], [], null, [], [], null);
+    window.setModalData([], [], null);
 }
 
 /** Override / pause modal summary, e.g. "Blocks 3 websites (a.com, b.com, c.com)". */
@@ -17227,12 +17029,6 @@ function duplicateBlocklist(id) {
         websites: [...(blocklist.websites || [])],
         apps: [...getBlocklistRegularApps(blocklist)],
         iosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(blocklist)),
-        blockWebsites: [...getStoredBlockWebsites(blocklist)],
-        blockApps: [...getStoredBlockApps(blocklist)],
-        blockIosScreenTimeSelection: cloneIOSScreenTimeSelection(getStoredBlockIOSScreenTimeSelection(blocklist)),
-        allowWebsites: [...getBlocklistAllowWebsites(blocklist)],
-        allowApps: [...getBlocklistRegularAllowApps(blocklist)],
-        allowIosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistAllowIOSScreenTimeSelection(blocklist)),
         showItemDetails: blocklist.showItemDetails !== false,
         alwaysShowInSchedule: blocklist.alwaysShowInSchedule !== false,
         overrideDifficulty: cloneOverrideDifficulty(blocklist.overrideDifficulty)
@@ -17271,12 +17067,6 @@ function serializeBlocklistForExport(blocklist) {
         websites: [...(blocklist.websites || [])],
         apps: [...getBlocklistRegularApps(blocklist)],
         iosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(blocklist)),
-        blockWebsites: [...getStoredBlockWebsites(blocklist)],
-        blockApps: [...getStoredBlockApps(blocklist)],
-        blockIosScreenTimeSelection: cloneIOSScreenTimeSelection(getStoredBlockIOSScreenTimeSelection(blocklist)),
-        allowWebsites: [...getBlocklistAllowWebsites(blocklist)],
-        allowApps: [...getBlocklistRegularAllowApps(blocklist)],
-        allowIosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistAllowIOSScreenTimeSelection(blocklist)),
         showItemDetails: blocklist.showItemDetails !== false,
         alwaysShowInSchedule: blocklist.alwaysShowInSchedule !== false,
         overrideDifficulty: cloneOverrideDifficulty(blocklist.overrideDifficulty)
@@ -17380,12 +17170,6 @@ function normalizeImportedBlocklist(raw) {
                 iosScreenTimeSelection: raw.iosScreenTimeSelection
             })
         ),
-        blockWebsites: Array.isArray(raw.blockWebsites) ? raw.blockWebsites.filter((entry) => typeof entry === 'string' && entry.trim()) : undefined,
-        blockApps: Array.isArray(raw.blockApps) ? raw.blockApps.filter((entry) => typeof entry === 'string' && entry.trim() && !isScreenTimeSummaryEntry(entry)) : undefined,
-        blockIosScreenTimeSelection: cloneIOSScreenTimeSelection(raw.blockIosScreenTimeSelection),
-        allowWebsites: Array.isArray(raw.allowWebsites) ? raw.allowWebsites.filter((entry) => typeof entry === 'string' && entry.trim()) : undefined,
-        allowApps: Array.isArray(raw.allowApps) ? raw.allowApps.filter((entry) => typeof entry === 'string' && entry.trim() && !isScreenTimeSummaryEntry(entry)) : undefined,
-        allowIosScreenTimeSelection: cloneIOSScreenTimeSelection(raw.allowIosScreenTimeSelection),
         showItemDetails: raw.showItemDetails !== false,
         alwaysShowInSchedule: raw.alwaysShowInSchedule !== false,
         overrideDifficulty: cloneOverrideDifficulty(raw.overrideDifficulty),
@@ -17429,12 +17213,6 @@ function blocklistFromImportedEntry(entry) {
         websites: [...(entry.websites || [])],
         apps: [...getBlocklistRegularApps(entry)],
         iosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistIOSScreenTimeSelection(entry)),
-        blockWebsites: [...getStoredBlockWebsites(entry)],
-        blockApps: [...getStoredBlockApps(entry)],
-        blockIosScreenTimeSelection: cloneIOSScreenTimeSelection(getStoredBlockIOSScreenTimeSelection(entry)),
-        allowWebsites: [...getBlocklistAllowWebsites(entry)],
-        allowApps: [...getBlocklistRegularAllowApps(entry)],
-        allowIosScreenTimeSelection: cloneIOSScreenTimeSelection(getBlocklistAllowIOSScreenTimeSelection(entry)),
         showItemDetails: entry.showItemDetails !== false,
         alwaysShowInSchedule: entry.alwaysShowInSchedule !== false,
         overrideDifficulty: cloneOverrideDifficulty(entry.overrideDifficulty)
@@ -24032,7 +23810,7 @@ async function openInstalledAppsPicker() {
         }
 
         listEl.innerHTML = filtered.map(app => {
-            const alreadyAdded = getModalApps().some(a => a.toLowerCase() === app.process_name.toLowerCase());
+            const alreadyAdded = window.getModalApps().some(a => a.toLowerCase() === app.process_name.toLowerCase());
             const isChecked = selectedProcessNames.has(app.process_name) || alreadyAdded;
             const checkedClass = isChecked ? ' checked' : '';
             const checkedAttr = isChecked ? ' checked' : '';
@@ -24069,7 +23847,7 @@ async function openInstalledAppsPicker() {
 
     function updateAddButton() {
         const newCount = [...selectedProcessNames].filter(
-            p => !getModalApps().some(a => a.toLowerCase() === p.toLowerCase())
+            p => !window.getModalApps().some(a => a.toLowerCase() === p.toLowerCase())
         ).length;
         addBtn.textContent = newCount > 0 ? `Add Selected (${newCount})` : 'Add Selected';
         addBtn.disabled = newCount === 0;
@@ -24101,19 +23879,19 @@ async function openInstalledAppsPicker() {
     // Add Selected
     addBtn.onclick = () => {
         const toAdd = [...selectedProcessNames].filter(
-            p => !getModalApps().some(a => a.toLowerCase() === p.toLowerCase())
+            p => !window.getModalApps().some(a => a.toLowerCase() === p.toLowerCase())
         );
         if (toAdd.length > 0) {
             const toAddCopy = [...toAdd];
             pushModalUndo('app', () => {
                 toAddCopy.forEach(a => {
-                    const i = getModalApps().indexOf(a);
-                    if (i !== -1) getModalApps().splice(i, 1);
+                    const i = window.getModalApps().indexOf(a);
+                    if (i !== -1) window.getModalApps().splice(i, 1);
                 });
                 window.renderModalTags();
             });
             for (const appName of toAdd) {
-                getModalApps().push(appName);
+                window.getModalApps().push(appName);
             }
             window.renderModalTags();
         }
@@ -24127,20 +23905,20 @@ async function openInstalledAppsPicker() {
         closePickerModal();
         const appNames = await tauriAPI.openAppPicker();
         if (appNames && appNames.length > 0) {
-            const toAdd = appNames.filter(n => !getModalApps().includes(n));
+            const toAdd = appNames.filter(n => !window.getModalApps().includes(n));
             if (toAdd.length > 0) {
                 const toAddCopy = [...toAdd];
                 pushModalUndo('app', () => {
                     toAddCopy.forEach(a => {
-                        const i = getModalApps().indexOf(a);
-                        if (i !== -1) getModalApps().splice(i, 1);
+                        const i = window.getModalApps().indexOf(a);
+                        if (i !== -1) window.getModalApps().splice(i, 1);
                     });
                     window.renderModalTags();
                 });
             }
             for (const appName of appNames) {
-                if (!getModalApps().includes(appName)) {
-                    getModalApps().push(appName);
+                if (!window.getModalApps().includes(appName)) {
+                    window.getModalApps().push(appName);
                 }
             }
             window.renderModalTags();
