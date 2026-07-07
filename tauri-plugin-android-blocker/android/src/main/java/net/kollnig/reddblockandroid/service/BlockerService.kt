@@ -51,9 +51,9 @@ class BlockerService : AccessibilityService() {
         if (isContentChanged && isSupportedBrowser(pkg) && Schedules.hasWebsiteBlockingCandidates()) {
             val currentTime = System.currentTimeMillis()
             if (currentTime - lastUrlCheckTime >= URL_CHECK_THROTTLE_MS) {
+                lastUrlCheckTime = currentTime
                 val url = extractUrlFromEvent(event)
                 if (url != null) {
-                    lastUrlCheckTime = currentTime
                     if (url != lastCheckedUrl) {
                         lastCheckedUrl = url
                         val domain = extractDomain(url)
