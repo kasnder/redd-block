@@ -9055,7 +9055,7 @@ function setupModalListeners() {
             modalAppInput.value = '';
         }
 
-        const mode = isIOS ? 'blocklist' : getSelectedBlocklistModalMode();
+        const mode = getSelectedBlocklistModalMode();
         const overrideType = document.getElementById('override-type').value;
         const overrideCountInput = document.getElementById('override-count');
         const maxDifficultyChecked = document.getElementById('override-max-difficulty-checkbox').checked;
@@ -15954,11 +15954,6 @@ function openBlocklistModal(blocklist = null) {
     }
 
     setBlocklistModalMode(blocklist?.mode === 'allowlist' ? 'allowlist' : 'blocklist');
-    const allowlistModeBtn = document.getElementById('blocklist-mode-allowlist');
-    if (allowlistModeBtn) {
-        allowlistModeBtn.disabled = isIOS;
-        allowlistModeBtn.classList.toggle('disabled', isIOS);
-    }
 
     // Check if active (block or schedule)
     const now = Date.now();
@@ -20305,8 +20300,6 @@ const SETTINGS_TRANSLATIONS = {
         placeholderWebsiteAllow: 'e.g., ulriklyngs.com',
         placeholderAppBlock: 'e.g., Safari',
         placeholderAppAllow: 'e.g., Microsoft Word',
-        allowlistIosUnavailable: 'Allow list mode is not yet available on iOS. Use a block list focus space instead, or start this allow-list focus space on macOS.',
-        allowlistIosAppsUnavailable: 'App allow lists are not yet available on iOS. Remove the selected apps from this focus space to run it as a website allow list, or start it on macOS.',
         allowlistIosNeedsWebsites: 'Add at least one website, or select apps with the Screen Time picker, to start this allow list on iOS.',
         allowlistIosDomainLimit: 'iOS allow lists support up to 50 websites, but this would allow {n}. Remove some websites and try again.',
         allowlistIosTokenLimit: 'iOS allow lists support up to 50 apps, but this would allow {n}. Remove some apps and try again.',
@@ -21106,8 +21099,6 @@ const SETTINGS_TRANSLATIONS = {
         placeholderWebsiteAllow: 'fx ulriklyngs.com',
         placeholderAppBlock: 'fx Safari',
         placeholderAppAllow: 'fx Microsoft Word',
-        allowlistIosUnavailable: 'Tilladelsesliste er endnu ikke tilgængelig på iOS. Brug en blokeringsliste på iOS, eller start denne tilladelsesliste på macOS.',
-        allowlistIosAppsUnavailable: 'App-tilladelseslister er endnu ikke tilgængelige på iOS. Fjern de valgte apps fra dette fokusrum for at køre det som en hjemmeside-tilladelsesliste, eller start det på macOS.',
         allowlistIosNeedsWebsites: 'Tilføj mindst én hjemmeside, eller vælg apps med Screen Time-vælgeren, for at starte denne tilladelsesliste på iOS.',
         allowlistIosDomainLimit: 'iOS-tilladelseslister understøtter op til 50 hjemmesider, men denne ville tillade {n}. Fjern nogle hjemmesider og prøv igen.',
         allowlistIosTokenLimit: 'iOS-tilladelseslister understøtter op til 50 apps, men denne ville tillade {n}. Fjern nogle apps og prøv igen.',
