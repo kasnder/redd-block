@@ -233,6 +233,43 @@ Screen Time apps and Settings › Screen Time › Always Allowed contents first
 
 ---
 
+## 15. Desktop Allowlist (Allow-Mode Focus Spaces)
+
+Same channel split as blocklist mode: **macOS Safari/Chrome/Brave/Edge** enforce
+via Automation; **macOS Firefox + all Windows browsers** via the ReDD Focus
+extension. App allow-mode uses the in-process app watcher (macOS + Windows;
+no Linux). Run the website checks once per channel.
+
+Before manual checks, run the automated allowlist coverage: Tier 1 Category 14
+(`Cmd+Shift+T`), Tier 2 Group H (`runIntegrationTests('full')`), and
+`cargo test --lib` in `src-tauri`.
+
+### Websites (per channel: Automation, then extension)
+
+- [ ] Create allow-mode focus space (e.g. allow `github.com` only); card shows "Allows N"
+- [ ] Start manual block: `github.com` loads; `reddit.com` redirects to the block page
+- [ ] Block page shows allowlist copy ("not on your current allowlist") with the focus space's pill/emoji/countdown (`mode=allowlist` param)
+- [ ] Two concurrent allowlists (e.g. `github.com` / `wikipedia.org`): both load, everything else blocked (union)
+- [ ] Allowlist + blocklist overlap: blocklist blocking `github.com` runs alongside → `github.com` blocked (blocklist wins), block page attributes the blocklist space
+- [ ] Pause allowlist → all sites usable; resume → allowlist semantics return (not blocklist)
+- [ ] Schedule segment on an allowlist: enforcement flips at segment boundaries
+- [ ] Stop all: browsing fully restored; parked block-page tabs recover (Automation channel)
+
+### Apps (macOS and Windows)
+
+- [ ] Start allow-mode space with 1–2 allowed apps while several non-allowed apps are open: every visible non-allowed app gets the "Let's go!" warning (allowed-app pills shown); nothing is quit before acknowledging
+- [ ] Start with **no** closable apps open: intention-only overlay appears; "Let's go!" dismisses it with no countdown
+- [ ] Mid-session: bring a non-allowed app frontmost → it is quit (30 s wrap-up then polite quit); background agents keep running
+- [ ] Switch away from a warned non-allowed app before its quit lands → quit is aborted (no longer user-facing)
+- [ ] Allowed apps and protected apps (Finder, ReDD Blocker) are never targeted
+- [ ] End/stop: no further quits; previously warned apps reopen normally
+
+### Diagnostics
+
+- [ ] Diagnostics view shows "Current enforcement" with the allow-mode entry, mode label, and allowed website union while an allowlist is active
+
+---
+
 ## Sign-off
 
 | Tester | Date | Version | Platform | Pass/Fail |

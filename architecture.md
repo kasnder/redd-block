@@ -206,11 +206,16 @@ on the v2 extension path.
    `<resources>/blocked/blocked.html` → `file://` URL.
 2. Every **1 s** tick, for each **running** supported browser (main process
    detected via sysinfo):
-   - read active blocked domains from `native_host::derive_payload()`,
-   - if empty, restore any tabs still parked on the block page,
-   - if non-empty, AppleScript-reads open tab URLs; matching tabs get
-     `location` set to the block page with the same query params the
-     extension uses (`url`, `blocklist`, etc.).
+   - read active blocks (mode-aware `blocks[]`) from
+     `native_host::derive_payload()`,
+   - if no web enforcement is active, restore any tabs still parked on the
+     block page,
+   - otherwise, AppleScript-reads open tab URLs; a tab is redirected when its
+     host matches a blocklist-mode domain, **or** when any allowlist block is
+     active and the host is not in the allowed union (blocklist wins on
+     overlap; `url_is_blocked` in `web_automation.rs`). Redirect sets
+     `location` to the block page with the same query params the extension
+     uses (`url`, `blocklist`, `mode`, etc.).
 3. All Apple Events serialize through a global mutex — concurrent osascript
    from the watcher, enforcer, and Tauri commands can deadlock macOS's
    AppleEvent manager.
@@ -244,11 +249,11 @@ for website blocking on macOS.
 flowchart TD
     tick[Every_1s_tick] --> running{Browser_running}
     running -->|No| skip[Skip_browser]
-    running -->|Yes| domains[derive_payload_domains]
-    domains --> empty{Any_domains}
-    empty -->|No| restore[Restore_tabs_on_block_page]
-    empty -->|Yes| script[AppleScript_read_tabs]
-    script --> match{URL_on_blocklist}
+    running -->|Yes| blocks[derive_payload_blocks]
+    blocks --> active{Web_enforcement_active}
+    active -->|No| restore[Restore_tabs_on_block_page]
+    active -->|Yes| script[AppleScript_read_tabs]
+    script --> match{Blocklist_match_or_allowlist_active_and_host_not_allowed}
     match -->|Yes| redirect[Set_tab_to_file_block_page]
     match -->|No| done[Leave_tab]
 ```
@@ -316,8 +321,10 @@ Firefox on macOS follows the Windows-style extension + native-messaging model:
 
 The enforcer is active only when **all** of:
 
-1. `website_blocking_active()` — `derive_payload()` returns a non-empty domain
-   set (respects pause, schedule windows, one-off expiry),
+1. `website_blocking_active()` — `derive_payload()` returns at least one block
+   with non-empty domains, blocklist **or** allowlist mode (respects pause,
+   schedule windows, one-off expiry). Allowlist domains never populate the
+   legacy flat domain list, so the gate reads the per-block metadata,
 2. `settings.enforcementEnabled === true` — user opt-in (default **off**),
 3. at least one enforced browser process is **running**.
 
@@ -360,7 +367,28 @@ Per blocked-app PID state machine:
 
 Protected apps (ReDD Blocker itself, Finder, shell processes) are never targeted.
 Schedule and manual app lists merge in the frontend; `set_blocked_apps_via_helper`
-(shim) forwards to `app_blocking::set_blocked_apps`.
+(shim) forwards to `app_blocking::set_blocked_apps` with the full mode-aware
+policy: `apps`, `newly_added`, `allowed_apps`, `allowlist_active`,
+`allowlist_newly_started`.
+
+**Allow-mode app blocking** inverts the target set: while an allowlist with
+apps is active, any app **not** on the allowed union is a quit candidate
+(`sweep_allowlist`). Semantics differ from blocklist mode:
+
+- **At allow-mode start** (`allowlist_newly_started`, one-shot): every
+  currently visible non-allowed regular app gets the "Let's go!" warning —
+  nothing is quit silently on that tick. If nothing needs closing, a sentinel
+  `__allowlist_intention__` entry (PID 0) raises an intention-only overlay so
+  the user still confirms the session; acknowledging dismisses it with no
+  countdown.
+- **Mid-session:** only the **frontmost** non-allowed app is enrolled and
+  silently quit — background agents keep running.
+- Allowlist-origin entries get a re-check before each quit step
+  (`allowlist_entry_still_user_facing`): if the PID is no longer user-facing,
+  the quit is aborted. Blocklist entries keep the unconditional behavior.
+
+Same state machine on macOS and Windows; only process enumeration and quit
+primitives differ. Linux has no app watcher (no-op).
 
 macOS warning overlay uses a custom `MainPanel` NSPanel (`lib.rs`) so the
 countdown can float over third-party fullscreen Spaces without stealing focus.
@@ -396,6 +424,10 @@ can suppress upcoming segments until pause end or manual resume.
 
 Effective website blocking is the union of active one-off and currently active
 schedule segments. Shared domains stay blocked while any source is active.
+When any **allowlist** source is active, the effective website policy becomes
+allow-union-minus-blocked (concurrent allowlists union their allowed sets;
+an explicitly blocked domain always wins on overlap) — same rule on both the
+Automation and extension channels, and mirrored on iOS (§12.3).
 `hasAnyEnforcedBlocks()` in `src/app.js` gates override-all, uninstall prompts,
 and similar UX.
 
@@ -477,7 +509,9 @@ Apple Screen Time (FamilyControls, ManagedSettings, DeviceActivity) via
 - Two `ManagedSettingsStore` instances: default (manual blocks) and named
   `"schedule"` (DeviceActivityMonitor extension)
 - Activity picker selection and schedule payloads in iOS App Group storage
-- 50-domain cap per store; authorization required before blocking
+- 50-item cap per store (domains and app tokens); blocklist mode truncates,
+  allow mode fails validation instead of truncating (§12.3); authorization
+  required before blocking
 
 ### 12.2 Flows
 
@@ -601,6 +635,8 @@ Desktop surfaces include:
 - app version and backend mode (`automation` on macOS, `extension` on Windows)
 - Automation permission status per browser (macOS)
 - extension scan summary (Firefox on macOS; all browsers on Windows)
+- current enforcement snapshot (`current_blocking`): per-block breakdown with
+  mode, plus allowlist state (`allowlist_active`, allowed website/app unions)
 - hosts file contents (should be clean post-migration)
 - relevant paths and logs
 

@@ -862,6 +862,132 @@
         return { passed: true };
     }
 
+    // ========================================
+    // Testing Group H: Allowlist mode (desktop websites channel)
+    // ========================================
+    //
+    // Pipeline-state tests: real allow-mode focus spaces are created, started,
+    // paused, and cleared through the same save + sync path users hit, and the
+    // Rust-derived enforcement snapshot (`get_system_diagnostics.current_blocking`)
+    // is asserted. Per-URL block/allow decisions and blocklist-wins subtraction
+    // are decision-time logic covered by Rust unit tests (web_automation.rs) and
+    // Tier 1 Category 14 — not re-tested here.
+    //
+    // Deliberately websites-only: enabling allow-mode APP enforcement would
+    // enroll the tester's real open apps for quit. App allow-mode is manual
+    // checklist territory (section 15).
+
+    async function getCurrentBlockingOrThrow(testName) {
+        const tauriAPI = getTauriAPI();
+        assertOrThrow(tauriAPI && typeof tauriAPI.getSystemDiagnostics === 'function', `${testName}: getSystemDiagnostics unavailable`);
+        const diag = await tauriAPI.getSystemDiagnostics();
+        const cb = diag?.current_blocking;
+        assertOrThrow(cb, `${testName}: current_blocking missing from system diagnostics`);
+        return cb;
+    }
+
+    async function testH1_singleAllowlistEnforcementState() {
+        const skip = await ensureHelperRunningOrSkip('H1');
+        if (skip) return skip;
+
+        return runIsolatedIntegrationTest('H1', async () => {
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'H1 Allow', mode: 'allowlist' });
+            addActiveBlock(bl.id, { durationMs: 120000 });
+            await callSaveData();
+            await callUpdateHostsFile();
+            callRender();
+
+            const cb = await getCurrentBlockingOrThrow('H1');
+            assertOrThrow(!cb.domains.includes(TEST_DOMAINS.a), 'H1: allowlist domain must not appear in the flat blocked list');
+            assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.a), 'H1: allowed_domains missing the allowlist domain');
+            const allowBlock = (cb.blocks || []).find(b => b.mode === 'allowlist' && (b.domains || []).includes(TEST_DOMAINS.a));
+            assertOrThrow(allowBlock, 'H1: no allowlist-mode block entry in current_blocking.blocks');
+
+            removeTestDataFromAppState();
+            await callSaveData();
+            await callUpdateHostsFile(true);
+            callRender();
+            const after = await getCurrentBlockingOrThrow('H1');
+            assertOrThrow(!after.allowed_domains.includes(TEST_DOMAINS.a), 'H1: allowed_domains not cleared after stop');
+            return { passed: true };
+        });
+    }
+
+    async function testH2_concurrentAllowlistsUnion() {
+        const skip = await ensureHelperRunningOrSkip('H2');
+        if (skip) return skip;
+
+        return runIsolatedIntegrationTest('H2', async () => {
+            const blA = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'H2 Allow A', mode: 'allowlist' });
+            const blB = addTestBlocklist({ websites: [TEST_DOMAINS.b], name: 'H2 Allow B', mode: 'allowlist' });
+            addActiveBlock(blA.id, { durationMs: 120000 });
+            addActiveBlock(blB.id, { durationMs: 120000 });
+            await callSaveData();
+            await callUpdateHostsFile();
+            callRender();
+
+            const cb = await getCurrentBlockingOrThrow('H2');
+            assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.a), 'H2: allowed union missing first allowlist domain');
+            assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.b), 'H2: allowed union missing second allowlist domain');
+            const allowEntries = (cb.blocks || []).filter(b => b.mode === 'allowlist');
+            assertOrThrow(allowEntries.length >= 2, `H2: expected 2 allowlist block entries, got ${allowEntries.length}`);
+            return { passed: true };
+        });
+    }
+
+    async function testH3_allowlistBlocklistOverlap() {
+        const skip = await ensureHelperRunningOrSkip('H3');
+        if (skip) return skip;
+
+        return runIsolatedIntegrationTest('H3', async () => {
+            const allowBl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.b], name: 'H3 Allow', mode: 'allowlist' });
+            const blockBl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'H3 Block' });
+            addActiveBlock(allowBl.id, { durationMs: 120000 });
+            addActiveBlock(blockBl.id, { durationMs: 120000 });
+            await callSaveData();
+            await callUpdateHostsFile();
+            callRender();
+
+            const cb = await getCurrentBlockingOrThrow('H3');
+            // Both channels intact: the blocklist domain still rides the flat
+            // blocked list (blocklist wins at decision time), and the allowlist
+            // union is surfaced alongside it.
+            assertOrThrow(cb.domains.includes(TEST_DOMAINS.a), 'H3: overlapping blocklist domain missing from flat blocked list');
+            assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.b), 'H3: non-overlapping allowlist domain missing from allowed union');
+            const modes = new Set((cb.blocks || []).map(b => b.mode || 'blocklist'));
+            assertOrThrow(modes.has('allowlist'), 'H3: allowlist block entry missing');
+            assertOrThrow(modes.has('blocklist') || modes.has('manual'), 'H3: blocklist block entry missing');
+            return { passed: true };
+        });
+    }
+
+    async function testH4_pauseResumeAllowlistEnforcementPath() {
+        const skip = await ensureHelperRunningOrSkip('H4');
+        if (skip) return skip;
+
+        return runIsolatedIntegrationTest('H4', async () => {
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'H4 Allow', mode: 'allowlist' });
+            const block = addActiveBlock(bl.id, { durationMs: 120000 });
+            await callSaveData();
+            await callUpdateHostsFile();
+            callRender();
+            let cb = await getCurrentBlockingOrThrow('H4');
+            assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.a), 'H4: allowlist not enforced before pause');
+
+            await setOneOffPaused(block.id, 45000);
+            callRender();
+            cb = await getCurrentBlockingOrThrow('H4');
+            assertOrThrow(!cb.allowed_domains.includes(TEST_DOMAINS.a), 'H4: paused allowlist still in allowed union');
+            assertOrThrow(!(cb.blocks || []).some(b => b.mode === 'allowlist'), 'H4: paused allowlist still has a block entry');
+
+            await clearOneOffPause(block.id);
+            callRender();
+            cb = await getCurrentBlockingOrThrow('H4');
+            assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.a), 'H4: resumed allowlist missing from allowed union');
+            return { passed: true };
+        });
+    }
+
     function buildProfileTests(profile) {
         const coreTests = [
             { group: 'A', name: 'A1: Hosts modification path', fn: testA1_hostsModificationPath },
@@ -871,7 +997,8 @@
             { group: 'B', name: 'B1: Shared-domain overlap', fn: testB1_sharedDomainOverlap },
             { group: 'C', name: 'C1: Scoped clear by blocklist ID', fn: testC1_scopedClearByBlocklistId },
             { group: 'E', name: 'E1: Clean hosts command path', fn: testE1_cleanHostsCommandPath },
-            { group: 'E', name: 'E2: Helper diagnostics contract', fn: testE2_helperDiagnosticsContract }
+            { group: 'E', name: 'E2: Helper diagnostics contract', fn: testE2_helperDiagnosticsContract },
+            { group: 'H', name: 'H1: Single allowlist enforcement state', fn: testH1_singleAllowlistEnforcementState }
         ];
 
         if (profile === PROFILE_CORE) return coreTests;
@@ -890,7 +1017,10 @@
             { group: 'C', name: 'C3: Max difficulty blocklist start/clear', fn: testC3_maxDifficultyBlocklistStartClear },
             { group: 'F', name: 'F1: Set blocked apps command path', fn: testF1_setBlockedAppsCommandPath },
             { group: 'F', name: 'F2: Protected app payload path', fn: testF2_protectedAppPayloadPath },
-            { group: 'G', name: 'G1: Duplicate blocklist then start/clear path', fn: testG1_duplicateThenRun }
+            { group: 'G', name: 'G1: Duplicate blocklist then start/clear path', fn: testG1_duplicateThenRun },
+            { group: 'H', name: 'H2: Concurrent allowlists union', fn: testH2_concurrentAllowlistsUnion },
+            { group: 'H', name: 'H3: Allowlist + blocklist overlap', fn: testH3_allowlistBlocklistOverlap },
+            { group: 'H', name: 'H4: Pause/resume allowlist enforcement path', fn: testH4_pauseResumeAllowlistEnforcementPath }
         ];
     }
 
@@ -969,7 +1099,7 @@
 
         if (selectedProfile === PROFILE_FULL && results.failed > 0) {
             console.log('\nGroup failure summary (full profile):');
-            ['A', 'B', 'C', 'D', 'E', 'F', 'G'].forEach(groupKey => {
+            ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(groupKey => {
                 const g = groupResults.get(groupKey);
                 if (!g) return;
                 const passedOverTotal = `${g.passed}/${g.total}`;

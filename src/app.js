@@ -79,6 +79,7 @@ const tauriAPI = {
     clearBlockViaHelper: (blocklistId) => invoke('clear_block_via_helper', blocklistId != null ? { blocklistId } : {}),
     cleanHostsFile: () => invoke('clean_hosts_file'),
     getHelperDiagnostics: () => invoke('get_helper_diagnostics'),
+    getSystemDiagnostics: () => invoke('get_system_diagnostics'),
     setBlocksViaHelper: (blocks) => invoke('set_blocks_via_helper', { blocks }),
 
     // App operations

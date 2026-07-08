@@ -58,7 +58,16 @@ Tier 1 validates logic and state-composition rules without Tauri side effects or
 - override and override-all state transitions,
 - challenge difficulty selection (including max-difficulty effective count),
 - blocklist duplication (data shape, naming, override copy, schedule copy),
-- protected app/domain guards.
+- protected app/domain guards,
+- iOS allowlist effective-policy resolvers (Category 14, **T55–T62**).
+
+The Category 14 tests are **logic tests, not behavior tests**: they exercise
+the pure JS functions that decide what iOS Screen Time enforcement should do
+(`specific-block` vs `all-except`, blocklist-wins subtraction, Apple's
+50-exception cap, category-token exclusion) — constraints with no desktop
+equivalent. They run in the normal desktop dev build; no iOS build, simulator,
+or device is involved. Desktop's own allowlist composition rules live in Rust
+and are covered by `cargo test` (see **Rust unit tests** below).
 
 It uses mock `appData` and pure functions from `src/test-utils.js` including:
 
@@ -156,10 +165,29 @@ Expected outcome for A2–A10, A11:
 ### Testing Group G: Blocklist management
 - **G1**: Duplicate blocklist then start/clear path (**full only**)
 
+### Testing Group H: Allowlist mode (desktop websites channel)
+- **H1**: Single allowlist enforcement state
+- **H2**: Concurrent allowlists union (**full only**)
+- **H3**: Allowlist + blocklist overlap (**full only**)
+- **H4**: Pause/resume allowlist enforcement path (**full only**)
+
+Group H creates, starts, pauses, and clears real allow-mode focus spaces
+through the same save + sync path users hit (visible in the UI as the suite
+runs). Each H test runs isolated (state reset before and after, same
+mechanism as A4/A5/A7–A11), so leftover blocks from earlier failing tests
+cannot skew its assertions. It asserts the Rust-derived enforcement snapshot via
+`get_system_diagnostics` → `current_blocking` (`allowed_domains`,
+per-block `mode`, flat blocked list) — the modern allowlist-aware read-back,
+not the legacy hosts payload. Per-URL block/allow decisions and
+blocklist-wins subtraction are decision-time logic covered by Rust unit tests
+and Tier 1 Category 14. Group H is deliberately **websites-only**: automating
+allow-mode app enforcement would enroll the tester's real open apps for quit —
+that surface is manual checklist section 15.
+
 ## Tier 2 profile composition
 
-- `core`: `A1`, `A2`, `A3`, `A6`, `B1`, `C1`, `E1`, `E2`
-- `full`: `core` + `A4`, `A5`, `A7`, `A8`, `A9`, `A10`, `A11`, `B2`, `C2`, `C3`, `F1`, `F2`, `G1`
+- `core`: `A1`, `A2`, `A3`, `A6`, `B1`, `C1`, `E1`, `E2`, `H1`
+- `full`: `core` + `A4`, `A5`, `A7`, `A8`, `A9`, `A10`, `A11`, `B2`, `C2`, `C3`, `F1`, `F2`, `G1`, `H2`, `H3`, `H4`
 
 ## Suite behavior
 
@@ -167,7 +195,7 @@ Expected outcome for A2–A10, A11:
 2. Tests run sequentially by selected profile.
 3. Some full-only pause/schedule cases use per-test reset/setup-cleanup boundaries.
 4. Teardown restores the saved snapshot, saves it, and re-syncs via legacy shim commands.
-5. When profile is `full` and at least one test fails, output includes a bottom **Group failure summary** for groups `A`–`G`.
+5. When profile is `full` and at least one test fails, output includes a bottom **Group failure summary** for groups `A`–`H`.
 
 ### What differentiates Tier 2
 
@@ -176,17 +204,47 @@ Expected outcome for A2–A10, A11:
 
 ### Important limitations
 
-- **A1, C1, C3, and parts of B/C groups** still assert domains appear in `/etc/hosts` via diagnostics. v3 website blocking does **not** write hosts — those tests validate legacy assumptions and **will fail or pass vacuously** unless rewritten to check `derive_payload` / browser-visible blocking instead.
+- **All of groups A, B, C, and E** read back state through `get_helper_diagnostics`, whose v3 shim returns only `{ app_version, backend }` — no `success` flag and no hosts payload. Every one of those tests therefore fails with "diagnostics command failed" on v3. They validate legacy v1 helper assumptions and need rewriting against the modern read-back (`get_system_diagnostics` → `current_blocking`, the pattern Group H uses).
 - Some checks are command-path assertions, not UI-visible assertions.
 - Not a substitute for manual Automation TCC flows, extension install, or enforcer grace UX.
 - **Tech debt:** rewrite Tier 2 website assertions for v3 (Automation + native host) — tracked alongside renaming `updateHostsFile()`.
 
 ---
 
+## Rust unit tests
+
+Desktop enforcement semantics live in Rust and carry their own unit tests,
+run outside the app:
+
+```
+cd src-tauri && cargo test --lib
+```
+
+(Use `--lib`; bare `cargo test` currently fails compiling a stale
+`test_watcher` example binary.)
+
+Coverage relevant to blocking behavior:
+
+- `web_automation.rs` — URL block/allow decisions, including the **desktop
+  allowlist semantics**: allowlist blocks non-allowed hosts, allowlist-only
+  sessions count as active web enforcement, concurrent allowlists union,
+  blocklist precedence on overlap, and block-page metadata attribution
+  (blocklist hit wins; else earliest-started allowlist).
+- `native_host.rs` — extension payload derivation (`derive_payload`),
+  including allowlist domains staying out of the legacy flat blocklist.
+- `profile_scan.rs`, `window_inventory.rs`, `commands/diagnostics.rs`,
+  `commands/migration.rs` — supporting surfaces.
+
+Run these before merging changes to `web_automation.rs`, `native_host.rs`,
+`app_watcher.rs`, or `enforcer.rs`.
+
+---
+
 ## Tier Comparison
 
 - **Tier 1 (logic)**: high breadth of logic permutations, zero system mutation.
-- **Tier 2 (integration)**: moderate breadth, Tauri command paths + stale hosts checks.
+- **Tier 2 (integration)**: moderate breadth, Tauri command paths + stale hosts checks (Group H uses the modern `current_blocking` read-back).
+- **Rust unit tests**: enforcement decision logic (URL matching, allowlist composition, payload derivation).
 - **Manual checklist**: required for website enforcement, permissions, enforcer, and visual UX.
 
 Recommended stance:
@@ -201,18 +259,20 @@ Recommended stance:
 
 iOS enforcement uses the Screen Time plugin (`tauri-plugin-screentime`).
 
-- **Tier 1 (logic):** Runs in the app; safe on iOS. Same blocking/schedule/override logic applies.
+- **Tier 1 (logic):** Runs in the app; safe on iOS. Same blocking/schedule/override logic applies. **Category 14 (T55–T62)** covers the iOS allowlist effective-policy resolvers — run it on the desktop dev build; the resolvers are shared JS and encode iOS-only constraints (Apple's 50-exception cap, `specific-block` vs `all-except`, category-token exclusion).
 - **Tier 2 (integration):** Desktop-oriented; helper-dependent paths always see the shim as “ready” but do not exercise Screen Time. **Manual checklist is the primary way to validate iOS.**
+- **Enforcement layer:** cannot be automated — FamilyControls authorization and shields do not work meaningfully in the simulator, and `ManagedSettingsStore` state cannot be read back. See `architecture.md` §12.3 for device-validation findings and known carve-outs.
 
-For release, run the **manual test checklist** (section **14. iOS-Specific**) on a physical iPhone.
+For release, run the **manual test checklist** (section **14. iOS-Specific**, including the **14.1 iOS allowlist matrix**) on a physical iPhone.
 
 ---
 
 ## Typical contributor workflow
 
 1. Run Tier 1 during active feature work for fast feedback.
-2. Run Tier 2 before merging changes that touch save/sync/shim/app-blocking command paths.
-3. Run the manual checklist for website blocking, permissions, enforcer, and release confidence.
+2. Run Tier 2 before merging changes that touch save/sync/shim/app-blocking command paths (Group H when touching allowlist derivation or sync).
+3. Run `cargo test --lib` before merging changes to Rust enforcement code.
+4. Run the manual checklist for website blocking, permissions, enforcer, and release confidence — section 15 for desktop allowlist, section 14/14.1 for iOS.
 
 ---
 
@@ -221,7 +281,7 @@ For release, run the **manual test checklist** (section **14. iOS-Specific**) on
 - **Tier 1 not running:**
   - confirm `src/index.html` includes `test-utils.js` and `blocking-tests.js`.
   - confirm shortcut handler in `src/app.js` is active in current build.
-- **Tier 2 failing on A1/C1/C3 (hosts assertions):**
-  - expected on v3 until integration tests are rewritten — use manual checklist for website blocking instead.
+- **Tier 2 failing across groups A/B/C/E with "diagnostics command failed":**
+  - expected on v3 until those legacy hosts-era tests are rewritten against `get_system_diagnostics` — use Group H and the manual checklist for website blocking instead.
 - **Tier 2 failing at setup/teardown:**
   - confirm `window.__REDDBLOCK_INTERNALS__` exports are present from `src/app.js`.
