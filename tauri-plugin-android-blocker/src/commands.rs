@@ -55,6 +55,13 @@ pub(crate) async fn read_native_schedules<R: Runtime>(
 }
 
 #[command]
+pub(crate) async fn get_schedule_states<R: Runtime>(
+    app: AppHandle<R>,
+) -> Result<ScheduleStatesResponse> {
+    app.android_blocker().get_schedule_states()
+}
+
+#[command]
 pub(crate) async fn get_installed_apps<R: Runtime>(
     app: AppHandle<R>,
 ) -> Result<InstalledAppsResponse> {

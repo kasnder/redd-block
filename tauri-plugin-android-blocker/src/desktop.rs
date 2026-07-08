@@ -61,6 +61,10 @@ impl<R: Runtime> AndroidBlocker<R> {
         })
     }
 
+    pub fn get_schedule_states(&self) -> crate::Result<ScheduleStatesResponse> {
+        Ok(ScheduleStatesResponse { states: vec![] })
+    }
+
     pub fn get_installed_apps(&self) -> crate::Result<InstalledAppsResponse> {
         Ok(InstalledAppsResponse { apps: vec![] })
     }

@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.Intent
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import net.kollnig.reddblockandroid.gate.UnlockActivity
 import net.kollnig.reddblockandroid.schedule.Schedules
 
 import net.kollnig.reddblockandroid.util.isPrefsInitialized
@@ -62,7 +63,7 @@ class BlockerService : AccessibilityService() {
                             if (blockingSchedule != null) {
                                 Log.d(TAG, "Blocking website $domain in browser ($pkg)")
                                 navigateBrowserToBlank(pkg)
-                                launchFrictionGate(blockingSchedule.id, blockingSchedule.name, domain)
+                                launchFrictionGate(blockingSchedule.id, blockingSchedule.name, domain, isWebsite = true)
                                 return
                             }
                         }
@@ -83,24 +84,31 @@ class BlockerService : AccessibilityService() {
                 lastBlockedTime = now
                 Log.d(TAG, "Blocking app $pkg by schedule: $blockingSchedule")
                 val appLabel = getAppLabel(pkg)
-                launchFrictionGate(blockingSchedule.id, blockingSchedule.name, appLabel)
+                launchFrictionGate(blockingSchedule.id, blockingSchedule.name, appLabel, isWebsite = false)
             }
         }
     }
 
     /**
-     * Launches the Tauri main activity (the webview UI) with the block
-     * details as extras, instead of a standalone native UnlockActivity.
-     * `BlockerPlugin` reads these extras from `load()` (cold start) or
-     * `onNewIntent()` (warm start) and forwards them to the webview as a
-     * `friction-gate` event, where the override-challenge UI lives now.
+     * Launches the native [UnlockActivity] friction gate with the block
+     * details as extras. A native activity appears near-instantly, unlike
+     * the Tauri main activity, whose webview cold start (Rust init + JS
+     * bundle load) took several seconds — unacceptable for an
+     * interception surface. On success UnlockActivity pauses the schedule
+     * directly in Kotlin; the webview reconciles via `getScheduleStates`
+     * on its next resume.
      */
-    private fun launchFrictionGate(scheduleId: String, scheduleName: String, blockedTarget: String) {
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName) ?: return
-        val intent = Intent(launchIntent).apply {
-            putExtra(EXTRA_SCHEDULE_ID, scheduleId)
-            putExtra(EXTRA_SCHEDULE_NAME, scheduleName)
-            putExtra(EXTRA_BLOCKED_TARGET, blockedTarget)
+    private fun launchFrictionGate(
+        scheduleId: String,
+        scheduleName: String,
+        blockedTarget: String,
+        isWebsite: Boolean,
+    ) {
+        val intent = Intent(this, UnlockActivity::class.java).apply {
+            putExtra(UnlockActivity.EXTRA_SCHEDULE_ID, scheduleId)
+            putExtra(UnlockActivity.EXTRA_SCHEDULE_NAME, scheduleName)
+            putExtra(UnlockActivity.EXTRA_BLOCKED_TARGET, blockedTarget)
+            putExtra(UnlockActivity.EXTRA_IS_WEBSITE, isWebsite)
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
         startActivity(intent)
@@ -301,8 +309,11 @@ class BlockerService : AccessibilityService() {
 
     companion object {
         private const val TAG = "BlockerService"
-        const val EXTRA_SCHEDULE_ID = "friction_schedule_id"
-        const val EXTRA_SCHEDULE_NAME = "friction_schedule_name"
-        const val EXTRA_BLOCKED_TARGET = "friction_blocked_target"
+        // Canonical definitions live on the consumer, UnlockActivity;
+        // aliased here because BlockerPlugin historically reads them
+        // from BlockerService for the (legacy) webview friction gate.
+        const val EXTRA_SCHEDULE_ID = UnlockActivity.EXTRA_SCHEDULE_ID
+        const val EXTRA_SCHEDULE_NAME = UnlockActivity.EXTRA_SCHEDULE_NAME
+        const val EXTRA_BLOCKED_TARGET = UnlockActivity.EXTRA_BLOCKED_TARGET
     }
 }

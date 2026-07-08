@@ -71,6 +71,12 @@ impl<R: Runtime> AndroidBlocker<R> {
             .map_err(Into::into)
     }
 
+    pub fn get_schedule_states(&self) -> crate::Result<ScheduleStatesResponse> {
+        self.0
+            .run_mobile_plugin("getScheduleStates", ())
+            .map_err(Into::into)
+    }
+
     pub fn get_installed_apps(&self) -> crate::Result<InstalledAppsResponse> {
         self.0
             .run_mobile_plugin("getInstalledApps", ())

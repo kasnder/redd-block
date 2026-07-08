@@ -158,6 +158,37 @@ object Schedules {
         }
     }
 
+    /**
+     * Pauses blocking after the native friction gate is passed: disables
+     * every entity belonging to the same webview schedule (flattened
+     * segment ids share the `<scheduleId>-` prefix) until [untilMs] and
+     * arms a [ReEnableWorker] per entity. The webview reconciles its own
+     * pause state from this via `getScheduleStates` on next resume.
+     */
+    fun pauseSchedule(context: Context, scheduleId: String, untilMs: Long) {
+        Log.d(TAG, "Pausing schedule $scheduleId until $untilMs")
+        val baseId = scheduleId.substringBefore("-").let {
+            // Flattened ids are `<uuid>-<segIdx>[-<occIdx>]`; a UUID itself
+            // contains dashes, so take the first 36 chars when it looks like
+            // a UUID, otherwise treat the whole id as the base.
+            if (scheduleId.length >= 36) scheduleId.take(36) else scheduleId
+        }
+        val schedules = getAll().map { schedule ->
+            // Only touch entities that are currently enabled — an entity the
+            // user disabled from the webview must not be resurrected by the
+            // pause-expiry ReEnableWorker.
+            if (schedule.isEnabled &&
+                (schedule.id == scheduleId || schedule.id == baseId || schedule.id.startsWith("$baseId-"))
+            ) {
+                ScheduleManager.scheduleReEnable(context, schedule.id, untilMs - System.currentTimeMillis())
+                schedule.copy(isEnabled = false, disabledUntil = untilMs)
+            } else {
+                schedule
+            }
+        }
+        saveAll(schedules)
+    }
+
     /** Ends a pause: re-enables the schedule when [ReEnableWorker] fires. */
     fun reEnableSchedule(context: Context, scheduleId: String) {
         Log.d(TAG, "Auto-re-enabling schedule: $scheduleId")
@@ -429,6 +460,8 @@ object Schedules {
             blockedApps = blockedApps,
             blockedWebsites = blockedWebsites,
             frictionWordCount = json.optInt("frictionWordCount", 15),
+            emoji = json.optString("emoji").takeIf { it.isNotEmpty() },
+            color = json.optString("color").takeIf { it.isNotEmpty() },
             disabledUntil = if (json.has("disabledUntil")) json.optLong("disabledUntil") else null,
             activeFromMs = if (json.has("activeFromMs")) json.optLong("activeFromMs") else null,
             activeUntilMs = if (json.has("activeUntilMs")) json.optLong("activeUntilMs") else null
@@ -458,6 +491,8 @@ object Schedules {
         put("blockedApps", JSONArray(schedule.blockedApps))
         put("blockedWebsites", JSONArray(schedule.blockedWebsites))
         put("frictionWordCount", schedule.frictionWordCount)
+        schedule.emoji?.let { put("emoji", it) }
+        schedule.color?.let { put("color", it) }
         schedule.disabledUntil?.let { put("disabledUntil", it) }
         schedule.activeFromMs?.let { put("activeFromMs", it) }
         schedule.activeUntilMs?.let { put("activeUntilMs", it) }

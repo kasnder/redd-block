@@ -39,6 +39,8 @@ class ScheduleEntryArg {
     var blockedApps: List<String> = listOf()
     var blockedWebsites: List<String> = listOf()
     var frictionWordCount: Int = 15
+    var emoji: String? = null
+    var color: String? = null
     var isPaused: Boolean = false
     var pauseEndTimestampMs: Double? = null
     var activeFromTimestampMs: Double? = null
@@ -227,6 +229,8 @@ class BlockerPlugin(private val activity: Activity) : Plugin(activity) {
                 // which JS owns.
                 existing.copy(
                     name = entry.name,
+                    emoji = entry.emoji,
+                    color = entry.color,
                     isEnabled = entry.enabled && !pausedNow,
                     disabledUntil = if (pausedNow) pauseEndMs else null
                 )
@@ -239,6 +243,8 @@ class BlockerPlugin(private val activity: Activity) : Plugin(activity) {
                     blockedApps = entry.blockedApps,
                     blockedWebsites = entry.blockedWebsites,
                     frictionWordCount = entry.frictionWordCount,
+                    emoji = entry.emoji,
+                    color = entry.color,
                     disabledUntil = if (pausedNow) pauseEndMs else null,
                     activeFromMs = activeFromMs,
                     activeUntilMs = activeUntilMs
@@ -296,6 +302,26 @@ class BlockerPlugin(private val activity: Activity) : Plugin(activity) {
         ScheduleManager.cancelStopSession(activity, args.id)
         Schedules.stopSession(activity, args.id)
         invoke.resolve(successObject())
+    }
+
+    /**
+     * Reports each Kotlin schedule entity's enabled/pause state so the
+     * webview can reconcile pauses granted by the native friction gate
+     * (UnlockActivity) while the webview process was dead.
+     */
+    @Command
+    fun getScheduleStates(invoke: Invoke) {
+        val arr = JSArray()
+        for (schedule in Schedules.getAll()) {
+            val entry = JSObject()
+            entry.put("id", schedule.id)
+            entry.put("isEnabled", schedule.isEnabled)
+            schedule.disabledUntil?.let { entry.put("disabledUntil", it.toDouble()) }
+            arr.put(entry)
+        }
+        val ret = JSObject()
+        ret.put("states", arr)
+        invoke.resolve(ret)
     }
 
     // --- Migration ---

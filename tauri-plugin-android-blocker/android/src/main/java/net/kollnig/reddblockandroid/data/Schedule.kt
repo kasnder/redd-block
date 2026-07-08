@@ -11,6 +11,9 @@ data class Schedule(
     val blockedApps: List<String> = emptyList(),
     val blockedWebsites: List<String> = emptyList(),
     val frictionWordCount: Int = 15,
+    /** Blocklist emoji/accent colour from the webview, for the native friction gate. */
+    val emoji: String? = null,
+    val color: String? = null,
     /** Pause expiry (epoch ms) while a JS-initiated pause is in effect. */
     val disabledUntil: Long? = null,
     /** One-shot occurrence window (epoch ms). When [activeUntilMs] is set,

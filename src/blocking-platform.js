@@ -16,6 +16,7 @@ import { renderBlocklists } from './blocklists.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { applyScheduleStartOverlayPresentation, getScheduleStartOverlayForWarningApps, playAppBlockingLetsGoVoice } from './schedule-overlay.js';
 import { closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, initializeOverrideModalChallenge, openPauseModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
+import { isModalVisible } from './modal-manager.js';
 import { updateManageSectionVisibility } from './settings.js';
 import { CURRENT_EULA_REVISION, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress } from './onboarding.js';
 import { generateId, runPostAcceptanceStartup } from './app.js';
@@ -809,7 +810,59 @@ export async function initializeAndroidBlockingState() {
     // id. Desktop does this in its startup branch; Android needs it too.
     await ensureInstalledAppsCache();
     await migrateAndroidNativeSchedules();
+    // Adopt pauses granted by the native friction gate while this webview
+    // process was dead — must run before syncSchedulesToHelper, which
+    // otherwise overwrites Kotlin's pause state with our stale (unpaused) one.
+    await reconcileAndroidNativePauses();
     await syncSchedulesToHelper();
+}
+
+/**
+ * One-way Kotlin→JS pause adoption. The native friction gate
+ * (UnlockActivity) pauses schedule entities directly in the Kotlin store
+ * (`Schedules.pauseSchedule`); here we fold any still-running native pause
+ * back into state.appData so the UI and the next setSchedules round-trip
+ * agree with what the user was granted. Only pauses are adopted — expiry
+ * and un-pausing stay JS-owned, exactly as before.
+ */
+export async function reconcileAndroidNativePauses() {
+    let states;
+    try {
+        ({ states } = await tauriAPI.androidGetScheduleStates());
+    } catch (e) {
+        console.warn('[reconcileAndroidNativePauses] Failed to read native states:', e);
+        return;
+    }
+
+    const now = Date.now();
+    let changed = false;
+    for (const entity of states || []) {
+        if (entity.isEnabled || !entity.disabledUntil || entity.disabledUntil <= now) continue;
+
+        const target = findAndroidBlockingTarget(entity.id);
+        if (!target) continue;
+
+        if (target.type === 'block') {
+            const block = target.block;
+            if (!block.isPaused || (block.pauseEndTime || 0) < entity.disabledUntil) {
+                block.isPaused = true;
+                block.pauseEndTime = entity.disabledUntil;
+                changed = true;
+            }
+        } else {
+            const schedule = target.schedule;
+            if (!schedule.isPaused || (schedule.pauseEndTime || 0) < entity.disabledUntil) {
+                schedule.isPaused = true;
+                schedule.pauseEndTime = entity.disabledUntil;
+                changed = true;
+            }
+        }
+    }
+
+    if (changed) {
+        await saveData();
+        render();
+    }
 }
 
 export const ANDROID_DAY_TO_MON0 = {
@@ -986,7 +1039,14 @@ export function listenForAndroidFrictionGate() {
 }
 
 export async function onAndroidResumed() {
-    if (state.androidPermissionsGranted) return;
+    if (state.androidPermissionsGranted) {
+        // Back in the foreground with blocking already set up — the user may
+        // have just passed the native friction gate, so adopt any pause it
+        // granted and push the reconciled state back to Kotlin.
+        await reconcileAndroidNativePauses();
+        await syncSchedulesToHelper();
+        return;
+    }
     const wasGranted = state.androidPermissionsGranted;
     await checkAndroidPermissions();
     if (!wasGranted && state.androidPermissionsGranted) {
@@ -1098,21 +1158,38 @@ export function openAndroidFrictionGateModal(event) {
     state.androidPermissionsGranted = true;
     updateOnboardingVisibility();
 
-    delete window.overrideScheduleId;
-    state.overrideBlockId = null;
-    state.overrideBlocklistIdForHelper = null;
-    state.pauseBlockId = null;
-    state.pauseScheduleData = null;
-
     const target = findAndroidBlockingTarget(event.scheduleId);
     if (!target) {
         // Every Kotlin schedule is created from state.appData via set_schedules
         // (or imported by migrateAndroidNativeSchedules), so an unknown id
         // means the two stores are out of sync. Don't show a challenge we
-        // can't act on; the next syncSchedulesToHelper reconciles Kotlin.
+        // can't act on (and don't disturb a gate that is already open);
+        // the next syncSchedulesToHelper reconciles Kotlin.
         console.error('[friction-gate] No matching block/schedule for id:', event.scheduleId);
         return;
     }
+
+    // Newest gate wins. A friction gate only makes sense for the app the
+    // user is trying to open right now, so a gate that is still open for a
+    // *different* target (user hopped between blocked apps) must be closed
+    // before opening the new one: override-modal and pause-modal share
+    // z-index 200, so DOM order — not open order — decides which paints on
+    // top, and the close functions are also what clears the other gate's
+    // backing state. If the incoming event matches the gate already showing,
+    // keep it instead so a half-typed challenge survives re-interception.
+    if (target.type === 'block'
+        && isModalVisible('override-modal')
+        && state.overrideBlockId === target.block.id) {
+        return;
+    }
+    if (target.type === 'schedule'
+        && isModalVisible('pause-modal')
+        && !state.pauseBlockId
+        && state.pauseScheduleData?.blocklistId === target.schedule.blocklistId) {
+        return;
+    }
+    closeOverrideModal();
+    closePauseModal();
 
     if (target.type === 'block') {
         state.overrideBlockId = target.block.id;

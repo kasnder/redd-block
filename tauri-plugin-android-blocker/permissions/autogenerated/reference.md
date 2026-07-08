@@ -10,6 +10,7 @@ Default permissions for the android-blocker plugin
 - `allow-start-manual-block`
 - `allow-stop-manual-block`
 - `allow-read-native-schedules`
+- `allow-get-schedule-states`
 - `allow-get-installed-apps`
 - `allow-set-event-handler`
 
@@ -70,6 +71,32 @@ Enables the get_installed_apps command without any pre-configured scope.
 <td>
 
 Denies the get_installed_apps command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`android-blocker:allow-get-schedule-states`
+
+</td>
+<td>
+
+Enables the get_schedule_states command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`android-blocker:deny-get-schedule-states`
+
+</td>
+<td>
+
+Denies the get_schedule_states command without any pre-configured scope.
 
 </td>
 </tr>

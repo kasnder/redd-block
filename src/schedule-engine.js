@@ -295,6 +295,8 @@ export async function syncSchedulesToHelper() {
                             blockedApps,
                             blockedWebsites,
                             frictionWordCount,
+                            emoji: blocklist?.emoji || null,
+                            color: blocklist?.color || null,
                             isPaused,
                             pauseEndTimestampMs: (isPaused && schedule.pauseEndTime) ? schedule.pauseEndTime : null,
                             activeFromTimestampMs: occurrence.start.getTime(),
@@ -319,6 +321,8 @@ export async function syncSchedulesToHelper() {
                         blockedApps,
                         blockedWebsites,
                         frictionWordCount,
+                        emoji: blocklist?.emoji || null,
+                        color: blocklist?.color || null,
                         isPaused,
                         pauseEndTimestampMs: (isPaused && schedule.pauseEndTime) ? schedule.pauseEndTime : null,
                     });
@@ -346,6 +350,8 @@ export async function syncSchedulesToHelper() {
                     blockedApps: blocklist.apps || [],
                     blockedWebsites: blocklist.websites || [],
                     frictionWordCount,
+                    emoji: blocklist.emoji || null,
+                    color: blocklist.color || null,
                     isPaused,
                     pauseEndTimestampMs: (isPaused && block.pauseEndTime) ? block.pauseEndTime : null,
                 });

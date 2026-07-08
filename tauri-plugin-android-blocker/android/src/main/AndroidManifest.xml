@@ -28,6 +28,19 @@
                 android:resource="@xml/blocker_configuration" />
         </service>
 
+        <!-- Native friction gate. singleTask + its own task affinity keeps it
+             out of the main app's task and delivers repeat blocks to the same
+             instance via onNewIntent; excludeFromRecents so a dismissed gate
+             does not linger in the recents switcher. -->
+        <activity
+            android:name="net.kollnig.reddblockandroid.gate.UnlockActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="net.kollnig.reddblockandroid.gate"
+            android:excludeFromRecents="true"
+            android:noHistory="false"
+            android:theme="@style/Theme.ReddBlock.Gate" />
+
         <provider
             android:name="androidx.startup.InitializationProvider"
             android:authorities="${applicationId}.androidx-startup"

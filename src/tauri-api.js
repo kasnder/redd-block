@@ -81,6 +81,7 @@ export const tauriAPI = {
         invoke('plugin:android-blocker|start_manual_block', { id, endTimestampMs }),
     androidStopManualBlock: (id) => invoke('plugin:android-blocker|stop_manual_block', { id }),
     androidReadNativeSchedules: () => invoke('plugin:android-blocker|read_native_schedules'),
+    androidGetScheduleStates: () => invoke('plugin:android-blocker|get_schedule_states'),
     androidGetInstalledApps: () => invoke('plugin:android-blocker|get_installed_apps'),
     androidSetEventHandler: (handler) => invoke('plugin:android-blocker|set_event_handler', { handler }),
 
