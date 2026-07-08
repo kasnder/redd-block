@@ -8,7 +8,7 @@ import snoozeIconUrl from './images/snooze.png';
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
-import { isProtectedApp } from './blocklist-utils.js';
+import { isProtectedApp, ALWAYS_ON_END_TIME } from './blocklist-utils.js';
 import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingleOccurrence, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile, createDefaultBlocklist } from './persistence.js';
 import { render } from './render.js';
@@ -827,9 +827,28 @@ export async function migrateAndroidNativeSchedules() {
     if (!state.isAndroid) return;
     if (state.appData.settings?.androidMigrationDone) return;
 
+    // Blocks restored from currently-running legacy MANUAL schedules; their
+    // Kotlin sessions are (re)started after the post-migration sync below.
+    const restoredAlwaysOnBlockIds = [];
+
     try {
-        const { routinesJson } = await tauriAPI.androidReadNativeSchedules();
+        const { routinesJson, activeSessionsJson } = await tauriAPI.androidReadNativeSchedules();
         const legacySchedules = JSON.parse(routinesJson || '[]');
+
+        // Legacy MANUAL blocks are "on" when the user toggled them on
+        // (isEnabled), which in the old app always started a live session.
+        // Collect session ids too as a robustness fallback in case the
+        // session pref and the enabled flag ever drifted apart.
+        const activeSessionScheduleIds = new Set();
+        try {
+            const sessions = JSON.parse(activeSessionsJson || '[]');
+            if (Array.isArray(sessions)) {
+                for (const s of sessions) {
+                    const sid = s?.scheduleId || s?.routineId;
+                    if (sid) activeSessionScheduleIds.add(sid);
+                }
+            }
+        } catch (_) { /* malformed sessions → treat as none active */ }
 
         if (Array.isArray(legacySchedules) && legacySchedules.length > 0) {
             for (const legacy of legacySchedules) {
@@ -845,13 +864,29 @@ export async function migrateAndroidNativeSchedules() {
                 });
 
                 if (timing.type === 'MANUAL') {
-                    // Legacy manual (toggle-on) blocks are deliberately not
-                    // carried over as active blocks: the old model toggled
-                    // indefinitely, the new one is "block for N minutes".
-                    // The curated list survives as the blocklist above; any
-                    // still-running legacy session ends when the first
-                    // set_schedules sync replaces the Kotlin schedule set.
-                    console.info('[migrateAndroidNativeSchedules] Imported MANUAL legacy schedule as blocklist only:', legacy.id);
+                    // Legacy MANUAL schedules are indefinite toggle-on/off
+                    // blocks. If one was toggled on (enabled, or a live
+                    // session exists), carry it over as an always-on block so
+                    // the user's protection survives the upgrade — the new
+                    // app supports indefinite ("Until I stop") blocks. Idle
+                    // MANUAL schedules survive as the blocklist above only.
+                    // (Without this, the first set_schedules sync deletes the
+                    // legacy schedule/session and blocking silently stops.)
+                    const isRunning = legacy.isEnabled || activeSessionScheduleIds.has(legacy.id);
+                    if (isRunning) {
+                        const blockId = generateId();
+                        state.appData.activeBlocks.push({
+                            id: blockId,
+                            blocklistId,
+                            startTime: Date.now(),
+                            endTime: ALWAYS_ON_END_TIME,
+                            isAlwaysOn: true,
+                        });
+                        restoredAlwaysOnBlockIds.push(blockId);
+                        console.info('[migrateAndroidNativeSchedules] Imported running MANUAL legacy schedule as always-on block:', legacy.id);
+                    } else {
+                        console.info('[migrateAndroidNativeSchedules] Imported MANUAL legacy schedule as blocklist only:', legacy.id);
+                    }
                     continue;
                 }
 
@@ -900,6 +935,23 @@ export async function migrateAndroidNativeSchedules() {
             createDefaultBlocklist();
         }
         await saveData();
+
+        // Restore Kotlin sessions for carried-over always-on blocks: the sync
+        // (re)creates their MANUAL Schedule entities, then start_manual_block
+        // activates the session with no auto-stop — mirrors proceedWithBlock.
+        // Must run before initializeAndroidBlockingState's own sync, which
+        // would otherwise leave the entities present but sessionless.
+        if (restoredAlwaysOnBlockIds.length > 0) {
+            await syncSchedulesToHelper();
+            for (const blockId of restoredAlwaysOnBlockIds) {
+                try {
+                    await tauriAPI.androidStartManualBlock(blockId, null);
+                } catch (startErr) {
+                    console.warn('[migrateAndroidNativeSchedules] Failed to start restored always-on block:', blockId, startErr);
+                }
+            }
+        }
+
         console.log('[migrateAndroidNativeSchedules] Imported', legacySchedules.length, 'legacy schedules');
     } catch (e) {
         // Leave the flag unset on failure so we retry on next launch —
