@@ -24932,7 +24932,11 @@ Object.assign(window.__REDDBLOCK_INTERNALS__, {
     PROTECTED_DOMAINS,
     duplicateBlocklist,
     getNextCopyName,
-    getMaxOverrideCharsForType
+    getMaxOverrideCharsForType,
+    deriveIOSEffectiveWebsitePolicy,
+    deriveIOSEffectiveAppPolicy,
+    validateIOSAllowlistLimits,
+    IOS_ALLOWLIST_EXCEPTION_LIMIT
 });
 
 console.log('💡 To run blocking tests, type: runBlockingTests() in the console');

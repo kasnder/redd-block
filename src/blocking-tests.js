@@ -16,6 +16,7 @@
  * - T43-T47: Self-Block Prevention
  * - T48-T50: Protected Domain Prevention
  * - T51-T54, T51da: Blocklist duplication (schedules copy as pending drafts; DA uses "kopi")
+ * - T55-T62: iOS allowlist effective-policy resolvers (pure helpers)
  */
 
 (function () {
@@ -1403,6 +1404,143 @@
     }
 
     // ========================================
+    // CATEGORY 14: iOS ALLOWLIST POLICY (T55-T62)
+    // ========================================
+
+    // Pure-resolver tests for the iOS effective-policy helpers (specific-block
+    // vs all-except, blocklist-wins overlap, protected filtering, 50-cap).
+    // Sources mirror collectActiveIOSEnforcementSources output: [{ blocklist }].
+    function runIOSAllowlistPolicyTests() {
+        console.log('\n📱 Category 14: iOS Allowlist Policy');
+        console.log('------------------------------------');
+
+        const {
+            deriveIOSEffectiveWebsitePolicy,
+            deriveIOSEffectiveAppPolicy,
+            validateIOSAllowlistLimits,
+            IOS_ALLOWLIST_EXCEPTION_LIMIT
+        } = window.__REDDBLOCK_INTERNALS__;
+
+        const blockSource = (overrides = {}) => ({
+            blocklist: createMockBlocklist({ mode: 'blocklist', ...overrides })
+        });
+        const allowSource = (overrides = {}) => ({
+            blocklist: createMockBlocklist({ mode: 'allowlist', ...overrides })
+        });
+        const selection = (appTokens, categoryTokens = []) => ({
+            applicationTokens: appTokens,
+            categoryTokens
+        });
+
+        // T55: Block-only sources → specific-block with the blocked union
+        (function T55() {
+            const policy = deriveIOSEffectiveWebsitePolicy([
+                blockSource({ websites: ['reddit.com'] }),
+                blockSource({ websites: ['youtube.com'] })
+            ]);
+            assertEqual(policy.kind, 'specific-block', 'T55: block-only → specific-block');
+            assertSetEquals(new Set(policy.domains), new Set(['reddit.com', 'youtube.com']), 'T55: blocked union');
+        })();
+
+        // T56: Allow-only source → all-except with the allowed set
+        (function T56() {
+            const policy = deriveIOSEffectiveWebsitePolicy([
+                allowSource({ websites: ['github.com', 'wikipedia.org'] })
+            ]);
+            assertEqual(policy.kind, 'all-except', 'T56: allow-only → all-except');
+            assertSetEquals(new Set(policy.domains), new Set(['github.com', 'wikipedia.org']), 'T56: allowed set');
+        })();
+
+        // T57: Two concurrent allowlists union their exceptions
+        (function T57() {
+            const policy = deriveIOSEffectiveWebsitePolicy([
+                allowSource({ websites: ['github.com'] }),
+                allowSource({ websites: ['wikipedia.org'] })
+            ]);
+            assertEqual(policy.kind, 'all-except', 'T57: two allowlists → all-except');
+            assertSetEquals(new Set(policy.domains), new Set(['github.com', 'wikipedia.org']), 'T57: exception union');
+        })();
+
+        // T58: Blocklist wins on overlap — blocked domain removed from exceptions
+        (function T58() {
+            const policy = deriveIOSEffectiveWebsitePolicy([
+                allowSource({ websites: ['github.com', 'wikipedia.org'] }),
+                blockSource({ websites: ['github.com'] })
+            ]);
+            assertEqual(policy.kind, 'all-except', 'T58: mixed → all-except');
+            assertSetEquals(new Set(policy.domains), new Set(['wikipedia.org']), 'T58: blocklist wins on overlap');
+        })();
+
+        // T59: Empty exception set stays all-except (block everything), never
+        // falls back to blocklist mode; protected domains are filtered out
+        (function T59() {
+            const policy = deriveIOSEffectiveWebsitePolicy([
+                allowSource({ websites: ['github.com'] }),
+                blockSource({ websites: ['github.com'] })
+            ]);
+            assertEqual(policy.kind, 'all-except', 'T59: fully-overlapped allowlist stays all-except');
+            assertSetEmpty(new Set(policy.domains), 'T59: empty exception set is legal');
+
+            const protectedPolicy = deriveIOSEffectiveWebsitePolicy([
+                allowSource({ websites: ['reddfocus.org', 'github.com'] })
+            ]);
+            assertSetEquals(new Set(protectedPolicy.domains), new Set(['github.com']), 'T59: protected domains filtered from exceptions');
+        })();
+
+        // T60: App policy — allow-only tokens → all-except; categories never
+        // ride along as exceptions
+        (function T60() {
+            const policy = deriveIOSEffectiveAppPolicy([
+                allowSource({ iosScreenTimeSelection: selection(['tokA', 'tokB'], ['catX']) })
+            ]);
+            assertEqual(policy.kind, 'all-except', 'T60: allow tokens → all-except');
+            assertSetEquals(new Set(policy.appTokenData), new Set(['tokA', 'tokB']), 'T60: allowed token set');
+            assertSetEmpty(new Set(policy.categoryTokenData), 'T60: categories excluded from allow mode');
+        })();
+
+        // T61: App policy — blocklist token wins over allowed token; websites-only
+        // allowlist leaves the app policy in specific-block (resource independence)
+        (function T61() {
+            const policy = deriveIOSEffectiveAppPolicy([
+                allowSource({ iosScreenTimeSelection: selection(['tokA', 'tokB']) }),
+                blockSource({ iosScreenTimeSelection: selection(['tokA'], ['catY']) })
+            ]);
+            assertEqual(policy.kind, 'all-except', 'T61: mixed app sources → all-except');
+            assertSetEquals(new Set(policy.appTokenData), new Set(['tokB']), 'T61: blocked token removed from exceptions');
+
+            const independent = deriveIOSEffectiveAppPolicy([
+                allowSource({ websites: ['github.com'] }),
+                blockSource({ iosScreenTimeSelection: selection(['tokC'], ['catZ']) })
+            ]);
+            assertEqual(independent.kind, 'specific-block', 'T61: websites-only allowlist leaves apps in specific-block');
+            assertSetEquals(new Set(independent.appTokenData), new Set(['tokC']), 'T61: blocked tokens kept');
+            assertSetEquals(new Set(independent.categoryTokenData), new Set(['catZ']), 'T61: blocked categories kept in specific-block');
+        })();
+
+        // T62: 50-cap validation — all-except over the cap fails; specific-block
+        // never fails (keeps legacy truncation behavior)
+        (function T62() {
+            const manyDomains = Array.from({ length: IOS_ALLOWLIST_EXCEPTION_LIMIT + 1 }, (_, i) => `site${i}.com`);
+            const over = validateIOSAllowlistLimits(
+                deriveIOSEffectiveWebsitePolicy([allowSource({ websites: manyDomains })])
+            );
+            assert(over.ok === false && over.reason === 'domains', 'T62: 51 allowed domains fails validation');
+            assertEqual(over.count, IOS_ALLOWLIST_EXCEPTION_LIMIT + 1, 'T62: failure reports the offending count');
+
+            const manyTokens = Array.from({ length: IOS_ALLOWLIST_EXCEPTION_LIMIT + 1 }, (_, i) => `tok${i}`);
+            const overTokens = validateIOSAllowlistLimits(
+                deriveIOSEffectiveAppPolicy([allowSource({ iosScreenTimeSelection: selection(manyTokens) })])
+            );
+            assert(overTokens.ok === false && overTokens.reason === 'tokens', 'T62: 51 allowed tokens fails validation');
+
+            const blockOnly = validateIOSAllowlistLimits(
+                deriveIOSEffectiveWebsitePolicy([blockSource({ websites: manyDomains })])
+            );
+            assert(blockOnly.ok === true, 'T62: specific-block policies always pass validation');
+        })();
+    }
+
+    // ========================================
     // MAIN TEST RUNNER
     // ========================================
 
@@ -1427,6 +1565,7 @@
             runBlocklistDuplicationTests();
             runSelfBlockPreventionTests();
             runProtectedDomainTests();
+            runIOSAllowlistPolicyTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -1448,7 +1587,8 @@
         runOverrideAllStateTests,
         runBlocklistDuplicationTests,
         runSelfBlockPreventionTests,
-        runProtectedDomainTests
+        runProtectedDomainTests,
+        runIOSAllowlistPolicyTests
     };
 
     console.log('🧪 ReddBlock Blocking Tests loaded. Press Cmd+Shift+T to run tests.');

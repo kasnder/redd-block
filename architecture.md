@@ -497,6 +497,85 @@ flowchart TD
     cmd --> sched[ManagedSettingsStore_schedule_via_monitor]
 ```
 
+### 12.3 Allow-mode focus spaces (allowlists)
+
+iOS enforces allow-mode focus spaces with Apple-native primitives: websites via
+`webContent.blockedByFilter = .all(except: Set<WebDomain>)`, apps via
+`shield.applicationCategories = .all(except: Set<ApplicationToken>)`. Both cap
+exceptions at 50 per store.
+
+**Effective-policy resolver.** Enforcement is derived state. Per resource type
+(websites, app tokens), independently:
+
+- No active allowlist source with items of that type → `specific-block`:
+  each channel keeps its own legacy `.specific` sets (blocklist behavior,
+  unchanged).
+- Any active allowlist source → `all-except(allowedUnion − blockedUnion)`:
+  concurrent allowlists union; an item on any active blocklist is removed from
+  the exceptions (**blocklist wins on overlap**, matching desktop). An empty
+  exception set is legal ("block everything of that type") and never falls back
+  to blocklist mode.
+
+The resolver exists twice, deliberately mirrored: JS
+(`deriveIOSEffectiveWebsitePolicy` / `deriveIOSEffectiveAppPolicy` in
+`src/app.js`, used for pre-validation; tested in `blocking-tests.js` T55–T62)
+and Swift (`IOSPolicyResolver` + `IOSWebPolicyApplier` / `IOSAppPolicyApplier`
+in the shared `ScheduleData.swift`, used for enforcement).
+
+**Two-store stacking rule.** ManagedSettings stacks restrictively — a store can
+never make another store less restrictive, so two different `.all(except:)`
+sets enforce their INTERSECTION. Whenever a channel applies an allowlist
+policy, its exception set is therefore the **cross-channel union** of allowed
+items (manual allowlist record + active allowlist schedule entries) minus
+blocked items. Both writers (plugin on the default store, monitor extension on
+the `"schedule"` store) call the same shared appliers after every App Group
+record change; a channel with no active allowlist of its own keeps its exact
+legacy `.specific` sets.
+
+**App Group records.** The manual channel keeps blocked items
+(`redd.manualBlockState`, mode nil) and allowed items
+(`redd.manualAllowlistState`, mode `"allowlist"`) in separate records so
+block-end/resume one-off subtract/merge math never mixes semantics. Schedule
+entries carry a per-entry `mode` field.
+
+**Hard limits, never truncation.** Blocklist mode keeps the legacy `prefix(50)`
+truncation. Allowlist mode fails loudly instead — truncating an allow list
+over-blocks. JS pre-validates both caps before any store write; Swift
+double-checks in `startBlock` (returns `success: false`) and, as a last-resort
+belt-and-braces guard, the appliers clamp deterministically (over-blocking is
+the fail-safe direction for a blocker).
+
+**Category tokens are excluded from allow mode.** Apple's `.all(except:)`
+takes application tokens only; categories cannot be exceptions. The start gate
+warns and proceeds with app tokens only. In `specific-block` mode category
+shields behave as before.
+
+**Shield attribution.** Allowlist-blocked targets are "everything else", so no
+per-target snapshot row exists. `ShieldAttributionSection.allowlistFallback`
+(one per channel, earliest-started active allowlist source, marked
+`isAllowlistSource`) is used when no per-target row matches; the shield then
+renders "X isn't on your current allow list." with the focus-space pill and
+timing. Explicit blocklist rows are unchanged and win per-target as before.
+
+**Device-validation findings (2026-07-07, physical iPhone).** `.all(except:)`
+exceptions are reliably honored — allowed apps open with no shield, and no
+generic "Restricted" shield was observed. Known **under-blocking carve-outs**
+(platform ceiling, also unshieldable in blocklist mode):
+
+1. Apps in Settings › Screen Time › **Always Allowed** resist the category
+   shield.
+2. Several first-party system apps are exempt from `.all`-style shields
+   (observed: Settings, Clock, Find My, Health, Wallet, Files, Magnifier,
+   Fitness, Phone, Safari). The Safari leak is mitigated: the web filter still
+   blocks non-allowed sites inside it.
+3. Other FamilyControls-authorized Screen Time apps (observed: AppBlock, Jomo,
+   Foqos) are exempt from other apps' category shields — the same mechanism
+   that exempts ReDD Blocker itself. Undocumented Apple behavior.
+
+**Out of scope on iOS:** desktop-style process watching/force-quit, the
+"Let's go!" warning overlay, and the diagnostics view (its data source is the
+desktop `current_blocking` state and shows nothing on iOS).
+
 ---
 
 ## 13) Data paths and persistence (v3)

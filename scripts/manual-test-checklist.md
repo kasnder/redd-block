@@ -205,6 +205,32 @@ Screen Time APIs — no hosts file, helper, or browser extension.
 - [ ] Pause/resume and override flows
 - [ ] No desktop-only settings (Clean hosts, helper lifecycle)
 
+### 14.1 iOS allowlist matrix (Allow-mode focus spaces)
+
+Prereqs: physical device, Screen Time authorized, note any other authorized
+Screen Time apps and Settings › Screen Time › Always Allowed contents first
+(both are known enforcement carve-outs — see architecture.md §12.3).
+
+- [ ] Websites-only allowlist: allowed sites load, all other sites shielded (manual block)
+- [ ] Apps-only allowlist: allowed apps open (no shield, not even a generic "Restricted" one), other apps shielded, websites unaffected
+- [ ] Mixed allowlist (websites + Screen Time apps): both resource types enforce
+- [ ] Two concurrent allowlists: allowed sets union (both spaces' items usable)
+- [ ] Allowlist + blocklist overlap (domain): overlapping domain blocked, rest of allowlist intact
+- [ ] Allowlist + blocklist overlap (app token): overlapping app shielded (blocklist wins)
+- [ ] Manual allowlist ends via one-off with app fully closed: enforcement lifts
+- [ ] Allowlist schedule segment starts/ends with app fully closed: enforcement flips at boundaries
+- [ ] Pause → resume (manual and schedule): free during pause, allowlist (not blocklist) semantics return on resume
+- [ ] Stop-all clears both stores: no stuck shields or web filter afterwards
+- [ ] Shield copy on allowlist-blocked site/app: "isn't on your current allow list" + focus-space pill + timing line
+- [ ] Explicit-blocklist shield copy unchanged (regression)
+- [ ] >50 allowed websites: start fails with the domain-limit alert, no enforcement
+- [ ] >50 allowed apps: start fails with the app-limit alert, no enforcement
+- [ ] Categories in an allowlist selection: "categories ignored" notice, app tokens still enforce
+- [ ] Allowlist with only unenforceable apps (desktop names / categories-only): websites-only confirm dialog; decline aborts
+- [ ] Always Allowed app behavior recorded (expected: resists the shield)
+- [ ] Fresh-install upgrade with pre-existing shield snapshot data: shield extension renders without crashing
+- [ ] Save/edit/duplicate/import round-trips keep Allow mode; card shows "Allows N"
+
 ---
 
 ## Sign-off
