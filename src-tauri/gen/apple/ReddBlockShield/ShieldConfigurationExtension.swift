@@ -76,7 +76,7 @@ private enum ShieldSnapshotPresenter {
             return fallbackConfiguration
         }
         let blockedName = application.localizedDisplayName ?? "This app"
-        return buildConfiguration(blockedName: blockedName, attribution: picked)
+        return buildConfiguration(blockedName: blockedName, attribution: picked, isApp: true)
     }
 
     static func configuration(
@@ -99,7 +99,7 @@ private enum ShieldSnapshotPresenter {
         }
         let raw = webDomain.domain?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let displayHost = raw.isEmpty ? "This site" : raw
-        return buildConfiguration(blockedName: displayHost, attribution: picked)
+        return buildConfiguration(blockedName: displayHost, attribution: picked, isApp: false)
     }
 
     // MARK: - Lookups (keys must match Pass 4–6 writers)
@@ -133,19 +133,19 @@ private enum ShieldSnapshotPresenter {
 
     // MARK: - Shield.Configuration assembly
 
-    private static func buildConfiguration(blockedName: String, attribution: ShieldAttribution) -> ShieldConfiguration {
-        let subtitleText = truncate(makeSubtitle(blockedName: blockedName, attribution: attribution))
+    private static func buildConfiguration(blockedName: String, attribution: ShieldAttribution, isApp: Bool) -> ShieldConfiguration {
+        let subtitleText = truncate(makeSubtitle(blockedName: blockedName, attribution: attribution, isApp: isApp))
         let subtitle = ShieldConfiguration.Label(text: subtitleText, color: .label)
         return shieldChromeConfiguration(subtitle: subtitle)
     }
 
-    private static func makeSubtitle(blockedName: String, attribution: ShieldAttribution) -> String {
+    private static func makeSubtitle(blockedName: String, attribution: ShieldAttribution, isApp: Bool) -> String {
         let isAllowlist = attribution.isAllowlistSource == true
         let opener = isAllowlist
-            ? "\(blockedName) isn't on your current allow list."
+            ? "\(blockedName) isn't one of the \(isApp ? "apps" : "ones") you've allowed yourself to use."
             : "\(blockedName) is on your current blocklist."
         var blockInfo: [String] = [
-            isAllowlist ? "Allow list information:" : detailSectionHeading(sourceId: attribution.sourceId)
+            isAllowlist ? "Focus space information:" : detailSectionHeading(sourceId: attribution.sourceId)
         ]
         let pill = pillLine(attribution: attribution)
         if !pill.isEmpty {

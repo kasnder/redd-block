@@ -221,7 +221,8 @@ Screen Time apps and Settings › Screen Time › Always Allowed contents first
 - [ ] Allowlist schedule segment starts/ends with app fully closed: enforcement flips at boundaries
 - [ ] Pause → resume (manual and schedule): free during pause, allowlist (not blocklist) semantics return on resume
 - [ ] Stop-all clears both stores: no stuck shields or web filter afterwards
-- [ ] Shield copy on allowlist-blocked site/app: "isn't on your current allow list" + focus-space pill + timing line
+- [ ] Shield copy on allowlist-blocked app: "isn't one of the apps you've allowed yourself to use" + "Focus space information:" + focus-space pill + timing line
+- [ ] Shield copy on allowlist-blocked site: "isn't one of the ones you've allowed yourself to use" + "Focus space information:" + focus-space pill + timing line
 - [ ] Explicit-blocklist shield copy unchanged (regression)
 - [ ] >50 allowed websites: start fails with the domain-limit alert, no enforcement
 - [ ] >50 allowed apps: start fails with the app-limit alert, no enforcement

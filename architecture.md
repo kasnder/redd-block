@@ -588,8 +588,9 @@ shields behave as before.
 per-target snapshot row exists. `ShieldAttributionSection.allowlistFallback`
 (one per channel, earliest-started active allowlist source, marked
 `isAllowlistSource`) is used when no per-target row matches; the shield then
-renders "X isn't on your current allow list." with the focus-space pill and
-timing. Explicit blocklist rows are unchanged and win per-target as before.
+renders "X isn't one of the apps you've allowed yourself to use." (or "ones"
+for websites) under a "Focus space information:" section with the
+focus-space pill and timing, mirroring the desktop allowlist block page. Explicit blocklist rows are unchanged and win per-target as before.
 
 **Device-validation findings (2026-07-07, physical iPhone).** `.all(except:)`
 exceptions are reliably honored — allowed apps open with no shield, and no
