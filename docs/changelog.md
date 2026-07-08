@@ -10,7 +10,7 @@ SCHEDULES), then platform-specific notes under nested headings:
 `#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
 description.` Legacy flat lists still work.
 
-## v3.5.0
+## v4.0.0
 
 ### ALLOW MODE
 
@@ -96,7 +96,7 @@ description.` Legacy flat lists still work.
 - **Emoji picker.** On smaller screens the picker opens below the **+** button
   and respects the safe area.
 
-- **Version:** 3.5.0 (macOS, Windows, and iOS).
+- **Version:** 4.0.0 (macOS, Windows, and iOS).
 
 ## v3.4.2
 

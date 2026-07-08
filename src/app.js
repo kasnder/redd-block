@@ -2060,7 +2060,7 @@ async function checkForAppUpdate() {
 }
 
 if (import.meta.env.DEV) {
-    /** Dev only: `previewUpdateBanner('3.5.0')` in the webview console. */
+    /** Dev only: `previewUpdateBanner('4.0.0')` in the webview console. */
     window.previewUpdateBanner = async (version = '99.0.0', currentVersion = '3.3.0') => {
         const normalized = String(version).replace(/^v/i, '').trim();
         await showUpdateBanner(normalized, String(currentVersion).replace(/^v/i, '').trim());
