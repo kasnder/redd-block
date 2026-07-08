@@ -226,7 +226,7 @@ Screen Time apps and Settings › Screen Time › Always Allowed contents first
 - [ ] Explicit-blocklist shield copy unchanged (regression)
 - [ ] >50 allowed websites: start fails with the domain-limit alert, no enforcement
 - [ ] >50 allowed apps: start fails with the app-limit alert, no enforcement
-- [ ] Categories in an allowlist selection: "categories ignored" notice, app tokens still enforce
+- [ ] Categories alongside apps in an allowlist selection: "App categories are not supported" dialog with Cancel/OK — OK starts with app tokens only, Cancel aborts the start
 - [ ] Allowlist with only unenforceable apps (desktop names / categories-only): websites-only confirm dialog; decline aborts
 - [ ] Always Allowed app behavior recorded (expected: resists the shield)
 - [ ] Fresh-install upgrade with pre-existing shield snapshot data: shield extension renders without crashing

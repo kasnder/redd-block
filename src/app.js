@@ -693,9 +693,10 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
 /**
  * iOS start gate for allow-mode focus spaces. Websites and Screen Time app
  * tokens are enforceable; desktop app names and Screen Time categories are not
- * (categories cannot be `.all(except:)` exceptions). Alerts and returns false
- * when the focus space cannot be started on iOS; confirms a websites-only
- * start when its apps cannot be allowlist-enforced.
+ * (categories cannot be `.all(except:)` exceptions). Shows a titled dialog and
+ * returns false when the focus space cannot be started on iOS; confirms a
+ * websites-only start when its apps cannot be allowlist-enforced, and gates a
+ * categories-alongside-apps start behind OK/Cancel.
  */
 async function ensureIOSAllowlistStartable(blocklist) {
     if (!isIOS || !isBlocklistAllowlistMode(blocklist)) return true;
@@ -705,27 +706,42 @@ async function ensureIOSAllowlistStartable(blocklist) {
     const enforceableWebsites = (blocklist?.websites || []).filter(d => !isProtectedDomain(d));
 
     if (appTokens.length === 0 && enforceableWebsites.length === 0) {
-        alert(tSettings('allowlistIosNeedsWebsites'));
+        await message(tSettings('allowlistIosNeedsWebsites'), {
+            title: tSettings('allowlistIosNeedsWebsitesTitle'),
+            kind: 'warning'
+        });
         return false;
     }
     if (enforceableWebsites.length > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
-        alert(tSettings('allowlistIosDomainLimit').replace('{n}', String(enforceableWebsites.length)));
+        await message(tSettings('allowlistIosDomainLimit').replace('{n}', String(enforceableWebsites.length)), {
+            title: tSettings('allowlistIosDomainLimitTitle'),
+            kind: 'warning'
+        });
         return false;
     }
     if (appTokens.length > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
-        alert(tSettings('allowlistIosTokenLimit').replace('{n}', String(appTokens.length)));
+        await message(tSettings('allowlistIosTokenLimit').replace('{n}', String(appTokens.length)), {
+            title: tSettings('allowlistIosTokenLimitTitle'),
+            kind: 'warning'
+        });
         return false;
     }
     if (appTokens.length > 0 && categoryTokens.length > 0) {
-        // Warn, then proceed with app tokens only.
-        alert(tSettings('allowlistIosCategoriesIgnored'));
+        // OK gates the start (proceeds with app tokens only); Cancel aborts.
+        const proceed = await ask(tSettings('allowlistIosCategoriesIgnored'), {
+            title: tSettings('allowlistIosCategoriesIgnoredTitle'),
+            kind: 'warning',
+            okLabel: 'OK',
+            cancelLabel: tSettings('cancel')
+        });
+        if (!proceed) return false;
     }
     // Desktop app names (or a categories-only Screen Time selection) cannot be
     // allowlist-enforced on iOS: never silently pretend they are allowed.
     const hasUnenforceableApps = getBlocklistRegularApps(blocklist).length > 0 || categoryTokens.length > 0;
     if (appTokens.length === 0 && hasUnenforceableApps) {
         const proceed = await ask(tSettings('allowlistIosWebOnlyConfirm'), {
-            title: blocklist?.name || 'Allow list',
+            title: tSettings('allowlistIosWebOnlyConfirmTitle'),
             kind: 'warning'
         });
         if (!proceed) return false;
@@ -20347,11 +20363,16 @@ const SETTINGS_TRANSLATIONS = {
         placeholderWebsiteAllow: 'e.g., ulriklyngs.com',
         placeholderAppBlock: 'e.g., Safari',
         placeholderAppAllow: 'e.g., Microsoft Word',
-        allowlistIosNeedsWebsites: 'Add at least one website, or select apps with the Screen Time picker, to start this allow list on iOS.',
-        allowlistIosDomainLimit: 'iOS allow lists support up to 50 websites, but this would allow {n}. Remove some websites and try again.',
-        allowlistIosTokenLimit: 'iOS allow lists support up to 50 apps, but this would allow {n}. Remove some apps and try again.',
-        allowlistIosWebOnlyConfirm: 'The apps in this allow list can’t be kept usable on iOS — they need a Screen Time app selection. Start it as a website-only allow list? Websites outside the list will be blocked, and all apps will stay usable.',
-        allowlistIosCategoriesIgnored: 'Screen Time categories can’t be used as allow-list exceptions on iOS. The selected categories will be ignored — only the individually selected apps will stay usable.',
+        allowlistIosNeedsWebsitesTitle: 'No websites / apps added',
+        allowlistIosNeedsWebsites: 'Add at least one website or app to start this allow-mode focus space. Note that selecting categories is not supported for allow-mode by Screen Time.',
+        allowlistIosDomainLimitTitle: 'Too many websites added',
+        allowlistIosDomainLimit: 'This focus space has {n} websites added, but the maximum number Screen Time allows is 50. Please remove some websites and try again.',
+        allowlistIosTokenLimitTitle: 'Too many apps added',
+        allowlistIosTokenLimit: 'This focus space has {n} apps added, but the maximum number Screen Time allows is 50. Please remove some apps and try again.',
+        allowlistIosWebOnlyConfirmTitle: 'Unsupported app types',
+        allowlistIosWebOnlyConfirm: 'App categories and apps added outside Screen Time are not supported. Would you like to start this focus space with only websites selected? Websites outside the list will be blocked, and all apps will stay usable.',
+        allowlistIosCategoriesIgnoredTitle: 'App categories are not supported',
+        allowlistIosCategoriesIgnored: 'Screen Time does not support adding app categories to allow-mode focus spaces. The selected categories will be ignored, and only the individually selected apps will stay usable.',
         overrideDifficulty: 'Stop Difficulty',
         overrideMethod: 'Method',
         overrideWordsToType: 'Words to type',
@@ -21146,11 +21167,16 @@ const SETTINGS_TRANSLATIONS = {
         placeholderWebsiteAllow: 'fx ulriklyngs.com',
         placeholderAppBlock: 'fx Safari',
         placeholderAppAllow: 'fx Microsoft Word',
-        allowlistIosNeedsWebsites: 'Tilføj mindst én hjemmeside, eller vælg apps med Screen Time-vælgeren, for at starte denne tilladelsesliste på iOS.',
-        allowlistIosDomainLimit: 'iOS-tilladelseslister understøtter op til 50 hjemmesider, men denne ville tillade {n}. Fjern nogle hjemmesider og prøv igen.',
-        allowlistIosTokenLimit: 'iOS-tilladelseslister understøtter op til 50 apps, men denne ville tillade {n}. Fjern nogle apps og prøv igen.',
-        allowlistIosWebOnlyConfirm: 'Apps i denne tilladelsesliste kan ikke holdes brugbare på iOS — de kræver et Screen Time-appvalg. Vil du starte den som en tilladelsesliste kun for hjemmesider? Hjemmesider uden for listen blokeres, og alle apps forbliver brugbare.',
-        allowlistIosCategoriesIgnored: 'Screen Time-kategorier kan ikke bruges som undtagelser i tilladelseslister på iOS. De valgte kategorier ignoreres — kun de individuelt valgte apps forbliver brugbare.',
+        allowlistIosNeedsWebsitesTitle: 'Ingen hjemmesider/apps tilføjet',
+        allowlistIosNeedsWebsites: 'Tilføj mindst én hjemmeside eller app for at starte dette fokusrum i tilladelsestilstand. Bemærk, at valg af kategorier ikke understøttes af Screen Time i tilladelsestilstand.',
+        allowlistIosDomainLimitTitle: 'For mange hjemmesider tilføjet',
+        allowlistIosDomainLimit: 'Dette fokusrum har {n} hjemmesider tilføjet, men Screen Time tillader højst 50. Fjern nogle hjemmesider og prøv igen.',
+        allowlistIosTokenLimitTitle: 'For mange apps tilføjet',
+        allowlistIosTokenLimit: 'Dette fokusrum har {n} apps tilføjet, men Screen Time tillader højst 50. Fjern nogle apps og prøv igen.',
+        allowlistIosWebOnlyConfirmTitle: 'Ikke-understøttede apptyper',
+        allowlistIosWebOnlyConfirm: 'App-kategorier og apps tilføjet uden for Screen Time understøttes ikke. Vil du starte dette fokusrum med kun de valgte hjemmesider? Hjemmesider uden for listen blokeres, og alle apps forbliver brugbare.',
+        allowlistIosCategoriesIgnoredTitle: 'App-kategorier understøttes ikke',
+        allowlistIosCategoriesIgnored: 'Screen Time understøtter ikke app-kategorier i fokusrum i tilladelsestilstand. De valgte kategorier ignoreres, og kun de individuelt valgte apps forbliver brugbare.',
         overrideDifficulty: 'Stop-sværhedsgrad',
         overrideMethod: 'Metode',
         overrideWordsToType: 'Ord at taste',
