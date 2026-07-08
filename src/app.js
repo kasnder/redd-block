@@ -20304,7 +20304,7 @@ const SETTINGS_TRANSLATIONS = {
         // Blocklist modal
         createBlocklist: 'Create focus space',
         editBlocklist: 'Edit focus space',
-        activeBlocklistWarning: 'This blocklist is active. Some settings are locked.',
+        activeBlocklistWarning: 'This focus space is active. Some settings are locked.',
         name: 'Name',
         websites: 'Websites to block',
         websitesAllow: 'Websites to allow',
@@ -21103,7 +21103,7 @@ const SETTINGS_TRANSLATIONS = {
         // Blocklist modal
         createBlocklist: 'Opret rum',
         editBlocklist: 'Rediger rum',
-        activeBlocklistWarning: 'Denne blokliste er aktiv. Nogle indstillinger er låst.',
+        activeBlocklistWarning: 'Dette rum er aktivt. Nogle indstillinger er låst.',
         name: 'Navn',
         websites: 'Hjemmesider at blokere',
         websitesAllow: 'Hjemmesider der må besøges',

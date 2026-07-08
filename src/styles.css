@@ -2315,8 +2315,8 @@ body.ios:not(.ios-phone) .main-content .schedule-pending-save{
     }
 
     body.ios:not(.ios-phone) .main-content .warning-banner svg{
-        width: 18px;
-        height: 18px;
+        width: 20px;
+        height: 20px;
     }
 
     body.ios:not(.ios-phone) .main-content .blocklists-container{
@@ -2565,8 +2565,8 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
     }
 
     body.ios:not(.ios-phone) .modal-overlay .warning-banner svg{
-        width: calc(16px * var(--ipad-s));
-        height: calc(16px * var(--ipad-s));
+        width: calc(20px * var(--ipad-s));
+        height: calc(20px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .form-group{
@@ -5254,6 +5254,12 @@ body.dark-mode .time-part.active{
     gap: 8px;
     margin-bottom: 16px;
     border: 1px solid #fcd34d;
+}
+
+.warning-banner svg{
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
 }
 
 .mode-option.disabled{
