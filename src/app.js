@@ -79,6 +79,7 @@ const tauriAPI = {
     clearBlockViaHelper: (blocklistId) => invoke('clear_block_via_helper', blocklistId != null ? { blocklistId } : {}),
     cleanHostsFile: () => invoke('clean_hosts_file'),
     getHelperDiagnostics: () => invoke('get_helper_diagnostics'),
+    getSystemDiagnostics: () => invoke('get_system_diagnostics'),
     setBlocksViaHelper: (blocks) => invoke('set_blocks_via_helper', { blocks }),
 
     // App operations
@@ -87,8 +88,14 @@ const tauriAPI = {
     blockWebsites: (domains) => invoke('block_websites', { domains }),
 
     // App blocking via helper daemon (persistent, survives app close)
-    setBlockedAppsViaHelper: (apps, newlyAdded) =>
-        invoke('set_blocked_apps_via_helper', { apps, newly_added: newlyAdded ?? [] }),
+    setBlockedAppsViaHelper: (apps, newlyAdded, allowedApps, allowlistActive, allowlistNewlyStarted) =>
+        invoke('set_blocked_apps_via_helper', {
+            apps,
+            newlyAdded: newlyAdded ?? [],
+            allowedApps: allowedApps ?? [],
+            allowlistActive: allowlistActive ?? false,
+            allowlistNewlyStarted: allowlistNewlyStarted ?? false,
+        }),
 
     // Schedule management via helper daemon (persistent, handles transitions autonomously)
     setSchedulesViaHelper: (schedules) => invoke('set_schedules_via_helper', { schedules }),
@@ -384,6 +391,54 @@ function isProtectedDomain(domain) {
     return PROTECTED_DOMAINS.some(p => lower === p);
 }
 
+function isBlocklistAllowlistMode(blocklist) {
+    return blocklist?.mode === 'allowlist';
+}
+
+function getSelectedBlocklistModalMode() {
+    const selected = document.querySelector('#blocklist-mode-toggle .mode-btn.active');
+    return selected?.dataset?.mode === 'allowlist' ? 'allowlist' : 'blocklist';
+}
+
+function setBlocklistModalMode(mode) {
+    const normalized = mode === 'allowlist' ? 'allowlist' : 'blocklist';
+    document.querySelectorAll('#blocklist-mode-toggle .mode-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.mode === normalized);
+    });
+    updateBlocklistModalModeLabels(normalized);
+}
+
+function updateBlocklistModalModeLabels(mode) {
+    const isAllow = mode === 'allowlist';
+    const assignText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    };
+    assignText('blocklist-websites-label', tSettings(isAllow ? 'websitesAllow' : 'websites'));
+    assignText('blocklist-apps-label', tSettings(isAllow ? 'appsAllow' : 'apps'));
+    assignText(
+        'blocklist-websites-tooltip',
+        tSettings(isAllow ? 'websitesAllowTooltip' : 'websitesTooltip'),
+    );
+    assignText(
+        'blocklist-apps-tooltip',
+        tSettings(isAllow ? 'appsAllowTooltip' : 'appsTooltip'),
+    );
+    assignText('blocklist-mode-hint', tSettings(isAllow ? 'allowlistModeHint' : 'blocklistModeHint'));
+    assignText(
+        'show-item-details-label',
+        tSettings(isAllow ? 'listAllowedOnCard' : 'listBlockedOnCard'),
+    );
+    const websiteInput = document.getElementById('modal-website-input');
+    if (websiteInput) {
+        websiteInput.placeholder = tSettings(isAllow ? 'placeholderWebsiteAllow' : 'placeholderWebsiteBlock');
+    }
+    const appInput = document.getElementById('modal-app-input');
+    if (appInput) {
+        syncModalAppPlaceholder();
+    }
+}
+
 // Helper: detect always-on blocks by flag OR far-future end time
 function isBlockAlwaysOn(block) {
     return block.isAlwaysOn === true || block.endTime >= ALWAYS_ON_END_TIME;
@@ -484,6 +539,21 @@ function formatIOSScreenTimeSelectionLabel(selection) {
     return parts.length > 0 ? `${parts.join(', ')} selected (Screen Time)` : '';
 }
 
+/**
+ * Mode-aware item count an iOS Screen Time selection contributes to
+ * "Blocks {n}" / "Allows {n}". Every app token counts individually — allow-mode
+ * selections store category picks already expanded into member app tokens by
+ * the picker. Category tokens only exist on block-mode (or legacy allow-mode)
+ * selections: in block mode a category enforces as one opaque unit, so it
+ * counts as 1; in allow mode category tokens are unenforceable and count as 0.
+ */
+function countIOSScreenTimeSelectionItems(selection, allowMode) {
+    const normalized = normalizeIOSScreenTimeSelection(selection);
+    if (!normalized) return 0;
+    const appCount = normalized.applicationCount || 0;
+    return allowMode ? appCount : appCount + (normalized.categoryCount || 0);
+}
+
 function getBlocklistRegularApps(blocklist) {
     if (!Array.isArray(blocklist?.apps)) return [];
     return blocklist.apps.filter(app => typeof app === 'string' && !isScreenTimeSummaryEntry(app));
@@ -544,10 +614,13 @@ function normalizeBlocklist(blocklist) {
 
 function collectActiveIOSManualBlockPayload(now = Date.now()) {
     const allDomains = new Set();
+    const allowedDomains = new Set();
+    const allowedAppTokenData = new Set();
     const appTokenData = new Set();
     const categoryTokenData = new Set();
 
     let displayWinner = null;
+    let allowlistDisplayWinner = null;
 
     for (const block of appData.activeBlocks || []) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
@@ -563,6 +636,29 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
         ) {
             displayWinner = { block, blocklist };
         }
+        if (
+            isBlocklistAllowlistMode(blocklist)
+            && (
+                allowlistDisplayWinner == null
+                || block.startTime < allowlistDisplayWinner.block.startTime
+                || (block.startTime === allowlistDisplayWinner.block.startTime
+                    && bid < String(allowlistDisplayWinner.block.blocklistId ?? ''))
+            )
+        ) {
+            allowlistDisplayWinner = { block, blocklist };
+        }
+
+        if (isBlocklistAllowlistMode(blocklist)) {
+            // Allow-mode focus space: websites and app tokens are ALLOWED items.
+            // Category tokens cannot be allowlist exceptions on iOS and are ignored.
+            for (const domain of blocklist.websites || []) {
+                if (!isProtectedDomain(domain)) allowedDomains.add(domain);
+            }
+            for (const token of getBlocklistIOSPayload(blocklist).appTokenData) {
+                allowedAppTokenData.add(token);
+            }
+            continue;
+        }
 
         for (const domain of blocklist.websites || []) {
             if (!isProtectedDomain(domain)) allDomains.add(domain);
@@ -573,8 +669,14 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
         for (const token of iosPayload.categoryTokenData) categoryTokenData.add(token);
     }
 
+    // Blocklist wins on overlap: an explicitly blocked item is never an exception.
+    for (const domain of allDomains) allowedDomains.delete(domain);
+    for (const token of appTokenData) allowedAppTokenData.delete(token);
+
     const out = {
         domains: Array.from(allDomains).sort(),
+        allowedDomains: Array.from(allowedDomains).sort(),
+        allowedAppTokenData: Array.from(allowedAppTokenData),
         appTokenData: Array.from(appTokenData),
         categoryTokenData: Array.from(categoryTokenData)
     };
@@ -586,8 +688,188 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
         out.blocklistColorHex = typeof c === 'string' && c.length > 0 ? c : null;
         out.blockStartMs = block.startTime;
         out.blockEndMs = block.endTime;
+        out.mode = isBlocklistAllowlistMode(blocklist) ? 'allowlist' : null;
+    }
+    if (allowlistDisplayWinner) {
+        // Shield attribution for "blocked because not allowed" targets: the
+        // earliest-started active allow-mode block, independent of the overall
+        // display winner above (which may be a blocklist block).
+        const { block, blocklist } = allowlistDisplayWinner;
+        out.allowlistBlocklistEmoji = blocklist.emoji ?? null;
+        out.allowlistBlocklistName = blocklist.name ?? null;
+        const c = blocklist.color;
+        out.allowlistBlocklistColorHex = typeof c === 'string' && c.length > 0 ? c : null;
+        out.allowlistBlockStartMs = block.startTime;
+        out.allowlistBlockEndMs = block.endTime;
     }
     return out;
+}
+
+/**
+ * iOS start gate for allow-mode focus spaces. Websites and Screen Time app
+ * tokens are enforceable; desktop app names and Screen Time categories are not
+ * (categories cannot be `.all(except:)` exceptions). Shows a titled dialog and
+ * returns false when the focus space cannot be started on iOS; confirms a
+ * websites-only start when its apps cannot be allowlist-enforced, and gates a
+ * categories-alongside-apps start behind OK/Cancel.
+ */
+async function ensureIOSAllowlistStartable(blocklist) {
+    if (!isIOS || !isBlocklistAllowlistMode(blocklist)) return true;
+    const selection = getBlocklistIOSScreenTimeSelection(blocklist);
+    const appTokens = selection?.applicationTokens || [];
+    const categoryTokens = selection?.categoryTokens || [];
+    const enforceableWebsites = (blocklist?.websites || []).filter(d => !isProtectedDomain(d));
+
+    if (appTokens.length === 0 && enforceableWebsites.length === 0) {
+        await message(tSettings('allowlistIosNeedsWebsites'), {
+            title: tSettings('allowlistIosNeedsWebsitesTitle'),
+            kind: 'warning'
+        });
+        return false;
+    }
+    if (enforceableWebsites.length > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
+        await message(tSettings('allowlistIosDomainLimit').replace('{n}', String(enforceableWebsites.length)), {
+            title: tSettings('allowlistIosDomainLimitTitle'),
+            kind: 'warning'
+        });
+        return false;
+    }
+    if (appTokens.length > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
+        await message(tSettings('allowlistIosTokenLimit').replace('{n}', String(appTokens.length)), {
+            title: tSettings('allowlistIosTokenLimitTitle'),
+            kind: 'warning'
+        });
+        return false;
+    }
+    if (appTokens.length > 0 && categoryTokens.length > 0) {
+        // OK gates the start (proceeds with app tokens only); Cancel aborts.
+        const proceed = await ask(tSettings('allowlistIosCategoriesIgnored'), {
+            title: tSettings('allowlistIosCategoriesIgnoredTitle'),
+            kind: 'warning',
+            okLabel: 'OK',
+            cancelLabel: tSettings('cancel')
+        });
+        if (!proceed) return false;
+    }
+    // Desktop app names (or a categories-only Screen Time selection) cannot be
+    // allowlist-enforced on iOS: never silently pretend they are allowed.
+    const hasUnenforceableApps = getBlocklistRegularApps(blocklist).length > 0 || categoryTokens.length > 0;
+    if (appTokens.length === 0 && hasUnenforceableApps) {
+        const proceed = await ask(tSettings('allowlistIosWebOnlyConfirm'), {
+            title: tSettings('allowlistIosWebOnlyConfirmTitle'),
+            kind: 'warning'
+        });
+        if (!proceed) return false;
+    }
+    return true;
+}
+
+// ---- iOS effective-policy derivation --------------------------------------
+//
+// Pure helpers that resolve the set of currently active enforcement sources
+// into one effective Screen Time policy per resource type. Mirrors desktop
+// semantics: concurrent allowlists union; explicit blocklist wins on overlap;
+// resource types (websites vs apps) compose independently. Used to pre-validate
+// the cross-channel policy before applying (the Swift IOSPolicyResolver is the
+// enforcement-side mirror).
+
+/** Apple caps `.all(except:)` exceptions at 50 domains / 50 tokens per store. */
+const IOS_ALLOWLIST_EXCEPTION_LIMIT = 50;
+
+/**
+ * Snapshot every currently active iOS enforcement source (manual blocks and
+ * active schedule segments), each tagged with its focus-space mode.
+ * Returns [{ kind: 'manual'|'schedule', blocklist, block?, schedule? }].
+ */
+function collectActiveIOSEnforcementSources(now = Date.now()) {
+    const sources = [];
+    for (const block of appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
+        if (!blocklist) continue;
+        sources.push({ kind: 'manual', blocklist, block });
+    }
+    const nowDate = new Date(now);
+    for (const schedule of appData.schedules || []) {
+        if (!schedule.segments || schedule.segments.length === 0) continue;
+        if (schedule.isPaused && schedule.pauseEndTime > now) continue;
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        if (!blocklist) continue;
+        sources.push({ kind: 'schedule', blocklist, schedule });
+    }
+    return sources;
+}
+
+/**
+ * Resolve active sources into the effective iOS website policy.
+ * - No active allowlist websites: { kind: 'specific-block', domains } (today's behavior).
+ * - Any active allowlist websites: { kind: 'all-except', domains: allowed − blocked }.
+ *   An empty exception set is legal and means "block every website".
+ */
+function deriveIOSEffectiveWebsitePolicy(sources) {
+    const blocked = new Set();
+    const allowed = new Set();
+    for (const { blocklist } of sources || []) {
+        const target = isBlocklistAllowlistMode(blocklist) ? allowed : blocked;
+        for (const domain of blocklist?.websites || []) {
+            if (!isProtectedDomain(domain)) target.add(domain);
+        }
+    }
+    if (allowed.size === 0) {
+        return { kind: 'specific-block', domains: Array.from(blocked).sort() };
+    }
+    for (const domain of blocked) allowed.delete(domain);
+    return { kind: 'all-except', domains: Array.from(allowed).sort() };
+}
+
+/**
+ * Resolve active sources into the effective iOS app-shield policy.
+ * - No active allowlist app tokens: { kind: 'specific-block', appTokenData, categoryTokenData }.
+ * - Any active allowlist app tokens: { kind: 'all-except', appTokenData, categoryTokenData: [] }
+ *   (Apple's `.all(except:)` takes application tokens; category tokens cannot be
+ *   exceptions, and category shields are redundant once everything is shielded).
+ */
+function deriveIOSEffectiveAppPolicy(sources) {
+    const blockedApps = new Set();
+    const blockedCategories = new Set();
+    const allowedApps = new Set();
+    for (const { blocklist } of sources || []) {
+        const payload = getBlocklistIOSPayload(blocklist);
+        if (isBlocklistAllowlistMode(blocklist)) {
+            for (const token of payload.appTokenData) allowedApps.add(token);
+        } else {
+            for (const token of payload.appTokenData) blockedApps.add(token);
+            for (const token of payload.categoryTokenData) blockedCategories.add(token);
+        }
+    }
+    if (allowedApps.size === 0) {
+        return {
+            kind: 'specific-block',
+            appTokenData: Array.from(blockedApps),
+            categoryTokenData: Array.from(blockedCategories)
+        };
+    }
+    for (const token of blockedApps) allowedApps.delete(token);
+    return { kind: 'all-except', appTokenData: Array.from(allowedApps), categoryTokenData: [] };
+}
+
+/**
+ * Check a derived policy against Apple's 50-exception cap. Allowlist policies
+ * must fail loudly rather than truncate (truncation would over-block).
+ * Blocklist-mode policies keep today's prefix-50 truncation and always pass.
+ */
+function validateIOSAllowlistLimits(policy) {
+    if (!policy || policy.kind !== 'all-except') return { ok: true };
+    const domainCount = policy.domains?.length ?? 0;
+    if (domainCount > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
+        return { ok: false, reason: 'domains', count: domainCount };
+    }
+    const tokenCount = policy.appTokenData?.length ?? 0;
+    if (tokenCount > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
+        return { ok: false, reason: 'tokens', count: tokenCount };
+    }
+    return { ok: true };
 }
 
 function isNonRepeatingSchedule(schedule) {
@@ -747,8 +1029,25 @@ async function syncSchedulesToHelper() {
             for (const schedule of appData.schedules || []) {
                 if (!schedule.segments || schedule.segments.length === 0) continue;
                 const blocklist = appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-                const domains = blocklist?.websites || [];
-                const iosPayload = getBlocklistIOSPayload(blocklist);
+                const isAllowlist = isBlocklistAllowlistMode(blocklist);
+                const mode = isAllowlist ? 'allowlist' : null;
+                const rawDomains = blocklist?.websites || [];
+                // Allowlist entries: domains and app tokens are ALLOWED items;
+                // category tokens cannot be allowlist exceptions and are dropped.
+                // Never send an entry the extension would have to truncate
+                // (truncating an allow list over-blocks).
+                const domains = isAllowlist ? rawDomains.filter(d => !isProtectedDomain(d)) : rawDomains;
+                if (isAllowlist && domains.length > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
+                    console.warn('[syncSchedulesToHelper] iOS: skipping allowlist schedule over the 50-domain cap:', schedule.id, domains.length);
+                    continue;
+                }
+                const iosPayload = isAllowlist
+                    ? { appTokenData: getBlocklistIOSPayload(blocklist).appTokenData, categoryTokenData: [] }
+                    : getBlocklistIOSPayload(blocklist);
+                if (isAllowlist && iosPayload.appTokenData.length > IOS_ALLOWLIST_EXCEPTION_LIMIT) {
+                    console.warn('[syncSchedulesToHelper] iOS: skipping allowlist schedule over the 50-app cap:', schedule.id, iosPayload.appTokenData.length);
+                    continue;
+                }
                 const blocklistEmoji = blocklist?.emoji ?? null;
                 const blocklistName = blocklist?.name ?? null;
                 const bc = blocklist?.color;
@@ -767,7 +1066,8 @@ async function syncSchedulesToHelper() {
                             pauseEndTimestampMs: schedule.pauseEndTime || null,
                             blocklistEmoji,
                             blocklistName,
-                            blocklistColorHex
+                            blocklistColorHex,
+                            mode
                         });
                     });
                     continue;
@@ -792,7 +1092,8 @@ async function syncSchedulesToHelper() {
                         pauseEndTimestampMs: schedule.pauseEndTime || null,
                         blocklistEmoji,
                         blocklistName,
-                        blocklistColorHex
+                        blocklistColorHex,
+                        mode
                     });
                 }
             }
@@ -5999,6 +6300,9 @@ const APP_BLOCKING_CLOSEDOWN_PREQUIT_MS = 30 * 1000;
 /// Schedule-block warnings may be snoozed once for this long before the
 /// overlay reappears (without the snooze button on the second show).
 const APP_BLOCKING_SCHEDULE_SNOOZE_MS = 2 * 60 * 1000;
+/** Backend sentinel for an allowlist block-start with no apps to close yet. */
+const ALLOWLIST_INTENTION_WARNING_PID = 0;
+const ALLOWLIST_INTENTION_WARNING_NAME = '__allowlist_intention__';
 
 function buildAppBlockingSnoozeIconImg(size) {
     return `<img src="${snoozeIconUrl}" alt="" class="app-blocking-snooze-icon" width="${size}" height="${size}" aria-hidden="true">`;
@@ -6043,6 +6347,8 @@ const overlayAssetBlobUrls = new Set();
 /** Per-app attribution for the block that just started blocking it. */
 /** @type {Map<string, { blocklistId: string, source: 'schedule'|'manual' }>} */
 const appBlockingNewlyAddedMeta = new Map();
+/** Blocklist that owns the current warning session (the block/allowlist the user just started). */
+let appBlockingWarningSessionBlocklistId = null;
 
 function clearAppBlockingWarningSnoozeTimer() {
     if (appBlockingWarningSnoozeTimer !== null) {
@@ -6121,6 +6427,7 @@ function collectManualBlockedApps(now = Date.now()) {
     for (const block of appData.activeBlocks || []) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
         const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        if (isBlocklistAllowlistMode(blocklist)) continue;
         for (const app of blocklist?.apps || []) {
             if (!isProtectedApp(app)) set.add(app);
         }
@@ -6136,11 +6443,131 @@ function collectScheduleBlockedApps(now = Date.now()) {
         if (isSchedulePausedNow(schedule, now)) continue;
         if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
         const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        if (isBlocklistAllowlistMode(blocklist)) continue;
         for (const app of blocklist?.apps || []) {
             if (!isProtectedApp(app)) set.add(app);
         }
     }
     return set;
+}
+
+function collectManualAllowedApps(now = Date.now()) {
+    const set = new Set();
+    for (const block of appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        if (!isBlocklistAllowlistMode(blocklist)) continue;
+        for (const app of blocklist?.apps || []) {
+            if (!isProtectedApp(app)) set.add(app);
+        }
+    }
+    return set;
+}
+
+function collectScheduleAllowedApps(now = Date.now()) {
+    const set = new Set();
+    const nowDate = new Date(now);
+    for (const schedule of appData.schedules || []) {
+        if (!schedule.segments) continue;
+        if (isSchedulePausedNow(schedule, now)) continue;
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        if (!isBlocklistAllowlistMode(blocklist)) continue;
+        for (const app of blocklist?.apps || []) {
+            if (!isProtectedApp(app)) set.add(app);
+        }
+    }
+    return set;
+}
+
+function isAllowlistIntentionWarningRow(row) {
+    return row?.intentionOnly === true;
+}
+
+function isAppBlockingWarningRowAwaitingAck(row) {
+    return !!row && !row.ackedDeadlineMs && row.dismissed !== true;
+}
+
+/** Invoke `fn(blocklist, source, manualStartTime)` for each active allowlist enforcement source. */
+function eachActiveAllowlistEnforcement(now, nowDate, fn) {
+    for (const block of appData.activeBlocks || []) {
+        if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === block.blocklistId);
+        if (!isBlocklistAllowlistMode(blocklist)) continue;
+        fn(blocklist, 'manual', block.startTime);
+    }
+    for (const schedule of appData.schedules || []) {
+        if (!schedule.segments) continue;
+        if (isSchedulePausedNow(schedule, now)) continue;
+        if (!isScheduleSegmentActiveNow(schedule, nowDate)) continue;
+        const blocklist = appData.blocklists.find((bl) => bl.id === schedule.blocklistId);
+        if (!isBlocklistAllowlistMode(blocklist)) continue;
+        fn(blocklist, 'schedule', 0);
+    }
+}
+
+function findActiveAllowlistBlocklist(now = Date.now(), nowDate = new Date(now)) {
+    let found = null;
+    eachActiveAllowlistEnforcement(now, nowDate, (blocklist) => {
+        if (!found) found = blocklist;
+    });
+    return found;
+}
+
+function inferAllowlistWarningSessionBlocklistId(
+    now,
+    nowDate,
+    prevAllowlistActive,
+    prevAllowedAll,
+    allowedAppsArray,
+    allowlistEnforcementExpanded,
+) {
+    if (allowlistEnforcementExpanded) {
+        let scheduleAllowlist = null;
+        eachActiveAllowlistEnforcement(now, nowDate, (blocklist, source) => {
+            if (source === 'schedule' && !scheduleAllowlist) scheduleAllowlist = blocklist;
+        });
+        if (scheduleAllowlist) return scheduleAllowlist.id;
+    }
+    if (!prevAllowlistActive) {
+        let newest = null;
+        let newestStart = -1;
+        eachActiveAllowlistEnforcement(now, nowDate, (blocklist, source, startTime) => {
+            if (source === 'manual' && startTime > newestStart) {
+                newest = blocklist;
+                newestStart = startTime;
+            }
+        });
+        if (newest) return newest.id;
+    }
+    if (prevAllowedAll) {
+        for (const app of allowedAppsArray) {
+            if (prevAllowedAll.has(app)) continue;
+            const blocklistId = findManualBlocklistIdForApp(app, now)
+                ?? findScheduleBlocklistIdForApp(app, now, nowDate);
+            if (blocklistId) return blocklistId;
+        }
+    }
+    return findActiveAllowlistBlocklist(now, nowDate)?.id ?? null;
+}
+
+function isAllowlistAppEnforcementActive(now = Date.now()) {
+    return collectManualAllowedApps(now).size > 0 || collectScheduleAllowedApps(now).size > 0;
+}
+
+function collectActiveAllowlistAllowedAppNamesForBlocklist(blocklist) {
+    if (!blocklist || !isBlocklistAllowlistMode(blocklist)) return [];
+    const names = (blocklist.apps || []).filter((app) => !isProtectedApp(app));
+    return uniqueBlockedAppDisplayNames(names);
+}
+
+/** Count of active manual blocks + schedule segments enforcing allowlist mode. */
+function countAllowlistEnforcementSources(now = Date.now(), nowDate = new Date(now)) {
+    let count = 0;
+    eachActiveAllowlistEnforcement(now, nowDate, () => {
+        count++;
+    });
+    return count;
 }
 
 function findManualBlocklistIdForApp(appName, now = Date.now()) {
@@ -6216,7 +6643,7 @@ function onAppBlockingSnoozeExpired() {
     if (typeof renderBlocklists === 'function') renderBlocklists();
 
     const unackedPids = [...appBlockingWarningRows.entries()]
-        .filter(([, row]) => !row.ackedDeadlineMs)
+        .filter(([, row]) => isAppBlockingWarningRowAwaitingAck(row))
         .map(([pid]) => pid);
     if (unackedPids.length === 0) return;
 
@@ -6258,6 +6685,9 @@ function setupAppBlockingWarningOverlay() {
         if (!Number.isFinite(pid)) return;
         appBlockingWarningRows.set(pid, {
             name: p.name || 'App',
+            intentionOnly: Number(pid) === ALLOWLIST_INTENTION_WARNING_PID
+                || p.name === ALLOWLIST_INTENTION_WARNING_NAME,
+            dismissed: false,
         });
         renderAppBlockingWarningOverlay();
         renderAppBlockingClosedownBanner();
@@ -6270,6 +6700,7 @@ function setupAppBlockingWarningOverlay() {
         appBlockingWarningRows.delete(pid);
         if (appBlockingWarningRows.size === 0) {
             resetAppBlockingWarningSnoozeState();
+            appBlockingWarningSessionBlocklistId = null;
         }
         renderAppBlockingWarningOverlay();
         renderAppBlockingClosedownBanner();
@@ -6305,7 +6736,12 @@ function setupAppBlockingWarningOverlay() {
         void playAppBlockingLetsGoVoice();
         const ackedDeadlineMs = Date.now() + APP_BLOCKING_CLOSEDOWN_PREQUIT_MS;
         for (const row of appBlockingWarningRows.values()) {
-            if (!row.ackedDeadlineMs) row.ackedDeadlineMs = ackedDeadlineMs;
+            if (!isAppBlockingWarningRowAwaitingAck(row)) continue;
+            if (isAllowlistIntentionWarningRow(row)) {
+                row.dismissed = true;
+            } else {
+                row.ackedDeadlineMs = ackedDeadlineMs;
+            }
         }
         applyWarningOverlayPresence();
         renderAppBlockingClosedownBanner();
@@ -6349,6 +6785,16 @@ function findActiveBlocklistForBlockedAppName(appName) {
 
 /** Pick the blocklist to show in the warning overlay for the given apps. */
 function findResponsibleBlocklistForWarningApps(appNames) {
+    const sessionBlocklist = appBlockingWarningSessionBlocklistId
+        ? appData.blocklists.find((bl) => bl.id === appBlockingWarningSessionBlocklistId) ?? null
+        : null;
+    if (sessionBlocklist) return sessionBlocklist;
+
+    if (isAllowlistAppEnforcementActive()) {
+        const activeAllowlist = findActiveAllowlistBlocklist();
+        if (activeAllowlist) return activeAllowlist;
+    }
+
     for (const appName of appNames) {
         const meta = appBlockingNewlyAddedMeta.get(appName);
         if (meta?.blocklistId) {
@@ -6396,21 +6842,30 @@ function renderAppBlockingWarningOverlay() {
     const unknownApp = tSettings('appBlockingUnknownApp');
     const rawNames = [];
     for (const [, row] of appBlockingWarningRows) {
-        if (row.ackedDeadlineMs) continue;
+        if (!isAppBlockingWarningRowAwaitingAck(row)) continue;
+        if (isAllowlistIntentionWarningRow(row)) continue;
         const n = (row.name || unknownApp).trim() || unknownApp;
         rawNames.push(n);
     }
     const names = uniqueBlockedAppDisplayNames(rawNames);
-    if (names.length === 0) {
+    const hasIntentionOnly = [...appBlockingWarningRows.values()].some(
+        (row) => isAppBlockingWarningRowAwaitingAck(row) && isAllowlistIntentionWarningRow(row),
+    );
+    if (names.length === 0 && !hasIntentionOnly) {
         appBlockingActiveStartOverlay = null;
         applyWarningOverlayPresence();
         return;
     }
 
-    const responsibleBlocklist = findResponsibleBlocklistForWarningApps(names);
+    let responsibleBlocklist = findResponsibleBlocklistForWarningApps(names);
     const blocklistName = responsibleBlocklist?.name || tSettings('appBlockingFallbackBlocklistName');
     const blocklistEmoji = responsibleBlocklist?.emoji || '🎯';
-    const startOverlay = getScheduleStartOverlayForWarningApps(names);
+    const startOverlay = getScheduleStartOverlayForWarningApps(names)
+        ?? (responsibleBlocklist ? getScheduleStartOverlayForBlocklistId(responsibleBlocklist.id) : null);
+    const isAllowlistWarning = isBlocklistAllowlistMode(responsibleBlocklist);
+    const allowedAppNames = isAllowlistWarning
+        ? collectActiveAllowlistAllowedAppNamesForBlocklist(responsibleBlocklist)
+        : [];
 
     const headingEl = document.getElementById('app-blocking-warning-heading');
     const summaryEl = document.getElementById('app-blocking-warning-summary');
@@ -6439,13 +6894,18 @@ function renderAppBlockingWarningOverlay() {
         blocklistName,
         blocklistEmoji,
         appNames: names,
+        allowedAppNames,
+        isAllowlistWarning,
         headingEl,
         summaryEl,
+        allowlistAppsEl: document.getElementById('app-blocking-warning-allowlist-apps'),
+        allowlistPillsEl: document.getElementById('app-blocking-warning-allowlist-pills'),
         emojiWrapEl,
         emojiEl,
         imageEl,
         letsGoLabelEl,
         letsGoVoiceIconEl,
+        noteEl: document.getElementById('app-blocking-warning-note'),
     }).then((activeOverlay) => {
         appBlockingActiveStartOverlay = activeOverlay;
         applyWarningOverlayPresence();
@@ -6473,7 +6933,7 @@ function applyWarningOverlayPresence() {
     // `ackedDeadlineMs` and migrates from the overlay to the banner.
     // Also hide while a schedule snooze is active.
     const hasUnackedRows = [...appBlockingWarningRows.values()]
-        .some((row) => !row.ackedDeadlineMs);
+        .some((row) => isAppBlockingWarningRowAwaitingAck(row));
     const isSnoozed = appBlockingWarningSnoozedUntilMs > Date.now();
 
     overlay.classList.toggle('hidden', !hasUnackedRows || isSnoozed);
@@ -6558,15 +7018,33 @@ function normalizeBlockedAppKey(name) {
     return String(name || '').trim().replace(/\.exe$/i, '').toLowerCase();
 }
 
+function humanizeBlockedAppName(processName) {
+    const raw = String(processName || '').trim().replace(/\.exe$/i, '');
+    if (!raw) return processName;
+    const spaced = raw
+        .replace(/[_-]+/g, ' ')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/\s+/g, ' ')
+        .trim();
+    if (!spaced) return processName;
+    return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
 function displayNameForBlockedApp(processName) {
-    const key = normalizeBlockedAppKey(processName);
+    const raw = String(processName || '').trim();
+    const key = normalizeBlockedAppKey(raw);
     if (!key) return processName;
     const match = (installedAppsCache || []).find(
         (a) => normalizeBlockedAppKey(a.process_name) === key,
     );
     if (match?.display_name) return match.display_name;
 
-    return key.charAt(0).toUpperCase() + key.slice(1);
+    // If the watcher already gave us a user-facing title (e.g. "ReDD Blocker"
+    // or "Windows PowerShell"), keep it verbatim instead of re-humanizing it
+    // as though it were a raw process token.
+    if (/\s/.test(raw)) return raw;
+
+    return humanizeBlockedAppName(raw);
 }
 
 async function ensureInstalledAppsCache() {
@@ -6593,7 +7071,7 @@ function uniqueBlockedAppDisplayNames(names) {
 }
 
 /** Pretty list join: "A", "A and B", "A, B and C", "A, B and 4 more". */
-function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
+function joinAppListWithLimit(names, max = 3, { bold = true, oxford = false } = {}) {
     const arr = names.filter(Boolean);
     const wrap = bold
         ? (n) => `<strong>${escapeHtml(n)}</strong>`
@@ -6602,9 +7080,10 @@ function joinAppListWithLimit(names, max = 3, { bold = true } = {}) {
     if (arr.length === 1) return wrap(arr[0]);
     const and = tSettings('andWord');
     if (arr.length <= max) {
+        if (arr.length === 2) return `${wrap(arr[0])} ${and} ${wrap(arr[1])}`;
         const head = arr.slice(0, -1).map(wrap).join(', ');
         const tail = wrap(arr[arr.length - 1]);
-        return `${head} ${and} ${tail}`;
+        return oxford ? `${head}, ${and} ${tail}` : `${head} ${and} ${tail}`;
     }
     const shown = arr.slice(0, max - 1).map(wrap).join(', ');
     const remaining = arr.length - (max - 1);
@@ -7134,7 +7613,10 @@ function detectPlatform() {
         const appInput = document.getElementById('app-input');
         if (appInput) appInput.style.display = 'none';
         const modalAppInput = document.getElementById('modal-app-input');
-        if (modalAppInput) modalAppInput.style.display = 'none';
+        if (modalAppInput) {
+            modalAppInput.style.display = 'none';
+            modalAppInput.closest('.apps-input-with-button')?.classList.add('apps-picker-only');
+        }
 
 
 
@@ -7467,6 +7949,7 @@ function setupEventListeners() {
         }
         if ((target === appInput || document.activeElement === appInput) && appHasPending) {
             appInput.value = '';
+            syncModalAppPlaceholder();
             e.preventDefault();
             e.stopPropagation();
             return;
@@ -7482,6 +7965,7 @@ function setupEventListeners() {
         }
         if (appHasPending) {
             appInput.value = '';
+            syncModalAppPlaceholder();
             e.preventDefault();
             e.stopPropagation();
             return;
@@ -7536,6 +8020,13 @@ function setupEventListeners() {
 
     // Add blocklist button
     document.getElementById('add-blocklist-btn').addEventListener('click', () => openBlocklistModal());
+
+    document.querySelectorAll('#blocklist-mode-toggle .mode-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            if (btn.disabled || btn.classList.contains('disabled')) return;
+            setBlocklistModalMode(btn.dataset.mode);
+        });
+    });
 
     // Onboarding
     // Onboarding removed — default blocklist created in loadData()
@@ -8233,7 +8724,7 @@ function setupModalListeners() {
                 modalAppInput.placeholder = tSettings('cannotBlockSelfAppPlaceholder');
                 modalAppInput.classList.add('input-error');
                 setTimeout(() => {
-                    modalAppInput.placeholder = tSettings('placeholderAppExample');
+                    syncModalAppPlaceholder();
                     modalAppInput.classList.remove('input-error');
                 }, 2000);
                 return;
@@ -8256,9 +8747,13 @@ function setupModalListeners() {
     if (isIOS && modalBrowseBtn) {
         modalBrowseBtn.addEventListener('click', async () => {
             try {
+                // Allow mode: the native picker expands category picks into
+                // their member app tokens (the only thing `.all(except:)` can
+                // enforce) and returns no category tokens.
                 const result = await tauriAPI.showActivityPicker({
                     initialApplicationTokenData: modalIOSScreenTimeSelection?.applicationTokens || [],
-                    initialCategoryTokenData: modalIOSScreenTimeSelection?.categoryTokens || []
+                    initialCategoryTokenData: modalIOSScreenTimeSelection?.categoryTokens || [],
+                    mode: getSelectedBlocklistModalMode()
                 });
                 if (!result.cancelled && (result.applicationCount > 0 || result.categoryCount > 0)) {
                     const previousSelection = cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection);
@@ -8486,14 +8981,35 @@ function setupModalListeners() {
     const emojiPicker = emojiPickerPopover?.querySelector('emoji-picker');
 
     if (customEmojiSwatch && emojiPickerPopover && emojiPicker) {
+        function readSafeAreaInsetTop() {
+            const probe = document.createElement('div');
+            probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px);';
+            document.body.appendChild(probe);
+            const inset = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+            probe.remove();
+            return inset;
+        }
+
+        /** Lowest Y (viewport coords) the picker top may use without overlapping safe area / chrome. */
+        function getEmojiPickerMinTop(padding) {
+            const safeTop = readSafeAreaInsetTop();
+            const blocklistModal = document.getElementById('blocklist-modal');
+            if (blocklistModal && !blocklistModal.classList.contains('hidden')) {
+                const modalHeader = blocklistModal.querySelector('.mobile-modal-header');
+                if (modalHeader) {
+                    return modalHeader.getBoundingClientRect().bottom + padding;
+                }
+            }
+            const titleBar = document.querySelector('.title-bar');
+            const titleBarBottom = titleBar?.classList.contains('hidden')
+                ? 0
+                : (titleBar?.getBoundingClientRect().bottom ?? 0);
+            return Math.max(safeTop + padding, titleBarBottom + padding);
+        }
+
         function positionEmojiPickerPopover() {
             const gap = 8;
             const padding = 8;
-            const titleBarHeight = parseFloat(
-                getComputedStyle(document.documentElement).getPropertyValue('--title-bar-height')
-            ) || 44;
-            const titleBarHidden = document.querySelector('.title-bar')?.classList.contains('hidden');
-            const minTop = titleBarHidden ? padding : titleBarHeight + padding;
 
             emojiPickerPopover.style.top = '';
             emojiPickerPopover.style.bottom = '';
@@ -8512,10 +9028,11 @@ function setupModalListeners() {
             const popoverHeight = popoverRect.height;
             const popoverWidth = popoverRect.width;
 
-            const spaceAbove = rect.top - minTop;
-            let top = spaceAbove >= popoverHeight + gap
-                ? rect.top - popoverHeight - gap
-                : rect.bottom + gap;
+            const minTop = getEmojiPickerMinTop(padding);
+            const aboveTop = rect.top - popoverHeight - gap;
+            const belowTop = rect.bottom + gap;
+            // Place above only when the picker's top edge stays below the safe/chrome line.
+            let top = aboveTop >= minTop ? aboveTop : belowTop;
             top = Math.max(minTop, Math.min(top, window.innerHeight - popoverHeight - padding));
 
             let left = rect.right - popoverWidth;
@@ -8621,7 +9138,7 @@ function setupModalListeners() {
             modalAppInput.value = '';
         }
 
-        const mode = 'blocklist'; // Allowlist mode not yet implemented
+        const mode = getSelectedBlocklistModalMode();
         const overrideType = document.getElementById('override-type').value;
         const overrideCountInput = document.getElementById('override-count');
         const maxDifficultyChecked = document.getElementById('override-max-difficulty-checkbox').checked;
@@ -8666,8 +9183,8 @@ function setupModalListeners() {
             mode,
             color,
             emoji,
-            websites: [...modalWebsites],  // Copy the array
-            apps: [...modalApps],          // Copy the array
+            websites: [...modalWebsites],
+            apps: [...modalApps],
             iosScreenTimeSelection: cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection),
             showItemDetails,
             alwaysShowInSchedule,
@@ -8733,10 +9250,13 @@ function setupModalListeners() {
     });
 
     // Store references for modal functions
-    window.modalWebsites = modalWebsites;
-    window.modalApps = modalApps;
+    window.getModalApps = () => modalApps;
     window.lockedWebsites = [];
     window.lockedApps = [];
+    window.clearModalTagSelections = () => {
+        selectedWebsites.clear();
+        selectedApps.clear();
+    };
 
     window.renderModalTags = () => {
         renderTags(modalWebsitesTags, modalWebsites, (idx) => {
@@ -8810,6 +9330,7 @@ function setupModalListeners() {
         });
 
         syncModalWebsitePlaceholder();
+        syncModalAppPlaceholder();
     };
 
     // Esc inside the modal clears any active tag selection (it does NOT close
@@ -9240,6 +9761,53 @@ function pad(num) {
     return num.toString().padStart(2, '0');
 }
 
+function getSelectedBlocklistActiveBlock(now = Date.now()) {
+    if (!selectedBlocklistId) return null;
+    return appData.activeBlocks.find(
+        b => b.blocklistId === selectedBlocklistId && b.startTime <= now && b.endTime > now
+    ) || null;
+}
+
+// While a one-off block is running, keep the greyed-out end-time row on the committed
+// end time instead of rolling forward with the clock.
+function applyFrozenInstantEndTimeFromBlock(activeBlock) {
+    const blockEnd = new Date(activeBlock.endTime);
+    const blockStart = new Date(activeBlock.startTime);
+    selectedEndHour = blockEnd.getHours();
+    selectedEndMinute = blockEnd.getMinutes();
+
+    const totalMinutes = Math.max(1, Math.round((activeBlock.endTime - activeBlock.startTime) / 60000));
+    targetDurationMinutes = totalMinutes;
+
+    const durationInput = document.getElementById('duration-minutes-input');
+    if (durationInput && document.activeElement !== durationInput) {
+        durationInput.value = totalMinutes;
+    }
+    updateDurationQuickBtns(totalMinutes);
+
+    const nextDayIndicator = document.getElementById('next-day-indicator');
+    if (nextDayIndicator) {
+        const startDay = new Date(blockStart);
+        startDay.setHours(0, 0, 0, 0);
+        const endDay = new Date(blockEnd);
+        endDay.setHours(0, 0, 0, 0);
+        const daysDiff = Math.round((endDay - startDay) / (24 * 60 * 60 * 1000));
+        if (daysDiff > 0) {
+            if (daysDiff === 1) {
+                nextDayIndicator.textContent = 'tomorrow';
+            } else {
+                const dateStr = blockEnd.getDate() + ' ' + blockEnd.toLocaleString('default', { month: 'short' });
+                nextDayIndicator.textContent = dateStr;
+            }
+            nextDayIndicator.classList.remove('hidden');
+        } else {
+            nextDayIndicator.classList.add('hidden');
+        }
+    }
+
+    updateTimeDisplay();
+}
+
 // Disable or enable time controls (when a block is active, controls should be disabled)
 function disableTimeControls(disabled) {
     const durationInput = document.getElementById('duration-minutes-input');
@@ -9401,10 +9969,15 @@ function initializeTimeInputs() {
         targetDurationMinutes = 60;
     }
 
-    // End time = now + target duration
-    const endTime = new Date(now.getTime() + targetDurationMinutes * 60 * 1000);
-    selectedEndHour = endTime.getHours();
-    selectedEndMinute = endTime.getMinutes();
+    const activeBlock = getSelectedBlocklistActiveBlock(now.getTime());
+    if (activeBlock && !isBlockAlwaysOn(activeBlock)) {
+        applyFrozenInstantEndTimeFromBlock(activeBlock);
+    } else {
+        // End time = now + target duration
+        const endTime = new Date(now.getTime() + targetDurationMinutes * 60 * 1000);
+        selectedEndHour = endTime.getHours();
+        selectedEndMinute = endTime.getMinutes();
+    }
 
     // Populate hour options (0-23) for end time only
     const hourContainer = document.getElementById('end-hour-options');
@@ -11056,6 +11629,7 @@ async function startSchedule() {
         return;
     }
 
+    if (!(await ensureIOSAllowlistStartable(blocklist))) return;
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
 
     // Normal start mode - check that at least one segment has days
@@ -11449,6 +12023,31 @@ function buildDefaultWarningSummaryHtml(names, blocklistName, letsGoLabel) {
     return tSettingsFmt(summaryKey, { blocklist: bl, letsGo, apps });
 }
 
+function getAllowlistWarningAppInitial(name) {
+    const trimmed = String(name || '').trim();
+    if (!trimmed) return '?';
+    return Array.from(trimmed)[0].toLocaleUpperCase();
+}
+
+function buildAllowlistWarningAppsHtml(allowedNames) {
+    return allowedNames.map((name) => (
+        `<span class="app-blocking-allowlist-pill"><span class="app-blocking-allowlist-pill-icon">${escapeHtml(getAllowlistWarningAppInitial(name))}</span><span>${escapeHtml(name)}</span></span>`
+    )).join('');
+}
+
+function buildAllowlistWarningNoteHtml(warnedNames, letsGoLabel) {
+    const oxford = { oxford: true };
+    const letsGo = escapeHtml(letsGoLabel || tSettings('appBlockingLetsGo'));
+    if (warnedNames.length === 0) {
+        return tSettingsFmt('appBlockingAllowlistActionNoWarnedHtml', { letsGo });
+    }
+    const warnedApps = joinAppListWithLimit(warnedNames, warnedNames.length, oxford);
+    const summaryKey = warnedNames.length === 1
+        ? 'appBlockingAllowlistActionSingleWarnedHtml'
+        : 'appBlockingAllowlistActionMultiWarnedHtml';
+    return tSettingsFmt(summaryKey, { warnedApps, letsGo });
+}
+
 function getScheduleOverlayAppsPreviewList(blocklist) {
     const apps = getBlocklistDisplayApps(blocklist);
     return joinAppListWithLimit(apps, 3, { bold: false });
@@ -11664,13 +12263,18 @@ async function applyScheduleStartOverlayPresentation({
     blocklistName,
     blocklistEmoji,
     appNames,
+    allowedAppNames = [],
+    isAllowlistWarning = false,
     headingEl,
     summaryEl,
+    allowlistAppsEl,
+    allowlistPillsEl,
     emojiWrapEl,
     emojiEl,
     imageEl,
     letsGoLabelEl,
     letsGoVoiceIconEl,
+    noteEl,
 }) {
     const defaultLetsGo = tSettings('appBlockingLetsGo');
     const useCustom = !!(overlay?.custom && scheduleStartOverlayHasCustomContent(overlay));
@@ -11687,7 +12291,9 @@ async function applyScheduleStartOverlayPresentation({
     }
 
     if (summaryEl) {
-        if (useCustom && overlay.message) {
+        if (isAllowlistWarning) {
+            summaryEl.textContent = tSettings('appBlockingAllowlistIntro');
+        } else if (useCustom && overlay.message) {
             summaryEl.innerHTML = formatScheduleOverlayCustomMessageHtml(
                 overlay.message,
                 appNames,
@@ -11695,6 +12301,24 @@ async function applyScheduleStartOverlayPresentation({
             );
         } else {
             summaryEl.innerHTML = buildDefaultWarningSummaryHtml(appNames, blocklistName, letsGoText);
+        }
+    }
+
+    if (allowlistAppsEl) {
+        allowlistAppsEl.classList.toggle('hidden', !isAllowlistWarning);
+    }
+    if (allowlistPillsEl) {
+        allowlistPillsEl.innerHTML = isAllowlistWarning
+            ? buildAllowlistWarningAppsHtml(allowedAppNames)
+            : '';
+    }
+    if (noteEl) {
+        if (isAllowlistWarning) {
+            noteEl.innerHTML = buildAllowlistWarningNoteHtml(appNames, letsGoText);
+            noteEl.classList.remove('hidden');
+        } else {
+            noteEl.textContent = '';
+            noteEl.classList.add('hidden');
         }
     }
 
@@ -11920,19 +12544,25 @@ async function renderScheduleOverlayCustomisePreview(blocklist, draft) {
     const names = getBlocklistDisplayApps(blocklist);
     const previewNames = names.length > 0 ? names : [tSettings('appBlockingUnknownApp')];
     const normalized = normalizeScheduleStartOverlay(draft);
+    const isAllowlistPreview = isBlocklistAllowlistMode(blocklist);
 
     await applyScheduleStartOverlayPresentation({
         overlay: normalized,
         blocklistName: blocklist.name,
         blocklistEmoji: blocklist.emoji || '🎯',
         appNames: previewNames,
+        allowedAppNames: isAllowlistPreview ? previewNames : [],
+        isAllowlistWarning: isAllowlistPreview,
         headingEl: document.getElementById('schedule-overlay-preview-heading'),
         summaryEl: document.getElementById('schedule-overlay-preview-summary'),
+        allowlistAppsEl: document.getElementById('schedule-overlay-preview-allowlist-apps'),
+        allowlistPillsEl: document.getElementById('schedule-overlay-preview-allowlist-pills'),
         emojiWrapEl: document.getElementById('schedule-overlay-preview-emoji-wrap'),
         emojiEl: document.getElementById('schedule-overlay-preview-emoji'),
         imageEl: document.getElementById('schedule-overlay-preview-image'),
         letsGoLabelEl: document.getElementById('schedule-overlay-preview-lets-go-label'),
         letsGoVoiceIconEl: document.getElementById('schedule-overlay-preview-voice-icon'),
+        noteEl: document.getElementById('schedule-overlay-preview-note'),
     });
 
     const imagePreview = document.getElementById('schedule-overlay-image-preview');
@@ -12894,6 +13524,12 @@ function setStartConfirmPrimaryLabel(buttonId, text) {
     if (label) label.textContent = text;
 }
 
+function getStartConfirmModeLabel(blocklist) {
+    return tSettings(
+        isBlocklistAllowlistMode(blocklist) ? 'startConfirmAllowingLabel' : 'startConfirmBlockingLabel',
+    );
+}
+
 function buildStartConfirmBlockingLineHtml(type, labels) {
     const icon = type === 'website' ? START_CONFIRM_ICON_GLOBE : START_CONFIRM_ICON_APP;
     const text = labels.map((label) => escapeHtml(label)).join(', ');
@@ -12931,6 +13567,11 @@ function renderStartConfirmBlockingListHtml(blocklist, maxShow) {
 
 function renderStartConfirmBlockingDetails(blocklist, listEl, showAllBtn, rowEl) {
     if (!listEl || !rowEl) return;
+
+    const labelEl = rowEl.querySelector('[id$="-blocking-label"]');
+    if (labelEl) {
+        labelEl.textContent = getStartConfirmModeLabel(blocklist);
+    }
 
     const websites = blocklist?.websites || [];
     const apps = getBlocklistDisplayApps(blocklist);
@@ -13022,8 +13663,11 @@ function formatStartBlockDurationCopy(isAlwaysOn, blockStart, blockEnd) {
     });
 }
 
-function formatStartBlockSubtitle(isAlwaysOn, blockStart, blockEnd) {
-    if (isAlwaysOn) return tSettings('startBlockSubtitleAlways');
+function formatStartBlockSubtitle(blocklist, isAlwaysOn, blockStart, blockEnd) {
+    const isAllowlist = isBlocklistAllowlistMode(blocklist);
+    if (isAlwaysOn) {
+        return tSettings(isAllowlist ? 'startBlockSubtitleAllowlistAlways' : 'startBlockSubtitleAlways');
+    }
     const durationMs = blockEnd.getTime() - blockStart.getTime();
     const durationMinutes = Math.max(1, Math.round(durationMs / 60000));
     const hours = Math.floor(durationMinutes / 60);
@@ -13032,7 +13676,8 @@ function formatStartBlockSubtitle(isAlwaysOn, blockStart, blockEnd) {
     if (hours > 0 && mins > 0) durationLabel = `${hours}h ${mins}m`;
     else if (hours > 0) durationLabel = `${hours} hour${hours > 1 ? 's' : ''}`;
     else durationLabel = `${mins} minute${mins > 1 ? 's' : ''}`;
-    return tSettingsFmt('startBlockSubtitleFmt', { duration: durationLabel });
+    const key = isAllowlist ? 'startBlockSubtitleAllowlistFmt' : 'startBlockSubtitleFmt';
+    return tSettingsFmt(key, { duration: durationLabel });
 }
 
 function setStartConfirmRoomChip(blocklist, {
@@ -13193,7 +13838,10 @@ function getStartBlockConfirmTitle(blocklist) {
 
 function getResumeBlockConfirmTitle(blocklist) {
     if (!blocklist) return tSettings('resumeThisBlock');
-    return tSettingsFmt('resumeBlockTitleFmt', { name: blocklist.name });
+    return tSettingsFmt(
+        isBlocklistAllowlistMode(blocklist) ? 'resumeBlockTitleAllowlistFmt' : 'resumeBlockTitleFmt',
+        { name: blocklist.name },
+    );
 }
 
 function showScheduleConfirmModal(blocklist) {
@@ -13205,7 +13853,13 @@ function showScheduleConfirmModal(blocklist) {
     setStartConfirmRoomChip(blocklist, SCHEDULE_CONFIRM_ROOM_CHIP_IDS);
 
     const subtitleEl = document.getElementById('schedule-confirm-subtitle');
-    if (subtitleEl) subtitleEl.innerHTML = tSettings('startScheduleSubtitle');
+    if (subtitleEl) {
+        subtitleEl.innerHTML = tSettings(
+            isBlocklistAllowlistMode(blocklist)
+                ? 'startScheduleSubtitleAllowlist'
+                : 'startScheduleSubtitle',
+        );
+    }
 
     pendingScheduleStartOverlayId = getEffectiveScheduleStartOverlayId();
     syncScheduleConfirmOverlaySummary();
@@ -13436,7 +14090,9 @@ async function proceedWithSchedule() {
 
     const blocklist = appData.blocklists.find(bl => bl.id === selectedBlocklistId);
     if (!blocklist) return;
+    if (!(await ensureIOSAllowlistStartable(blocklist))) return;
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
+    appBlockingWarningSessionBlocklistId = selectedBlocklistId;
 
     // v2: no helper to install. The app itself is the engine; if it
     // launched, blocking works. The legacy helper-install-modal
@@ -13582,6 +14238,15 @@ function handleTimeChange() {
     }
 
     // --- Instant mode logic ---
+    const activeBlock = getSelectedBlocklistActiveBlock();
+    if (activeBlock && !isBlockAlwaysOn(activeBlock)) {
+        applyFrozenInstantEndTimeFromBlock(activeBlock);
+        startBtn.disabled = false;
+        if (noBlocksMsg) noBlocksMsg.classList.add('hidden');
+        updateWindowHeight();
+        return;
+    }
+
     // Get times (start is always now)
     let blockStart = getStartTimeAsDate();
     let blockEnd = getEndTimeAsDate();
@@ -14596,7 +15261,7 @@ function startBlock() {
 
     const subtitleEl = document.getElementById('start-confirm-subtitle');
     if (subtitleEl) {
-        subtitleEl.innerHTML = formatStartBlockSubtitle(isAlwaysOnMode, blockStart, blockEnd);
+        subtitleEl.innerHTML = formatStartBlockSubtitle(blocklist, isAlwaysOnMode, blockStart, blockEnd);
     }
 
     const durationEl = document.getElementById('start-confirm-duration');
@@ -14689,6 +15354,12 @@ async function proceedWithBlock() {
         startBtn.innerHTML = getStartBlockButtonHTML();
         return;
     }
+    appBlockingWarningSessionBlocklistId = selectedBlocklistId;
+    if (!(await ensureIOSAllowlistStartable(blocklist))) {
+        startBtn.disabled = false;
+        startBtn.innerHTML = getStartBlockButtonHTML();
+        return;
+    }
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this block')) {
         startBtn.disabled = false;
         startBtn.innerHTML = getStartBlockButtonHTML();
@@ -14744,12 +15415,19 @@ async function proceedWithBlock() {
                 // Register one-off DeviceActivity so block ends at endTime when app is closed (Option B: store this block's payload to remove)
                 if (!block.isAlwaysOn && block.endTime < ALWAYS_ON_END_TIME) {
                     try {
-                        const iosPayload = getBlocklistIOSPayload(blocklist);
+                        // Allowlist blocks: domains and app tokens are ALLOWED items
+                        // (subtracted from the allowlist record at block end);
+                        // category tokens cannot be allowlist exceptions.
+                        const endIsAllowlist = isBlocklistAllowlistMode(blocklist);
+                        const iosPayload = endIsAllowlist
+                            ? { appTokenData: getBlocklistIOSPayload(blocklist).appTokenData, categoryTokenData: [] }
+                            : getBlocklistIOSPayload(blocklist);
                         await tauriAPI.screentimeSetBlockEndState({
                             blockId: block.id,
                             domains: Array.from(blocklist?.websites || []),
                             appTokenData: iosPayload.appTokenData,
-                            categoryTokenData: iosPayload.categoryTokenData
+                            categoryTokenData: iosPayload.categoryTokenData,
+                            mode: endIsAllowlist ? 'allowlist' : null
                         });
                         const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-end-' + block.id, block.endTime);
                         if (res && res.success === false) {
@@ -15030,7 +15708,29 @@ async function updateHostsFile(silent = false) {
                 lastBlockedDomains = new Set();
                 return { success: true };
             }
-            if (manualPayload.domains.length === 0) {
+            // Allowlist safety: never send an exception set Apple would truncate
+            // (truncating an allow list over-blocks). Validate the cross-channel
+            // effective policy, not just this payload.
+            const enforcementSources = collectActiveIOSEnforcementSources(now);
+            const webLimitCheck = validateIOSAllowlistLimits(deriveIOSEffectiveWebsitePolicy(enforcementSources));
+            if (!webLimitCheck.ok) {
+                console.error('[updateHostsFile] iOS: allowlist exceeds Screen Time domain cap:', webLimitCheck);
+                return {
+                    success: false,
+                    error: tSettings('allowlistIosDomainLimit').replace('{n}', String(webLimitCheck.count))
+                };
+            }
+            const appLimitCheck = validateIOSAllowlistLimits(deriveIOSEffectiveAppPolicy(enforcementSources));
+            if (!appLimitCheck.ok) {
+                console.error('[updateHostsFile] iOS: allowlist exceeds Screen Time app cap:', appLimitCheck);
+                return {
+                    success: false,
+                    error: tSettings('allowlistIosTokenLimit').replace('{n}', String(appLimitCheck.count))
+                };
+            }
+            if (manualPayload.allowedDomains.length > 0 || manualPayload.allowedAppTokenData.length > 0) {
+                console.log('[updateHostsFile] iOS: starting Screen Time allowlist —', manualPayload.allowedDomains.length, 'allowed sites,', manualPayload.allowedAppTokenData.length, 'allowed apps,', manualPayload.domains.length, 'explicitly blocked sites');
+            } else if (manualPayload.domains.length === 0) {
                 console.log('[updateHostsFile] iOS: active blocks with no domains (app-only), applying app shield');
             } else {
                 console.log('[updateHostsFile] iOS: starting Screen Time block for', manualPayload.domains);
@@ -15111,6 +15811,9 @@ async function updateHostsFile(silent = false) {
 /// that initial state as "what was already running before we got
 /// here", not as a transition the user just initiated.
 let appBlockingPreviousAppsSet = null;
+let appBlockingPreviousAllowedAppsSet = null;
+let appBlockingPreviousAllowlistActive = false;
+let appBlockingPreviousAllowlistSourceCount = null;
 
 async function updateBlockedApps() {
     // iOS uses Screen Time API for app blocking
@@ -15123,15 +15826,20 @@ async function updateBlockedApps() {
     const allBlockedApps = new Set([...manualApps, ...scheduleApps]);
     const appsArray = Array.from(allBlockedApps).sort();
 
+    const manualAllowed = collectManualAllowedApps(now);
+    const scheduleAllowed = collectScheduleAllowedApps(now);
+    const allAllowedApps = new Set([...manualAllowed, ...scheduleAllowed]);
+    const allowedAppsArray = Array.from(allAllowedApps).sort();
+    const allowlistActive = isAllowlistAppEnforcementActive(now);
+
     const prevAll = appBlockingPreviousAppsSet;
     const prevManual = appBlockingPreviousManualAppsSet ?? new Set();
     const prevSchedule = appBlockingPreviousScheduleAppsSet ?? new Set();
+    const prevAllowedAll = appBlockingPreviousAllowedAppsSet;
+    const prevAllowlistActive = appBlockingPreviousAllowlistActive;
+    const prevAllowlistSourceCount = appBlockingPreviousAllowlistSourceCount;
+    const allowlistSourceCount = countAllowlistEnforcementSources(now, nowDate);
 
-    // Compute the diff against the last sync so the watcher knows
-    // which apps just transitioned to blocked (warning-eligible) vs
-    // which were already blocked (silent enforcement). On the very
-    // first call the previous sets are null — we treat that as
-    // "initial state, no transitions" and skip warnings entirely.
     const newlyAddedApps = prevAll === null
         ? []
         : appsArray.filter((a) => !prevAll.has(a));
@@ -15149,20 +15857,59 @@ async function updateBlockedApps() {
         clearAppBlockingWarningSnoozeTimer();
         appBlockingWarningSnoozedUntilMs = 0;
     }
+
+    const allowlistEnforcementExpanded =
+        prevAllowlistSourceCount !== null && allowlistSourceCount > prevAllowlistSourceCount;
+    const allowlistNewlyStarted =
+        allowlistActive &&
+        (prevAllowedAll === null
+            ? false
+            : !prevAllowlistActive
+                || allowedAppsArray.some((a) => !prevAllowedAll.has(a))
+                || allowlistEnforcementExpanded);
+
+    if (allowlistNewlyStarted) {
+        const sessionId = inferAllowlistWarningSessionBlocklistId(
+            now,
+            nowDate,
+            prevAllowlistActive,
+            prevAllowedAll,
+            allowedAppsArray,
+            allowlistEnforcementExpanded,
+        );
+        if (sessionId) appBlockingWarningSessionBlocklistId = sessionId;
+    } else if (newlyAddedApps.length > 0) {
+        const metaBlocklistId = newlyAddedApps
+            .map((app) => appBlockingNewlyAddedMeta.get(app)?.blocklistId)
+            .find(Boolean);
+        if (metaBlocklistId) appBlockingWarningSessionBlocklistId = metaBlocklistId;
+    } else if (!allowlistActive && appsArray.length === 0) {
+        appBlockingWarningSessionBlocklistId = null;
+    }
+
     appBlockingPreviousAppsSet = new Set(appsArray);
     appBlockingPreviousManualAppsSet = new Set(manualApps);
     appBlockingPreviousScheduleAppsSet = new Set(scheduleApps);
+    appBlockingPreviousAllowedAppsSet = new Set(allowedAppsArray);
+    appBlockingPreviousAllowlistActive = allowlistActive;
+    appBlockingPreviousAllowlistSourceCount = allowlistSourceCount;
 
-    // Desktop v3: `set_blocked_apps_via_helper` routes to the in-process
-    // app watcher — always push while the app is alive. The legacy
-    // helper-daemon gate left schedule app blocking as a no-op whenever
-    // `helperAvailable` was still false at the first tick.
     try {
-        const result = await tauriAPI.setBlockedAppsViaHelper(appsArray, newlyAddedApps);
+        const result = await tauriAPI.setBlockedAppsViaHelper(
+            appsArray,
+            newlyAddedApps,
+            allowedAppsArray,
+            allowlistActive,
+            allowlistNewlyStarted,
+        );
         if (result && result.success) {
             console.log(
                 '[updateBlockedApps] Apps synced to watcher:',
-                appsArray.length, 'apps,', newlyAddedApps.length, 'newly added',
+                appsArray.length, 'blocked,',
+                allowedAppsArray.length, 'allowed,',
+                newlyAddedApps.length, 'newly blocked,',
+                allowlistActive ? 'allowlist on' : 'allowlist off,',
+                allowlistNewlyStarted ? 'block-start sweep' : 'no block-start sweep',
             );
         } else {
             console.warn('[updateBlockedApps] Watcher sync failed:', result?.error);
@@ -15316,6 +16063,8 @@ function openBlocklistModal(blocklist = null) {
         }
     }
 
+    setBlocklistModalMode(blocklist?.mode === 'allowlist' ? 'allowlist' : 'blocklist');
+
     // Check if active (block or schedule)
     const now = Date.now();
     const hasActiveBlock = blocklist?.id && appData.activeBlocks.some(
@@ -15369,13 +16118,13 @@ function openBlocklistModal(blocklist = null) {
         document.getElementById('override-count-minus')?.setAttribute('disabled', '');
         document.getElementById('override-count-plus')?.setAttribute('disabled', '');
 
-        // Pass existing items as locked
+        // Pass existing items as locked (active mode only — mode toggle is disabled)
         window.setModalData(
             blocklist.websites || [],
             getBlocklistRegularApps(blocklist),
             getBlocklistIOSScreenTimeSelection(blocklist),
             blocklist.websites || [],
-            getBlocklistModalLockedApps(blocklist)
+            getBlocklistModalLockedApps(blocklist),
         );
     } else {
         warningEl.classList.add('hidden');
@@ -15404,8 +16153,6 @@ function openBlocklistModal(blocklist = null) {
             blocklist?.websites || [],
             getBlocklistRegularApps(blocklist),
             getBlocklistIOSScreenTimeSelection(blocklist),
-            [],
-            []
         );
     }
 
@@ -15484,10 +16231,17 @@ function closeBlocklistModal() {
 
 /** Override / pause modal summary, e.g. "Blocks 3 websites (a.com, b.com, c.com)". */
 function formatBlocklistModalSummary(blocklist) {
+    const isAllow = isBlocklistAllowlistMode(blocklist);
     const websiteCount = blocklist.websites?.length || 0;
     const displayApps = getBlocklistDisplayApps(blocklist);
-    const appCount = displayApps.length;
-    const mode = blocklist.mode === 'allowlist' ? 'Allows' : 'Blocks';
+    // Screen Time selection is one display label but counts each app it holds.
+    const screenTimeSelection = getBlocklistIOSScreenTimeSelection(blocklist);
+    const screenTimeCount = countIOSScreenTimeSelectionItems(screenTimeSelection, isAllow);
+    const hasScreenTimeLabel = !!formatIOSScreenTimeSelectionLabel(screenTimeSelection);
+    const appCount = displayApps.length - (hasScreenTimeLabel ? 1 : 0) + screenTimeCount;
+    const mode = isAllow
+        ? tSettings('blocklistModalSummaryAllows')
+        : tSettings('blocklistModalSummaryBlocks');
     const metaParts = [];
 
     if (websiteCount > 0) {
@@ -15500,8 +16254,9 @@ function formatBlocklistModalSummary(blocklist) {
     }
 
     if (appCount > 0) {
+        const appLabel = appCount === 1 ? 'app' : 'apps';
         if (appCount <= 3) {
-            metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${displayApps.join(', ')})`);
+            metaParts.push(`${appCount} ${appLabel} (${displayApps.join(', ')})`);
         } else {
             metaParts.push(`${appCount} apps (${displayApps.slice(0, 3).join(', ')}, ...)`);
         }
@@ -15615,7 +16370,11 @@ function openResumeConfirmation(blocklistId, type, blockId) {
     document.getElementById('start-block-confirm-title').textContent = getResumeBlockConfirmTitle(blocklist);
 
     const subtitleEl = document.getElementById('start-confirm-subtitle');
-    if (subtitleEl) subtitleEl.innerHTML = tSettings('resumeBlockSubtitle');
+    if (subtitleEl) {
+        subtitleEl.innerHTML = tSettings(
+            isBlocklistAllowlistMode(blocklist) ? 'resumeBlockSubtitleAllowlist' : 'resumeBlockSubtitle',
+        );
+    }
 
     const durationEl = document.getElementById('start-confirm-duration');
     if (type === 'block') {
@@ -16109,12 +16868,19 @@ async function proceedWithPause() {
             if (block && block.pauseEndTime) {
                 try {
                     const blocklist = appData.blocklists.find(bl => bl.id === block.blocklistId);
-                    const iosPayload = getBlocklistIOSPayload(blocklist);
+                    // Allowlist blocks: domains and app tokens are ALLOWED items
+                    // (merged back into the allowlist record on resume);
+                    // category tokens cannot be allowlist exceptions.
+                    const resumeIsAllowlist = isBlocklistAllowlistMode(blocklist);
+                    const iosPayload = resumeIsAllowlist
+                        ? { appTokenData: getBlocklistIOSPayload(blocklist).appTokenData, categoryTokenData: [] }
+                        : getBlocklistIOSPayload(blocklist);
                     await tauriAPI.screentimeSetResumePayload({
                         blockId: pauseBlockId,
                         domains: blocklist?.websites || [],
                         appTokenData: iosPayload.appTokenData,
-                        categoryTokenData: iosPayload.categoryTokenData
+                        categoryTokenData: iosPayload.categoryTokenData,
+                        mode: resumeIsAllowlist ? 'allowlist' : null
                     });
                     const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + pauseBlockId, block.pauseEndTime);
                     if (res && res.success === false) {
@@ -17128,6 +17894,9 @@ function syncSelectedControlState() {
             updatePauseButtonAppearance(!!activeBlock.isPaused);
         }
         disableTimeControls(true);
+        if (!isBlockAlwaysOn(activeBlock)) {
+            applyFrozenInstantEndTimeFromBlock(activeBlock);
+        }
         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
     } else {
                 setBtnActionLabel(btnLabel, tSettings('startBlockButton'), { simple: true });
@@ -18157,42 +18926,9 @@ function renderBlocklists() {
     }
 
     container.innerHTML = appData.blocklists.map(bl => {
-        // Build detailed meta text
-        const websiteCount = bl.websites?.length || 0;
-        const regularApps = getBlocklistRegularApps(bl);
-        const screenTimeSelection = getBlocklistIOSScreenTimeSelection(bl);
-        const screenTimeLabel = formatIOSScreenTimeSelectionLabel(screenTimeSelection);
-        const appCount = regularApps.length + (screenTimeLabel ? 1 : 0);
-        const showDetails = bl.showItemDetails !== false; // Default to true
-        let metaParts = [];
+        // Build card summary: "Blocks 5 · instagram, youtube, Firefox"
+        const metaHtml = buildBlocklistCardMetaHtml(bl);
 
-        if (websiteCount > 0) {
-            metaParts.push(formatBlocklistCardSitesSummary(websiteCount, bl.websites, showDetails));
-        }
-
-        if (appCount > 0) {
-            if (screenTimeLabel) {
-                const stText = `${screenTimeLabel.replace(' selected (Screen Time)', '')} via Screen Time`;
-                if (regularApps.length > 0) {
-                    metaParts.push(`${regularApps.length} ${regularApps.length === 1 ? 'app' : 'apps'} + ${stText}`);
-                } else {
-                    metaParts.push(stText);
-                }
-            } else if (showDetails) {
-                const regularAppLabels = regularApps.map(displayNameForBlockedApp);
-                if (appCount <= 2) {
-                    metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'} (${regularAppLabels.join(', ')})`);
-                } else {
-                    metaParts.push(`${appCount} apps (${regularAppLabels.slice(0, 2).join(', ')}, ...)`);
-                }
-            } else {
-                metaParts.push(`${appCount} ${appCount === 1 ? 'app' : 'apps'}`);
-            }
-        }
-
-        const metaText = metaParts.length > 0 ? metaParts.join(` ${tSettings('andWord')} `) : tSettings('noItems');
-
-        // Get color for left border
         // Get color for left border
         const borderColor = bl.color || 'linear-gradient(135deg, #4a00e0 0%, #8e2de2 100%)';
 
@@ -18375,7 +19111,7 @@ function renderBlocklists() {
             <span class="blocklist-title-text">${escapeHtml(bl.name)}</span>
             <span class="blocklist-name-badges">${activeBadge}</span>
           </div>
-          <div class="blocklist-meta">${escapeHtml(metaText)}</div>
+          <div class="blocklist-meta">${metaHtml}</div>
         </div>
         <div class="blocklist-actions">
           <div class="blocklist-menu-wrapper">
@@ -18801,8 +19537,15 @@ function startTickInterval() {
             }
         });
 
-        // Auto-update end time if user hasn't manually edited it (skip in always-on mode)
-        if (selectedBlocklistId && !userEditedEndTime && !isAlwaysOnMode) {
+        // Auto-update end time if user hasn't manually edited it (skip in always-on mode
+        // and while a one-off block is running — controls are locked to the committed end).
+        const activeBlockForSelection = getSelectedBlocklistActiveBlock(now);
+        if (
+            selectedBlocklistId &&
+            !userEditedEndTime &&
+            !isAlwaysOnMode &&
+            !(activeBlockForSelection && !isBlockAlwaysOn(activeBlockForSelection))
+        ) {
             const newEndTime = new Date(now + targetDurationMinutes * 60 * 1000);
             selectedEndHour = newEndTime.getHours();
             selectedEndMinute = newEndTime.getMinutes();
@@ -19516,10 +20259,18 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsActiveBlocks: 'Active blocks',
         diagnosticsRecentLogSection: 'Recent log (last {n} lines)',
         diagnosticsCurrentlyBlocking: 'Currently being blocked',
+        diagnosticsCurrentEnforcement: 'Current enforcement',
+        diagnosticsModeBlocklist: 'Blocklist',
+        diagnosticsModeAllowlist: 'Allowlist',
         diagnosticsActiveSources: 'Active blocklists',
         diagnosticsActiveSourcesNone: 'None',
-        diagnosticsDomainsCount: 'Domains ({n})',
-        diagnosticsAppsCount: 'Apps ({n})',
+        diagnosticsDomainsCount: 'Blocked domains ({n})',
+        diagnosticsAllowedDomainsCount: 'Allowed domains ({n})',
+        diagnosticsAppsCount: 'Blocked apps ({n})',
+        diagnosticsAllowedAppsCount: 'Allowed apps ({n})',
+        diagnosticsAllowlistEnforcement: 'App allowlist enforcement',
+        diagnosticsBlockDomainsFmt: '{n} domain(s)',
+        diagnosticsBlockAppsFmt: '{n} app(s)',
         diagnosticsAppDataSection: 'App data (redd-block-data.json)',
         diagnosticsPath: 'Path',
         diagnosticsWatchdog: 'Watchdog Scheduled Task',
@@ -19569,6 +20320,14 @@ const SETTINGS_TRANSLATIONS = {
             '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close it for you.',
         appBlockingWarningSummaryMultiHtml:
             '<strong>{blocklist}</strong> is starting — time to wrap up.<br>When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {apps}, then we’ll close them for you.',
+        appBlockingAllowlistIntro:
+            'Your device will become a toolkit with just the apps you\'ve allowed yourself to use.',
+        appBlockingAllowlistActionNoWarnedHtml:
+            'When you click <strong>{letsGo}</strong>, all other apps will be closed when you try to open them.',
+        appBlockingAllowlistActionSingleWarnedHtml:
+            'When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close it for you.',
+        appBlockingAllowlistActionMultiWarnedHtml:
+            'When you click <strong>{letsGo}</strong>, we’ll give you 30 seconds to save your work in {warnedApps}, then we’ll close them for you.',
         appBlockingClosedownCountdownHtml:
             'Closing {apps} in <strong>{seconds}s</strong> — save your work now.',
         appBlockingClosedownFinalSingleHtml: 'Closing {apps} now…',
@@ -19635,12 +20394,37 @@ const SETTINGS_TRANSLATIONS = {
         // Blocklist modal
         createBlocklist: 'Create focus space',
         editBlocklist: 'Edit focus space',
-        activeBlocklistWarning: 'This blocklist is active. Some settings are locked.',
+        activeBlocklistWarning: 'This focus space is active. Some settings are locked.',
         name: 'Name',
         websites: 'Websites to block',
+        websitesAllow: 'Websites to allow',
         websitesTooltip: 'Blocking applies to entire domains. For example, typing "facebook.com" blocks all of Facebook, not just specific pages.',
+        websitesAllowTooltip: 'Only these domains can be visited in the browser. Subdomains count too — "youtube.com" also allows "www.youtube.com". Localhost is always allowed.',
         apps: 'Apps to block',
+        appsAllow: 'Apps to allow',
         appsTooltip: 'Enter the exact name of the application (e.g. \'Safari\'). You can also use the folder button to find the app.',
+        appsAllowTooltip: 'Only these apps can stay in the foreground. Background apps (Dropbox, sync tools, etc.) keep running.',
+        blocklistModeLabel: 'Mode',
+        blocklistModeBlocklist: 'Block',
+        blocklistModeAllowlist: 'Allow',
+        blocklistModalSummaryBlocks: 'Blocks',
+        blocklistModalSummaryAllows: 'Allows',
+        blocklistModeHint: 'Only the websites and apps you add will be blocked.',
+        allowlistModeHint: 'Only the websites and apps you add will be accessible. Everything else is blocked.',
+        placeholderWebsiteBlock: 'e.g., facebook.com',
+        placeholderWebsiteAllow: 'e.g., ulriklyngs.com',
+        placeholderAppBlock: 'e.g., Safari',
+        placeholderAppAllow: 'e.g., Microsoft Word',
+        allowlistIosNeedsWebsitesTitle: 'No websites / apps added',
+        allowlistIosNeedsWebsites: 'Add at least one website or app to start this allow-mode focus space. Selecting a category in the app picker adds the apps currently in it.',
+        allowlistIosDomainLimitTitle: 'Too many websites added',
+        allowlistIosDomainLimit: 'This focus space has {n} websites added, but the maximum number Screen Time allows is 50. Please remove some websites and try again.',
+        allowlistIosTokenLimitTitle: 'Too many apps added',
+        allowlistIosTokenLimit: 'This focus space has {n} apps added, but the maximum number Screen Time allows is 50. Please remove some apps and try again.',
+        allowlistIosWebOnlyConfirmTitle: 'Unsupported app types',
+        allowlistIosWebOnlyConfirm: 'App categories and apps added outside Screen Time are not supported. Re-selecting apps with the app picker adds a category’s apps individually. Would you like to start this focus space with only websites selected? Websites outside the list will be blocked, and all apps will stay usable.',
+        allowlistIosCategoriesIgnoredTitle: 'App categories are not supported',
+        allowlistIosCategoriesIgnored: 'Screen Time does not support adding app categories to allow-mode focus spaces. The selected categories will be ignored, and only the individually selected apps will stay usable. Re-selecting apps with the app picker adds a category’s apps individually.',
         overrideDifficulty: 'Stop Difficulty',
         overrideMethod: 'Method',
         overrideWordsToType: 'Words to type',
@@ -19660,10 +20444,13 @@ const SETTINGS_TRANSLATIONS = {
         emoji: 'Emoji',
         advancedOptions: 'Advanced options',
         listBlockedOnCard: 'Show names of blocked websites & apps in the overview',
+        listAllowedOnCard: 'Show names of allowed websites & apps in the overview',
+        blocklistCardBlocksFmt: 'Blocks {n}',
+        blocklistCardAllowsFmt: 'Allows {n}',
         importWebsitesTitle: 'Import websites',
         browseApplicationsTitle: 'Browse Applications',
         modalPremadeListsCaption: 'Lists',
-        modalBrowseAppsCaption: 'Select Apps',
+        modalBrowseAppsCaption: 'Apps',
         modalBrowseAppsTitleIos: 'Select Apps (Screen Time)',
         importWebsitesPickFileTitle: 'Select a file with one domain per line',
         importWebsitesFromFile: 'From text file…',
@@ -19709,10 +20496,15 @@ const SETTINGS_TRANSLATIONS = {
         startThisBlock: 'Start focus space?',
         startBlockTitleFmt: 'Start focus space “{name}”?',
         resumeBlockTitleFmt: 'Resume the block “{name}”?',
+        resumeBlockTitleAllowlistFmt: 'Resume the allow list “{name}”?',
         startBlockSubtitleFmt: 'Your blocked websites and apps go quiet for the next <strong>{duration}</strong>.',
         startBlockSubtitleAlways: 'Your blocked websites and apps go quiet until you exit the room.',
+        startBlockSubtitleAllowlistFmt: 'Only your allowed websites and apps will be accessible for the next <strong>{duration}</strong>.',
+        startBlockSubtitleAllowlistAlways: 'Only your allowed websites and apps will be accessible until you exit the room.',
         resumeBlockSubtitle: 'Pick up where you left off with this block.',
+        resumeBlockSubtitleAllowlist: 'Pick up where you left off with this allow list.',
         startConfirmBlockingLabel: 'Blocking',
+        startConfirmAllowingLabel: 'Allowing',
         startConfirmDurationLabel: 'Duration',
         startConfirmTimesLabel: 'Times',
         startConfirmRepeatsLabel: 'Repeats',
@@ -19736,6 +20528,7 @@ const SETTINGS_TRANSLATIONS = {
         startThisSchedule: 'Start this schedule?',
         startScheduleTitleFmt: 'Start the schedule “{name}”?',
         startScheduleSubtitle: 'Your blocked websites and apps go quiet at the times shown below.',
+        startScheduleSubtitleAllowlist: 'Only your allowed websites and apps will be accessible at the times shown below.',
         scheduleConfirmOverlayLabel: 'Start alert',
         scheduleActiveOverlayLabel: 'Start alert:',
         scheduleConfirmOverlayDefaultTitle: 'Default',
@@ -20271,10 +21064,18 @@ const SETTINGS_TRANSLATIONS = {
         diagnosticsActiveBlocks: 'Aktive blokeringer',
         diagnosticsRecentLogSection: 'Seneste log (sidste {n} linjer)',
         diagnosticsCurrentlyBlocking: 'Blokeres lige nu',
+        diagnosticsCurrentEnforcement: 'Aktuel håndhævelse',
+        diagnosticsModeBlocklist: 'Blokeringsliste',
+        diagnosticsModeAllowlist: 'Tilladelsesliste',
         diagnosticsActiveSources: 'Aktive blokeringslister',
         diagnosticsActiveSourcesNone: 'Ingen',
-        diagnosticsDomainsCount: 'Domæner ({n})',
-        diagnosticsAppsCount: 'Apps ({n})',
+        diagnosticsDomainsCount: 'Blokerede domæner ({n})',
+        diagnosticsAllowedDomainsCount: 'Tilladte domæner ({n})',
+        diagnosticsAppsCount: 'Blokerede apps ({n})',
+        diagnosticsAllowedAppsCount: 'Tilladte apps ({n})',
+        diagnosticsAllowlistEnforcement: 'App-tilladelsesliste',
+        diagnosticsBlockDomainsFmt: '{n} domæne',
+        diagnosticsBlockAppsFmt: '{n} app',
         diagnosticsAppDataSection: 'Appdata (redd-block-data.json)',
         diagnosticsPath: 'Sti',
         diagnosticsWatchdog: 'Watchdog-planlagt opgave',
@@ -20324,6 +21125,14 @@ const SETTINGS_TRANSLATIONS = {
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes den ned.',
         appBlockingWarningSummaryMultiHtml:
             '<strong>{blocklist}</strong> starter — tid til at runde af.<br>Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {apps}, derefter lukkes de ned.',
+        appBlockingAllowlistIntro:
+            'Din enhed bliver et værktøjssæt med kun de apps, du har givet dig selv lov til at bruge.',
+        appBlockingAllowlistActionNoWarnedHtml:
+            'Når du klikker på <strong>{letsGo}</strong>, lukkes alle andre apps, når du forsøger at åbne dem.',
+        appBlockingAllowlistActionSingleWarnedHtml:
+            'Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes den ned.',
+        appBlockingAllowlistActionMultiWarnedHtml:
+            'Når du klikker på <strong>{letsGo}</strong>, får du 30 sekunder til at gemme dit arbejde i {warnedApps}, derefter lukkes de ned.',
         appBlockingClosedownCountdownHtml:
             'Lukker {apps} om <strong>{seconds} sek.</strong> — gem dit arbejde nu.',
         appBlockingClosedownFinalSingleHtml: 'Lukker {apps} nu…',
@@ -20389,12 +21198,37 @@ const SETTINGS_TRANSLATIONS = {
         // Blocklist modal
         createBlocklist: 'Opret rum',
         editBlocklist: 'Rediger rum',
-        activeBlocklistWarning: 'Denne blokliste er aktiv. Nogle indstillinger er låst.',
+        activeBlocklistWarning: 'Dette rum er aktivt. Nogle indstillinger er låst.',
         name: 'Navn',
         websites: 'Hjemmesider at blokere',
+        websitesAllow: 'Hjemmesider der må besøges',
         websitesTooltip: 'Blokering gælder hele domæner. Hvis du fx skriver "facebook.com", blokeres hele Facebook, ikke kun specifikke sider.',
+        websitesAllowTooltip: 'Kun disse domæner kan besøges i browseren. Underdomæner tæller med — "youtube.com" tillader også "www.youtube.com". Localhost er altid tilladt.',
         apps: 'Apps at blokere',
+        appsAllow: 'Apps der må bruges',
         appsTooltip: 'Indtast det præcise navn på appen (fx "Safari"). Du kan også bruge mappeknappen til at finde appen.',
+        appsAllowTooltip: 'Kun disse apps må være forrest. Baggrundsapps (Dropbox, synk-værktøjer osv.) kører videre.',
+        blocklistModeLabel: 'Tilstand',
+        blocklistModeBlocklist: 'Bloker',
+        blocklistModeAllowlist: 'Tillad',
+        blocklistModalSummaryBlocks: 'Blokerer',
+        blocklistModalSummaryAllows: 'Tillader',
+        blocklistModeHint: 'Kun de hjemmesider og apps du tilføjer bliver blokeret.',
+        allowlistModeHint: 'Kun de hjemmesider og apps du tilføjer er tilgængelige. Alt andet blokeres.',
+        placeholderWebsiteBlock: 'fx facebook.com',
+        placeholderWebsiteAllow: 'fx ulriklyngs.com',
+        placeholderAppBlock: 'fx Safari',
+        placeholderAppAllow: 'fx Microsoft Word',
+        allowlistIosNeedsWebsitesTitle: 'Ingen hjemmesider/apps tilføjet',
+        allowlistIosNeedsWebsites: 'Tilføj mindst én hjemmeside eller app for at starte dette fokusrum i tilladelsestilstand. Vælger du en kategori i app-vælgeren, tilføjes de apps, den aktuelt indeholder.',
+        allowlistIosDomainLimitTitle: 'For mange hjemmesider tilføjet',
+        allowlistIosDomainLimit: 'Dette fokusrum har {n} hjemmesider tilføjet, men Screen Time tillader højst 50. Fjern nogle hjemmesider og prøv igen.',
+        allowlistIosTokenLimitTitle: 'For mange apps tilføjet',
+        allowlistIosTokenLimit: 'Dette fokusrum har {n} apps tilføjet, men Screen Time tillader højst 50. Fjern nogle apps og prøv igen.',
+        allowlistIosWebOnlyConfirmTitle: 'Ikke-understøttede apptyper',
+        allowlistIosWebOnlyConfirm: 'App-kategorier og apps tilføjet uden for Screen Time understøttes ikke. Vælger du apps igen med app-vælgeren, tilføjes en kategoris apps individuelt. Vil du starte dette fokusrum med kun de valgte hjemmesider? Hjemmesider uden for listen blokeres, og alle apps forbliver brugbare.',
+        allowlistIosCategoriesIgnoredTitle: 'App-kategorier understøttes ikke',
+        allowlistIosCategoriesIgnored: 'Screen Time understøtter ikke app-kategorier i fokusrum i tilladelsestilstand. De valgte kategorier ignoreres, og kun de individuelt valgte apps forbliver brugbare. Vælger du apps igen med app-vælgeren, tilføjes en kategoris apps individuelt.',
         overrideDifficulty: 'Stop-sværhedsgrad',
         overrideMethod: 'Metode',
         overrideWordsToType: 'Ord at taste',
@@ -20414,10 +21248,13 @@ const SETTINGS_TRANSLATIONS = {
         emoji: 'Emoji',
         advancedOptions: 'Avancerede indstillinger',
         listBlockedOnCard: 'Vis navnet på blokerede websites og apps i oversigten',
+        listAllowedOnCard: 'Vis navnet på tilladte websites og apps i oversigten',
+        blocklistCardBlocksFmt: 'Blokerer {n}',
+        blocklistCardAllowsFmt: 'Tillader {n}',
         importWebsitesTitle: 'Importér websites',
         browseApplicationsTitle: 'Gennemse programmer',
         modalPremadeListsCaption: 'Lister',
-        modalBrowseAppsCaption: 'Vælg apps',
+        modalBrowseAppsCaption: 'Apps',
         modalBrowseAppsTitleIos: 'Vælg apps (Screen Time)',
         importWebsitesPickFileTitle: 'Vælg en fil med ét domæne pr. linje',
         importWebsitesFromFile: 'Fra tekstfil…',
@@ -20464,10 +21301,15 @@ const SETTINGS_TRANSLATIONS = {
         startThisBlock: 'Gå ind i rummet?',
         startBlockTitleFmt: 'Gå ind i rummet “{name}”?',
         resumeBlockTitleFmt: 'Genoptag blokeringen “{name}”?',
+        resumeBlockTitleAllowlistFmt: 'Genoptag tilladelseslisten “{name}”?',
         startBlockSubtitleFmt: 'Dine blokerede hjemmesider og apps er stille de næste <strong>{duration}</strong>.',
         startBlockSubtitleAlways: 'Dine blokerede hjemmesider og apps er stille, indtil du forlader rummet.',
+        startBlockSubtitleAllowlistFmt: 'Kun dine tilladte hjemmesider og apps er tilgængelige de næste <strong>{duration}</strong>.',
+        startBlockSubtitleAllowlistAlways: 'Kun dine tilladte hjemmesider og apps er tilgængelige, indtil du forlader rummet.',
         resumeBlockSubtitle: 'Fortsæt hvor du slap med denne blokering.',
+        resumeBlockSubtitleAllowlist: 'Fortsæt hvor du slap med denne tilladelsesliste.',
         startConfirmBlockingLabel: 'Blokering',
+        startConfirmAllowingLabel: 'Tilladelse',
         startConfirmDurationLabel: 'Varighed',
         startConfirmTimesLabel: 'Tider',
         startConfirmRepeatsLabel: 'Gentages',
@@ -20491,6 +21333,7 @@ const SETTINGS_TRANSLATIONS = {
         startThisSchedule: 'Start dette skema?',
         startScheduleTitleFmt: 'Start skemaet “{name}”?',
         startScheduleSubtitle: 'Dine blokerede hjemmesider og apps er stille på tidspunkterne vist nedenfor.',
+        startScheduleSubtitleAllowlist: 'Kun dine tilladte hjemmesider og apps er tilgængelige på tidspunkterne vist nedenfor.',
         scheduleConfirmOverlayLabel: 'Startbesked',
         scheduleActiveOverlayLabel: 'Startbesked:',
         scheduleConfirmOverlayDefaultTitle: 'Standard',
@@ -21322,12 +22165,43 @@ function siteNameForDisplay(url) {
     return parts[parts.length - 2];
 }
 
-/** Room card line, e.g. "3 sites · instagram, youtube, reddit". */
-function formatBlocklistCardSitesSummary(websiteCount, websites, showDetails) {
-    const countLabel = `${websiteCount} ${siteWord(websiteCount)}`;
-    if (!showDetails || websiteCount === 0) return countLabel;
-    const names = (websites || []).map(siteNameForDisplay);
-    return names.length > 0 ? `${countLabel} · ${names.join(', ')}` : countLabel;
+/** Flat comma-separated labels for a focus-space card (websites first, then apps). */
+function collectBlocklistCardSummaryLabels(blocklist) {
+    const labels = [];
+    for (const url of blocklist?.websites || []) {
+        labels.push(siteNameForDisplay(url).toLowerCase());
+    }
+    for (const app of getBlocklistRegularApps(blocklist)) {
+        labels.push(displayNameForBlockedApp(app));
+    }
+    const screenTimeLabel = formatIOSScreenTimeSelectionLabel(
+        getBlocklistIOSScreenTimeSelection(blocklist),
+    );
+    if (screenTimeLabel) labels.push(screenTimeLabel);
+    return labels;
+}
+
+/** Room card line, e.g. "Blocks 5 · instagram, youtube, Firefox". */
+function buildBlocklistCardMetaHtml(blocklist) {
+    const isAllow = isBlocklistAllowlistMode(blocklist);
+    const showDetails = blocklist?.showItemDetails !== false;
+    const labels = collectBlocklistCardSummaryLabels(blocklist);
+    // The Screen Time selection renders as one aggregate label but counts
+    // every app it contains (mode-aware), so {n} reflects true item totals.
+    const screenTimeSelection = getBlocklistIOSScreenTimeSelection(blocklist);
+    const screenTimeCount = countIOSScreenTimeSelectionItems(screenTimeSelection, isAllow);
+    const hasScreenTimeLabel = !!formatIOSScreenTimeSelectionLabel(screenTimeSelection);
+    const count = labels.length - (hasScreenTimeLabel ? 1 : 0) + screenTimeCount;
+    const prefixKey = isAllow ? 'blocklistCardAllowsFmt' : 'blocklistCardBlocksFmt';
+    const prefixClass = isAllow ? 'blocklist-meta-prefix--allow' : 'blocklist-meta-prefix--block';
+    const prefix = escapeHtml(tSettingsFmt(prefixKey, { n: String(count) }));
+
+    if (!showDetails || count === 0) {
+        return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix ${prefixClass}">${prefix}</span></span>`;
+    }
+
+    const items = escapeHtml(labels.join(', '));
+    return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix ${prefixClass}">${prefix}</span><span class="blocklist-meta-sep">·</span><span class="blocklist-meta-items">${items}</span></span>`;
 }
 
 function formatCurrentVersionText(version) {
@@ -21366,6 +22240,13 @@ function syncModalWebsitePlaceholder() {
     const el = document.getElementById('modal-website-input');
     if (!el || el.classList.contains('input-error')) return;
     el.placeholder = tSettings('placeholderWebsiteExample');
+}
+
+/** Blocklist modal: always show the example placeholder in the apps input row. */
+function syncModalAppPlaceholder() {
+    const el = document.getElementById('modal-app-input');
+    if (!el || el.classList.contains('input-error')) return;
+    el.placeholder = tSettings('placeholderAppExample');
 }
 
 function applySettingsLanguage() {
@@ -21470,7 +22351,7 @@ function applySettingsLanguage() {
         if (el) el.placeholder = text;
     };
     setPlaceholder('blocklist-name', tSettings('placeholderNameExample'));
-    setPlaceholder('modal-app-input', tSettings('placeholderAppExample'));
+    syncModalAppPlaceholder();
     syncModalWebsitePlaceholder();
     setPlaceholder('challenge-input', tSettings('typeHere'));
     setPlaceholder('pause-challenge-input', tSettings('typeHere'));
@@ -21484,12 +22365,10 @@ function applySettingsLanguage() {
     }
     setText('active-blocklist-warning-text', tSettings('activeBlocklistWarning'));
     setText('blocklist-name-label', tSettings('name'));
-    setText('blocklist-websites-label', tSettings('websites'));
-    setText('blocklist-websites-tooltip', tSettings('websitesTooltip'));
-    setText('blocklist-apps-label', tSettings('apps'));
-    setText('blocklist-apps-tooltip', tSettings(
-        'appsTooltip'
-    ));
+    setText('blocklist-mode-label', tSettings('blocklistModeLabel'));
+    setText('blocklist-mode-blocklist-label', tSettings('blocklistModeBlocklist'));
+    setText('blocklist-mode-allowlist-label', tSettings('blocklistModeAllowlist'));
+    updateBlocklistModalModeLabels(getSelectedBlocklistModalMode());
     setText('override-difficulty-label', tSettings('overrideDifficulty'));
     setText('override-method-label', tSettings('overrideMethod'));
     setText('override-option-random-words', tSettings('overrideRandomWords'));
@@ -22901,20 +23780,38 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
     html += diagnosticsKvRow(e(tSettings('diagnosticsOsArch')), `${e(d.app.os)} / ${e(d.app.arch)}`);
     html += '</div></div>';
 
-    // Currently being blocked
+    // Currently being blocked / current enforcement
     if (d.current_blocking) {
         const cb = d.current_blocking;
+        const hasAllowlist = (cb.blocks || []).some((b) => b.mode === 'allowlist')
+            || (cb.allowed_domains?.length ?? 0) > 0
+            || cb.allowlist_active;
+        const sectionTitleKey = hasAllowlist
+            ? 'diagnosticsCurrentEnforcement'
+            : 'diagnosticsCurrentlyBlocking';
         html += '<div class="diagnostics-section">';
-        html += `<div class="diagnostics-section-title">${e(tSettings('diagnosticsCurrentlyBlocking'))}</div>`;
-        html += '<div class="diagnostics-card">';
+        html += `<div class="diagnostics-section-title">${e(tSettings(sectionTitleKey))}</div>`;
+        html += '<div class="diagnostics-card diagnostics-card-enforcement">';
         if (cb.blocks && cb.blocks.length > 0) {
             html += '<ul class="diagnostics-list">';
             for (const b of cb.blocks) {
                 const label = `${b.emoji ? b.emoji + ' ' : ''}${b.name || b.blocklistId}`;
+                const isAllow = b.mode === 'allowlist';
+                const modeLabel = isAllow
+                    ? tSettings('diagnosticsModeAllowlist')
+                    : tSettings('diagnosticsModeBlocklist');
                 const srcLabel = b.source === 'schedule' ? 'schedule' : 'one-off';
                 const endsTxt = b.endsAt ? ` until ${new Date(b.endsAt).toLocaleString()}` : '';
                 const domainsCount = (b.domains || []).length;
-                html += `<li class="diagnostics-kv-row"><span class="diagnostics-kv-label">${e(label)}</span><span class="diagnostics-kv-value diag-muted">${e(srcLabel)}${e(endsTxt)} · ${domainsCount} domain${domainsCount === 1 ? '' : 's'}</span></li>`;
+                let detail = `${modeLabel} · ${srcLabel}${endsTxt}`;
+                if (domainsCount > 0) {
+                    detail += ` · ${tSettingsFmt('diagnosticsBlockDomainsFmt', { n: domainsCount })}`;
+                }
+                const appsCount = (b.apps || []).length;
+                if (appsCount > 0) {
+                    detail += ` · ${tSettingsFmt('diagnosticsBlockAppsFmt', { n: appsCount })}`;
+                }
+                html += `<li class="diagnostics-kv-row diagnostics-kv-row-multiline"><span class="diagnostics-kv-label">${e(label)}</span><span class="diagnostics-kv-value diag-muted">${e(detail)}</span></li>`;
             }
             html += '</ul>';
         } else {
@@ -22928,11 +23825,31 @@ function renderSystemDiagnostics(d, { enforcementEnabled = false } = {}) {
             cb.domains || [],
             e,
         );
+        const allowedDomains = cb.allowed_domains || [];
+        if (allowedDomains.length > 0 || (cb.blocks || []).some((b) => b.mode === 'allowlist')) {
+            html += diagnosticsKvPreRow(
+                e(tSettings('diagnosticsAllowedDomainsCount').replace('{n}', String(allowedDomains.length))),
+                allowedDomains,
+                e,
+            );
+        }
         html += diagnosticsKvPreRow(
             e(tSettings('diagnosticsAppsCount').replace('{n}', String(cb.apps?.length ?? 0))),
             cb.apps || [],
             e,
         );
+        const allowedApps = cb.allowed_apps || [];
+        if (allowedApps.length > 0 || cb.allowlist_active) {
+            html += diagnosticsKvPreRow(
+                e(tSettings('diagnosticsAllowedAppsCount').replace('{n}', String(allowedApps.length))),
+                allowedApps,
+                e,
+            );
+            html += diagnosticsKvRow(
+                e(tSettings('diagnosticsAllowlistEnforcement')),
+                diagnosticsYesNoValue(!!cb.allowlist_active),
+            );
+        }
         html += '</div></div>';
     }
 
@@ -23313,7 +24230,7 @@ async function openInstalledAppsPicker() {
         }
 
         listEl.innerHTML = filtered.map(app => {
-            const alreadyAdded = modalApps.some(a => a.toLowerCase() === app.process_name.toLowerCase());
+            const alreadyAdded = window.getModalApps().some(a => a.toLowerCase() === app.process_name.toLowerCase());
             const isChecked = selectedProcessNames.has(app.process_name) || alreadyAdded;
             const checkedClass = isChecked ? ' checked' : '';
             const checkedAttr = isChecked ? ' checked' : '';
@@ -23350,7 +24267,7 @@ async function openInstalledAppsPicker() {
 
     function updateAddButton() {
         const newCount = [...selectedProcessNames].filter(
-            p => !modalApps.some(a => a.toLowerCase() === p.toLowerCase())
+            p => !window.getModalApps().some(a => a.toLowerCase() === p.toLowerCase())
         ).length;
         addBtn.textContent = newCount > 0 ? `Add Selected (${newCount})` : 'Add Selected';
         addBtn.disabled = newCount === 0;
@@ -23382,19 +24299,19 @@ async function openInstalledAppsPicker() {
     // Add Selected
     addBtn.onclick = () => {
         const toAdd = [...selectedProcessNames].filter(
-            p => !modalApps.some(a => a.toLowerCase() === p.toLowerCase())
+            p => !window.getModalApps().some(a => a.toLowerCase() === p.toLowerCase())
         );
         if (toAdd.length > 0) {
             const toAddCopy = [...toAdd];
             pushModalUndo('app', () => {
                 toAddCopy.forEach(a => {
-                    const i = modalApps.indexOf(a);
-                    if (i !== -1) modalApps.splice(i, 1);
+                    const i = window.getModalApps().indexOf(a);
+                    if (i !== -1) window.getModalApps().splice(i, 1);
                 });
                 window.renderModalTags();
             });
             for (const appName of toAdd) {
-                modalApps.push(appName);
+                window.getModalApps().push(appName);
             }
             window.renderModalTags();
         }
@@ -23408,20 +24325,20 @@ async function openInstalledAppsPicker() {
         closePickerModal();
         const appNames = await tauriAPI.openAppPicker();
         if (appNames && appNames.length > 0) {
-            const toAdd = appNames.filter(n => !modalApps.includes(n));
+            const toAdd = appNames.filter(n => !window.getModalApps().includes(n));
             if (toAdd.length > 0) {
                 const toAddCopy = [...toAdd];
                 pushModalUndo('app', () => {
                     toAddCopy.forEach(a => {
-                        const i = modalApps.indexOf(a);
-                        if (i !== -1) modalApps.splice(i, 1);
+                        const i = window.getModalApps().indexOf(a);
+                        if (i !== -1) window.getModalApps().splice(i, 1);
                     });
                     window.renderModalTags();
                 });
             }
             for (const appName of appNames) {
-                if (!modalApps.includes(appName)) {
-                    modalApps.push(appName);
+                if (!window.getModalApps().includes(appName)) {
+                    window.getModalApps().push(appName);
                 }
             }
             window.renderModalTags();
@@ -24060,7 +24977,7 @@ async function performOverrideAll() {
                 // Atomically set everything to empty — helper will know nothing should be blocked
                 try { await tauriAPI.setBlocksViaHelper([]); } catch (e) { console.warn('Failed to clear blocks:', e); }
                 try { await tauriAPI.setSchedulesViaHelper([]); } catch (e) { console.warn('Failed to clear schedules:', e); }
-                try { await tauriAPI.setBlockedAppsViaHelper([]); } catch (e) { console.warn('Failed to clear apps:', e); }
+                try { await tauriAPI.setBlockedAppsViaHelper([], [], [], false, false); } catch (e) { console.warn('Failed to clear apps:', e); }
             }
             // Always clean the hosts file as a safety net, even if the helper is stopped or stale.
             try { await tauriAPI.cleanHostsFile(); } catch (e) { console.warn('Failed to clean hosts file:', e); }
@@ -24121,7 +25038,11 @@ Object.assign(window.__REDDBLOCK_INTERNALS__, {
     PROTECTED_DOMAINS,
     duplicateBlocklist,
     getNextCopyName,
-    getMaxOverrideCharsForType
+    getMaxOverrideCharsForType,
+    deriveIOSEffectiveWebsitePolicy,
+    deriveIOSEffectiveAppPolicy,
+    validateIOSAllowlistLimits,
+    IOS_ALLOWLIST_EXCEPTION_LIMIT
 });
 
 console.log('💡 To run blocking tests, type: runBlockingTests() in the console');

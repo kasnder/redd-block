@@ -54,33 +54,28 @@
         if (!condition) throw new Error(message);
     }
 
-    function getDiagField(diag, camelKey, snakeKey) {
-        return diag?.[camelKey] ?? diag?.[snakeKey];
-    }
-
-    async function getDiagnosticsOrThrow(testName) {
+    // v3 enforcement read-back: `get_system_diagnostics` → `current_blocking`
+    // is the Rust-derived snapshot of what the extension / Automation watcher
+    // enforce (flat blocked `domains`, per-block `blocks[]` with mode, and the
+    // allowlist unions). It re-derives from redd-block-data.json at call time,
+    // so an awaited saveData is enough — no watcher latency to wait out.
+    async function getCurrentBlockingOrThrow(testName) {
         const tauriAPI = getTauriAPI();
-        assertOrThrow(tauriAPI && typeof tauriAPI.getHelperDiagnostics === 'function', `${testName}: getHelperDiagnostics unavailable`);
-        const diag = await tauriAPI.getHelperDiagnostics();
-        assertOrThrow(diag && diag.success, `${testName}: diagnostics command failed`);
-        return diag;
+        assertOrThrow(tauriAPI && typeof tauriAPI.getSystemDiagnostics === 'function', `${testName}: getSystemDiagnostics unavailable`);
+        const diag = await tauriAPI.getSystemDiagnostics();
+        const cb = diag?.current_blocking;
+        assertOrThrow(cb, `${testName}: current_blocking missing from system diagnostics`);
+        return cb;
     }
 
-    async function getHostsSnapshotOrThrow(testName) {
-        const diag = await getDiagnosticsOrThrow(testName);
-        const hostsFile = getDiagField(diag, 'hostsFile', 'hosts_file');
-        assertOrThrow(typeof hostsFile === 'string', `${testName}: hosts file payload unavailable`);
-        return hostsFile;
+    async function assertEnforcedDomain(testName, domain) {
+        const cb = await getCurrentBlockingOrThrow(testName);
+        assertOrThrow(cb.domains.includes(domain), `${testName}: ${domain} missing from current_blocking.domains`);
     }
 
-    async function assertHostsContain(testName, domain) {
-        const hostsFile = await getHostsSnapshotOrThrow(testName);
-        assertOrThrow(hostsFile.includes(domain), `${testName}: hosts file missing ${domain}`);
-    }
-
-    async function assertHostsNotContain(testName, domain) {
-        const hostsFile = await getHostsSnapshotOrThrow(testName);
-        assertOrThrow(!hostsFile.includes(domain), `${testName}: hosts file still contains ${domain}`);
+    async function assertNotEnforcedDomain(testName, domain) {
+        const cb = await getCurrentBlockingOrThrow(testName);
+        assertOrThrow(!cb.domains.includes(domain), `${testName}: ${domain} still in current_blocking.domains`);
     }
 
     async function ensureHelperRunningOrSkip(testName) {
@@ -302,7 +297,7 @@
     // Testing Group A: One-off and schedule mechanics
     // ========================================
 
-    async function testA1_hostsModificationPath() {
+    async function testA1_enforcementDerivationPath() {
         const skip = await ensureHelperRunningOrSkip('A1');
         if (skip) return skip;
 
@@ -311,14 +306,14 @@
         await callSaveData();
         const result = await callUpdateHostsFile();
         assertOrThrow(result && result.success, 'A1: updateHostsFile failed');
-        await assertHostsContain('A1', TEST_DOMAINS.a);
+        await assertEnforcedDomain('A1', TEST_DOMAINS.a);
 
         removeTestDataFromAppState();
         await callSaveData();
         const cleanupResult = await callUpdateHostsFile(true);
         assertOrThrow(cleanupResult && cleanupResult.success, 'A1: cleanup updateHostsFile failed');
         assertOrThrow(!cleanupResult.deferred, 'A1: cleanup was deferred instead of syncing helper state');
-        await assertHostsNotContain('A1', TEST_DOMAINS.a);
+        await assertNotEnforcedDomain('A1', TEST_DOMAINS.a);
         return { passed: true };
     }
 
@@ -356,7 +351,7 @@
         await callSaveData();
         const result = await callUpdateHostsFile();
         assertOrThrow(result && result.success, 'A3: schedule activation path failed');
-        await assertHostsContain('A3', TEST_DOMAINS.shared);
+        await assertEnforcedDomain('A3', TEST_DOMAINS.shared);
         return { passed: true };
     }
 
@@ -378,7 +373,7 @@
             await callSaveData();
             const result = await callUpdateHostsFile();
             assertOrThrow(result && result.success, 'A4: future schedule update failed');
-            await assertHostsNotContain('A4', TEST_DOMAINS.future);
+            await assertNotEnforcedDomain('A4', TEST_DOMAINS.future);
             return { passed: true };
         });
     }
@@ -398,14 +393,14 @@
             await callSaveData();
             const pausedResult = await callUpdateHostsFile();
             assertOrThrow(pausedResult && pausedResult.success, 'A5: paused state update failed');
-            await assertHostsNotContain('A5', TEST_DOMAINS.a);
+            await assertNotEnforcedDomain('A5', TEST_DOMAINS.a);
 
             delete block.isPaused;
             delete block.pauseEndTime;
             await callSaveData();
             const resumedResult = await callUpdateHostsFile();
             assertOrThrow(resumedResult && resumedResult.success, 'A5: resume state update failed');
-            await assertHostsContain('A5', TEST_DOMAINS.a);
+            await assertEnforcedDomain('A5', TEST_DOMAINS.a);
             return { passed: true };
         });
     }
@@ -418,17 +413,17 @@
         const block = addActiveBlock(bl.id, { durationMs: 120000 });
         await callSaveData();
         await callUpdateHostsFile();
-        await assertHostsContain('A6', TEST_DOMAINS.a);
+        await assertEnforcedDomain('A6', TEST_DOMAINS.a);
 
         await setOneOffPaused(block.id, 45000);
         assertOrThrow(!!block.isPaused, 'A6: block should be paused');
         assertOrThrow(block.pauseEndTime > nowMs(), 'A6: pause end time should be future');
-        await assertHostsNotContain('A6', TEST_DOMAINS.a);
+        await assertNotEnforcedDomain('A6', TEST_DOMAINS.a);
 
         await clearOneOffPause(block.id);
         assertOrThrow(!block.isPaused, 'A6: block should be resumed');
         assertOrThrow(!block.pauseEndTime, 'A6: pause end time should be cleared');
-        await assertHostsContain('A6', TEST_DOMAINS.a);
+        await assertEnforcedDomain('A6', TEST_DOMAINS.a);
         return { passed: true };
     }
 
@@ -451,7 +446,7 @@
             assertOrThrow(!refreshed.pauseEndTime, 'A7: one-off pauseEndTime should be cleared after natural expiry');
             const result = await callUpdateHostsFile();
             assertOrThrow(result && result.success, 'A7: post-expiry update failed');
-            await assertHostsContain('A7', TEST_DOMAINS.b);
+            await assertEnforcedDomain('A7', TEST_DOMAINS.b);
             return { passed: true };
         });
     }
@@ -472,17 +467,17 @@
             }]);
             await callSaveData();
             await callUpdateHostsFile();
-            await assertHostsContain('A8', TEST_DOMAINS.shared);
+            await assertEnforcedDomain('A8', TEST_DOMAINS.shared);
 
             const pausedSchedule = await setSchedulePaused(bl.id, 45000);
             assertOrThrow(!!pausedSchedule.isPaused, 'A8: schedule should be paused');
             assertOrThrow(pausedSchedule.pauseEndTime > nowMs(), 'A8: schedule pause end should be future');
-            await assertHostsNotContain('A8', TEST_DOMAINS.shared);
+            await assertNotEnforcedDomain('A8', TEST_DOMAINS.shared);
 
             const resumedSchedule = await clearSchedulePause(bl.id);
             assertOrThrow(!resumedSchedule.isPaused, 'A8: schedule should be resumed');
             assertOrThrow(!resumedSchedule.pauseEndTime, 'A8: schedule pauseEndTime should be cleared');
-            await assertHostsContain('A8', TEST_DOMAINS.shared);
+            await assertEnforcedDomain('A8', TEST_DOMAINS.shared);
             return { passed: true };
         });
     }
@@ -513,7 +508,7 @@
             assertOrThrow(!refreshed.pauseEndTime, 'A9: schedule pauseEndTime should be cleared after natural expiry');
             const result = await callUpdateHostsFile();
             assertOrThrow(result && result.success, 'A9: post-expiry update failed');
-            await assertHostsContain('A9', TEST_DOMAINS.future);
+            await assertEnforcedDomain('A9', TEST_DOMAINS.future);
             return { passed: true };
         });
     }
@@ -539,68 +534,50 @@
             }]);
             await callSaveData();
             await callUpdateHostsFile();
-            await assertHostsNotContain('A10', TEST_DOMAINS.a);
-            await assertHostsNotContain('A10', TEST_DOMAINS.future);
+            await assertNotEnforcedDomain('A10', TEST_DOMAINS.a);
+            await assertNotEnforcedDomain('A10', TEST_DOMAINS.future);
 
             const pausedSchedule = await setSchedulePaused(bl.id, 120000);
             assertOrThrow(!!pausedSchedule.isPaused, 'A10: schedule should be paused while inactive');
             assertOrThrow(pausedSchedule.pauseEndTime > nowMs(), 'A10: schedule pause should suppress upcoming activation window');
-            await assertHostsNotContain('A10', TEST_DOMAINS.a);
-            await assertHostsNotContain('A10', TEST_DOMAINS.future);
+            await assertNotEnforcedDomain('A10', TEST_DOMAINS.a);
+            await assertNotEnforcedDomain('A10', TEST_DOMAINS.future);
 
             const resumedSchedule = await clearSchedulePause(bl.id);
             assertOrThrow(!resumedSchedule.isPaused, 'A10: schedule should resume from suppressed state');
             assertOrThrow(!resumedSchedule.pauseEndTime, 'A10: resumed schedule pause end should be cleared');
-            await assertHostsNotContain('A10', TEST_DOMAINS.a);
-            await assertHostsNotContain('A10', TEST_DOMAINS.future);
+            await assertNotEnforcedDomain('A10', TEST_DOMAINS.a);
+            await assertNotEnforcedDomain('A10', TEST_DOMAINS.future);
             return { passed: true };
         });
     }
 
-    // A11: Helper daemon owns pause state for one-off blocks and auto-resumes independently
-    // of the frontend. Bypasses appData entirely by calling setBlocksViaHelper directly, so
-    // the frontend tick can't re-sync — only the helper's own expiry_checker can resume.
-    async function testA11_helperOwnsPauseStateForOneOff() {
+    // A11: On v3 there is no helper daemon — the saved data file is the single
+    // source of truth for enforcement, and the legacy `set_blocks_via_helper`
+    // shim is a pure acknowledgment. Pins that ownership: a block pushed only
+    // through the shim (never written to appData/save_data) must have zero
+    // effect on derived enforcement, while the same block through the real
+    // save path enforces immediately.
+    async function testA11_dataFileOwnsEnforcement() {
         const skip = await ensureHelperRunningOrSkip('A11');
         if (skip) return skip;
 
         return runIsolatedIntegrationTest('A11', async () => {
             const tauriAPI = getTauriAPI();
-            const blocklistId = makeId('bl-a11');
-            const now = nowMs();
-            const pauseEndTime = now + 1200;
-            const blockEndTime = now + 120000;
 
             const setResult = await tauriAPI.setBlocksViaHelper([{
                 domains: [TEST_DOMAINS.a],
-                endTime: blockEndTime,
-                blocklistId,
-                isPaused: true,
-                pauseEndTime
+                endTime: nowMs() + 120000,
+                blocklistId: makeId('bl-a11')
             }]);
-            assertOrThrow(setResult && setResult.success, 'A11: initial setBlocks failed');
+            assertOrThrow(setResult && setResult.success, 'A11: setBlocks shim ack failed');
+            await assertNotEnforcedDomain('A11', TEST_DOMAINS.a);
 
-            // Paused → helper must skip this block when writing hosts.
-            await assertHostsNotContain('A11', TEST_DOMAINS.a);
-
-            // Wait past pauseEndTime. Helper expiry_checker ticks every ~1s.
-            await shortWait(2500);
-
-            // Auto-resumed → hosts file should now contain the domain.
-            await assertHostsContain('A11', TEST_DOMAINS.a);
-
-            // Helper's persisted state should also reflect the cleared pause.
-            const diag = await tauriAPI.getHelperDiagnostics();
-            const stateFile = diag.helperStateFile ?? diag.helper_state_file;
-            assertOrThrow(typeof stateFile === 'string' && stateFile.length > 0, 'A11: helper state file missing');
-            const state = JSON.parse(stateFile);
-            const persisted = (state.manual_blocks || []).find(b =>
-                (b.blocklistId || b.blocklist_id) === blocklistId
-            );
-            assertOrThrow(persisted, 'A11: helper state missing the test block');
-            assertOrThrow(!persisted.isPaused, 'A11: helper should have cleared isPaused after pauseEndTime');
-            assertOrThrow(persisted.pauseEndTime == null, 'A11: helper should have cleared pauseEndTime');
-
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'A11' });
+            addActiveBlock(bl.id, { durationMs: 120000 });
+            await callSaveData();
+            await callUpdateHostsFile();
+            await assertEnforcedDomain('A11', TEST_DOMAINS.a);
             return { passed: true };
         });
     }
@@ -621,9 +598,9 @@
 
         const result = await callUpdateHostsFile();
         assertOrThrow(result && result.success, 'B1: overlap update failed');
-        await assertHostsContain('B1', TEST_DOMAINS.a);
-        await assertHostsContain('B1', TEST_DOMAINS.b);
-        await assertHostsContain('B1', TEST_DOMAINS.shared);
+        await assertEnforcedDomain('B1', TEST_DOMAINS.a);
+        await assertEnforcedDomain('B1', TEST_DOMAINS.b);
+        await assertEnforcedDomain('B1', TEST_DOMAINS.shared);
         return { passed: true };
     }
 
@@ -644,16 +621,22 @@
         await callSaveData();
         const result = await callUpdateHostsFile();
         assertOrThrow(result && result.success, 'B2: one-off + schedule merge failed');
-        await assertHostsContain('B2', TEST_DOMAINS.a);
-        await assertHostsContain('B2', TEST_DOMAINS.shared);
+        await assertEnforcedDomain('B2', TEST_DOMAINS.a);
+        await assertEnforcedDomain('B2', TEST_DOMAINS.shared);
 
+        // v3 clear path: the shim command is an ack; the real clear is the
+        // frontend removing the block and saving (backends re-derive).
         const tauriAPI = getTauriAPI();
         const clearResult = await tauriAPI.clearBlockViaHelper(bl.id);
-        assertOrThrow(clearResult && clearResult.success, 'B2: clear one-off scope failed');
+        assertOrThrow(clearResult && clearResult.success, 'B2: clear shim ack failed');
+        const appData = getAppData();
+        appData.activeBlocks = appData.activeBlocks.filter(b => b.blocklistId !== bl.id);
+        await callSaveData();
         const syncResult = await callUpdateHostsFile();
         assertOrThrow(syncResult && syncResult.success, 'B2: sync after one-off clear failed');
-        await assertHostsContain('B2', TEST_DOMAINS.a);
-        await assertHostsContain('B2', TEST_DOMAINS.shared);
+        // Schedule segment still active → both domains stay enforced.
+        await assertEnforcedDomain('B2', TEST_DOMAINS.a);
+        await assertEnforcedDomain('B2', TEST_DOMAINS.shared);
         return { passed: true };
     }
 
@@ -673,15 +656,21 @@
         addActiveBlock(bl2.id, { durationMs: 120000 });
         await callSaveData();
         await callUpdateHostsFile();
-        await assertHostsContain('C1', TEST_DOMAINS.a);
-        await assertHostsContain('C1', TEST_DOMAINS.b);
-        await assertHostsContain('C1', TEST_DOMAINS.shared);
+        await assertEnforcedDomain('C1', TEST_DOMAINS.a);
+        await assertEnforcedDomain('C1', TEST_DOMAINS.b);
+        await assertEnforcedDomain('C1', TEST_DOMAINS.shared);
 
+        // v3 scoped clear: shim command is an ack; the frontend removes the
+        // blocklist's blocks and saves, and backends re-derive from the file.
         const scopedResult = await tauriAPI.clearBlockViaHelper(bl1.id);
-        assertOrThrow(scopedResult && scopedResult.success, 'C1: scoped clear failed');
-        await assertHostsNotContain('C1', TEST_DOMAINS.a);
-        await assertHostsContain('C1', TEST_DOMAINS.b);
-        await assertHostsContain('C1', TEST_DOMAINS.shared);
+        assertOrThrow(scopedResult && scopedResult.success, 'C1: clear shim ack failed');
+        const appData = getAppData();
+        appData.activeBlocks = appData.activeBlocks.filter(b => b.blocklistId !== bl1.id);
+        await callSaveData();
+        await callUpdateHostsFile();
+        await assertNotEnforcedDomain('C1', TEST_DOMAINS.a);
+        await assertEnforcedDomain('C1', TEST_DOMAINS.b);
+        await assertEnforcedDomain('C1', TEST_DOMAINS.shared);
         return { passed: true };
     }
 
@@ -695,11 +684,16 @@
         addActiveBlock(bl.id, { durationMs: 120000 });
         await callSaveData();
         await callUpdateHostsFile();
-        await assertHostsContain('C2', TEST_DOMAINS.a);
+        await assertEnforcedDomain('C2', TEST_DOMAINS.a);
 
+        // v3 clear-all: shim ack + frontend removes every manual block and saves.
         const clearAll = await tauriAPI.clearBlockViaHelper();
-        assertOrThrow(clearAll && clearAll.success, 'C2: clear-all manual blocks failed');
-        await assertHostsNotContain('C2', TEST_DOMAINS.a);
+        assertOrThrow(clearAll && clearAll.success, 'C2: clear-all shim ack failed');
+        const appData = getAppData();
+        appData.activeBlocks = [];
+        await callSaveData();
+        await callUpdateHostsFile();
+        await assertNotEnforcedDomain('C2', TEST_DOMAINS.a);
         return { passed: true };
     }
 
@@ -718,11 +712,15 @@
         await callSaveData();
         const startResult = await callUpdateHostsFile();
         assertOrThrow(startResult && startResult.success, 'C3: start block with max difficulty failed');
-        await assertHostsContain('C3', TEST_DOMAINS.b);
+        await assertEnforcedDomain('C3', TEST_DOMAINS.b);
 
         const clearResult = await tauriAPI.clearBlockViaHelper(bl.id);
-        assertOrThrow(clearResult && clearResult.success, 'C3: scoped clear after max-difficulty start failed');
-        await assertHostsNotContain('C3', TEST_DOMAINS.b);
+        assertOrThrow(clearResult && clearResult.success, 'C3: clear shim ack failed');
+        const appData = getAppData();
+        appData.activeBlocks = appData.activeBlocks.filter(b => b.blocklistId !== bl.id);
+        await callSaveData();
+        await callUpdateHostsFile();
+        await assertNotEnforcedDomain('C3', TEST_DOMAINS.b);
         return { passed: true };
     }
 
@@ -766,70 +764,41 @@
     // ========================================
 
     // ========================================
-    // Testing Group E: Hosts safety and cleanup invariants
+    // Testing Group E: Legacy-command and diagnostics invariants
     // ========================================
 
+    // E1: `clean_hosts_file` is v1 migration cleanup (strips legacy markers if
+    // present). v3 never writes hosts, so the contract is: command succeeds and
+    // is idempotent — not that it changes enforcement.
     async function testE1_cleanHostsCommandPath() {
         const skip = await ensureHelperRunningOrSkip('E1');
         if (skip) return skip;
 
         const tauriAPI = getTauriAPI();
-        const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'E1' });
-        addActiveBlock(bl.id, { durationMs: 120000 });
-        await callSaveData();
-        await callUpdateHostsFile();
-
-        const cleanResult = await tauriAPI.cleanHostsFile();
-        assertOrThrow(cleanResult && cleanResult.success, 'E1: clean-hosts command failed');
-        await assertHostsNotContain('E1', TEST_DOMAINS.a);
+        const first = await tauriAPI.cleanHostsFile();
+        assertOrThrow(first && first.success, 'E1: clean-hosts command failed');
+        const second = await tauriAPI.cleanHostsFile();
+        assertOrThrow(second && second.success, 'E1: clean-hosts command not idempotent');
         return { passed: true };
     }
 
+    // E2: v3 diagnostics contract. `check_helper_status` reports the app itself
+    // as the always-ready "helper"; `get_helper_diagnostics` returns the app
+    // version + backend label (not the dead v1 daemon fields).
     async function testE2_helperDiagnosticsContract() {
         const tauriAPI = getTauriAPI();
         assertOrThrow(tauriAPI && typeof tauriAPI.getHelperDiagnostics === 'function', 'E2: getHelperDiagnostics unavailable');
 
         const status = await tauriAPI.checkHelperStatus();
+        assertOrThrow(status.installed === true, 'E2: shim should always report installed');
+        assertOrThrow(status.running === true, 'E2: shim should always report running');
+        assertOrThrow(status.version_ok === true, 'E2: shim should always report version_ok');
+        assertOrThrow(typeof status.version === 'string' && status.version.length > 0, 'E2: shim version missing');
+
         const diag = await tauriAPI.getHelperDiagnostics();
-        assertOrThrow(diag && diag.success, 'E2: diagnostics command failed');
-
-        const diagInstalled = diag.helperInstalled ?? diag.helper_installed;
-        const diagRunning = diag.helperRunning ?? diag.helper_running;
-        const diagVersion = diag.helperVersion ?? diag.helper_version ?? null;
-        const diagVersionOk = diag.helperVersionOk ?? diag.helper_version_ok;
-        const expectedVersion = diag.expectedHelperVersion ?? diag.expected_helper_version;
-        const hostsPath = diag.hostsPath ?? diag.hosts_path;
-        const statePath = diag.helperStatePath ?? diag.helper_state_path;
-        const hostsFile = diag.hostsFile ?? diag.hosts_file;
-        const stateFile = diag.helperStateFile ?? diag.helper_state_file;
-        const helperLogPath = diag.helperLogPath ?? diag.helper_log_path;
-        const helperLogTail = diag.helperLogTail ?? diag.helper_log_tail;
-        const installLogPath = diag.installLogPath ?? diag.install_log_path;
-        const installLogTail = diag.installLogTail ?? diag.install_log_tail;
-        const statusArtifactPath = diag.helperStatusArtifactPath ?? diag.helper_status_artifact_path;
-        const statusArtifactExists = diag.helperStatusArtifactExists ?? diag.helper_status_artifact_exists;
-        const osName = diag.osName ?? diag.os_name;
-
-        assertOrThrow(diagInstalled === status.installed, `E2: diagnostics installed mismatch (${diagInstalled} !== ${status.installed})`);
-        assertOrThrow(diagRunning === status.running, `E2: diagnostics running mismatch (${diagRunning} !== ${status.running})`);
-        assertOrThrow((diagVersion || null) === (status.version || null), `E2: diagnostics version mismatch (${diagVersion} !== ${status.version})`);
-        assertOrThrow(diagVersionOk === status.version_ok, `E2: diagnostics version_ok mismatch (${diagVersionOk} !== ${status.version_ok})`);
-        assertOrThrow(typeof expectedVersion === 'string' && expectedVersion.length > 0, 'E2: expected helper version missing');
-        assertOrThrow(typeof hostsPath === 'string' && hostsPath.length > 0, 'E2: hosts path missing');
-        assertOrThrow(typeof statePath === 'string' && statePath.length > 0, 'E2: helper state path missing');
-        assertOrThrow(typeof hostsFile === 'string' && hostsFile.length > 0, 'E2: hosts file payload missing');
-        assertOrThrow(typeof stateFile === 'string' && stateFile.length > 0, 'E2: helper state payload missing');
-        assertOrThrow(typeof helperLogPath === 'string' && helperLogPath.length > 0, 'E2: helper log path missing');
-        assertOrThrow(typeof helperLogTail === 'string' && helperLogTail.length > 0, 'E2: helper log tail missing');
-        assertOrThrow(typeof statusArtifactPath === 'string' && statusArtifactPath.length > 0, 'E2: helper status artifact path missing');
-        assertOrThrow(typeof statusArtifactExists === 'boolean', 'E2: helper status artifact existence missing');
-        if (!status.running) {
-            assertOrThrow(statusArtifactExists === status.installed, 'E2: artifact existence should explain installed state when helper is not running');
-        }
-        if (osName === 'windows') {
-            assertOrThrow(typeof installLogPath === 'string' && installLogPath.length > 0, 'E2: install log path missing on Windows');
-            assertOrThrow(typeof installLogTail === 'string' && installLogTail.length > 0, 'E2: install log tail missing on Windows');
-        }
+        assertOrThrow(diag, 'E2: diagnostics command returned nothing');
+        assertOrThrow(diag.app_version === status.version, `E2: app_version mismatch (${diag.app_version} !== ${status.version})`);
+        assertOrThrow(['automation', 'extension', 'unsupported'].includes(diag.backend), `E2: unexpected backend label (${diag.backend})`);
         return { passed: true };
     }
 
@@ -862,16 +831,134 @@
         return { passed: true };
     }
 
+    // ========================================
+    // Testing Group H: Allowlist mode (desktop websites channel)
+    // ========================================
+    //
+    // Pipeline-state tests: real allow-mode focus spaces are created, started,
+    // paused, and cleared through the same save + sync path users hit, and the
+    // Rust-derived enforcement snapshot (`get_system_diagnostics.current_blocking`)
+    // is asserted. Per-URL block/allow decisions and blocklist-wins subtraction
+    // are decision-time logic covered by Rust unit tests (web_automation.rs) and
+    // Tier 1 Category 14 — not re-tested here.
+    //
+    // Deliberately websites-only: enabling allow-mode APP enforcement would
+    // enroll the tester's real open apps for quit. App allow-mode is manual
+    // checklist territory (section 15).
+
+    async function testH1_singleAllowlistEnforcementState() {
+        const skip = await ensureHelperRunningOrSkip('H1');
+        if (skip) return skip;
+
+        return runIsolatedIntegrationTest('H1', async () => {
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'H1 Allow', mode: 'allowlist' });
+            addActiveBlock(bl.id, { durationMs: 120000 });
+            await callSaveData();
+            await callUpdateHostsFile();
+            callRender();
+
+            const cb = await getCurrentBlockingOrThrow('H1');
+            assertOrThrow(!cb.domains.includes(TEST_DOMAINS.a), 'H1: allowlist domain must not appear in the flat blocked list');
+            assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.a), 'H1: allowed_domains missing the allowlist domain');
+            const allowBlock = (cb.blocks || []).find(b => b.mode === 'allowlist' && (b.domains || []).includes(TEST_DOMAINS.a));
+            assertOrThrow(allowBlock, 'H1: no allowlist-mode block entry in current_blocking.blocks');
+
+            removeTestDataFromAppState();
+            await callSaveData();
+            await callUpdateHostsFile(true);
+            callRender();
+            const after = await getCurrentBlockingOrThrow('H1');
+            assertOrThrow(!after.allowed_domains.includes(TEST_DOMAINS.a), 'H1: allowed_domains not cleared after stop');
+            return { passed: true };
+        });
+    }
+
+    async function testH2_concurrentAllowlistsUnion() {
+        const skip = await ensureHelperRunningOrSkip('H2');
+        if (skip) return skip;
+
+        return runIsolatedIntegrationTest('H2', async () => {
+            const blA = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'H2 Allow A', mode: 'allowlist' });
+            const blB = addTestBlocklist({ websites: [TEST_DOMAINS.b], name: 'H2 Allow B', mode: 'allowlist' });
+            addActiveBlock(blA.id, { durationMs: 120000 });
+            addActiveBlock(blB.id, { durationMs: 120000 });
+            await callSaveData();
+            await callUpdateHostsFile();
+            callRender();
+
+            const cb = await getCurrentBlockingOrThrow('H2');
+            assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.a), 'H2: allowed union missing first allowlist domain');
+            assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.b), 'H2: allowed union missing second allowlist domain');
+            const allowEntries = (cb.blocks || []).filter(b => b.mode === 'allowlist');
+            assertOrThrow(allowEntries.length >= 2, `H2: expected 2 allowlist block entries, got ${allowEntries.length}`);
+            return { passed: true };
+        });
+    }
+
+    async function testH3_allowlistBlocklistOverlap() {
+        const skip = await ensureHelperRunningOrSkip('H3');
+        if (skip) return skip;
+
+        return runIsolatedIntegrationTest('H3', async () => {
+            const allowBl = addTestBlocklist({ websites: [TEST_DOMAINS.a, TEST_DOMAINS.b], name: 'H3 Allow', mode: 'allowlist' });
+            const blockBl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'H3 Block' });
+            addActiveBlock(allowBl.id, { durationMs: 120000 });
+            addActiveBlock(blockBl.id, { durationMs: 120000 });
+            await callSaveData();
+            await callUpdateHostsFile();
+            callRender();
+
+            const cb = await getCurrentBlockingOrThrow('H3');
+            // Both channels intact: the blocklist domain still rides the flat
+            // blocked list (blocklist wins at decision time), and the allowlist
+            // union is surfaced alongside it.
+            assertOrThrow(cb.domains.includes(TEST_DOMAINS.a), 'H3: overlapping blocklist domain missing from flat blocked list');
+            assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.b), 'H3: non-overlapping allowlist domain missing from allowed union');
+            const modes = new Set((cb.blocks || []).map(b => b.mode || 'blocklist'));
+            assertOrThrow(modes.has('allowlist'), 'H3: allowlist block entry missing');
+            assertOrThrow(modes.has('blocklist') || modes.has('manual'), 'H3: blocklist block entry missing');
+            return { passed: true };
+        });
+    }
+
+    async function testH4_pauseResumeAllowlistEnforcementPath() {
+        const skip = await ensureHelperRunningOrSkip('H4');
+        if (skip) return skip;
+
+        return runIsolatedIntegrationTest('H4', async () => {
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'H4 Allow', mode: 'allowlist' });
+            const block = addActiveBlock(bl.id, { durationMs: 120000 });
+            await callSaveData();
+            await callUpdateHostsFile();
+            callRender();
+            let cb = await getCurrentBlockingOrThrow('H4');
+            assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.a), 'H4: allowlist not enforced before pause');
+
+            await setOneOffPaused(block.id, 45000);
+            callRender();
+            cb = await getCurrentBlockingOrThrow('H4');
+            assertOrThrow(!cb.allowed_domains.includes(TEST_DOMAINS.a), 'H4: paused allowlist still in allowed union');
+            assertOrThrow(!(cb.blocks || []).some(b => b.mode === 'allowlist'), 'H4: paused allowlist still has a block entry');
+
+            await clearOneOffPause(block.id);
+            callRender();
+            cb = await getCurrentBlockingOrThrow('H4');
+            assertOrThrow(cb.allowed_domains.includes(TEST_DOMAINS.a), 'H4: resumed allowlist missing from allowed union');
+            return { passed: true };
+        });
+    }
+
     function buildProfileTests(profile) {
         const coreTests = [
-            { group: 'A', name: 'A1: Hosts modification path', fn: testA1_hostsModificationPath },
+            { group: 'A', name: 'A1: Enforcement derivation path', fn: testA1_enforcementDerivationPath },
             { group: 'A', name: 'A2: One-off start/end timing', fn: testA2_blockStartEndTiming },
             { group: 'A', name: 'A3: Schedule active-now path', fn: testA3_scheduleActiveNow },
             { group: 'A', name: 'A6: Pause/resume one-off enforcement path', fn: testA6_pauseResumeOneOffEnforcementPath },
             { group: 'B', name: 'B1: Shared-domain overlap', fn: testB1_sharedDomainOverlap },
             { group: 'C', name: 'C1: Scoped clear by blocklist ID', fn: testC1_scopedClearByBlocklistId },
             { group: 'E', name: 'E1: Clean hosts command path', fn: testE1_cleanHostsCommandPath },
-            { group: 'E', name: 'E2: Helper diagnostics contract', fn: testE2_helperDiagnosticsContract }
+            { group: 'E', name: 'E2: Helper diagnostics contract', fn: testE2_helperDiagnosticsContract },
+            { group: 'H', name: 'H1: Single allowlist enforcement state', fn: testH1_singleAllowlistEnforcementState }
         ];
 
         if (profile === PROFILE_CORE) return coreTests;
@@ -884,13 +971,16 @@
             { group: 'A', name: 'A8: Pause/resume schedule active path', fn: testA8_pauseResumeScheduleActivePath },
             { group: 'A', name: 'A9: Pause natural-expiry schedule smoke', fn: testA9_pauseNaturalExpiryScheduleSmoke },
             { group: 'A', name: 'A10: Pause inactive schedule suppression path', fn: testA10_pauseInactiveScheduleSuppressionPath },
-            { group: 'A', name: 'A11: Helper owns pause state for one-off', fn: testA11_helperOwnsPauseStateForOneOff },
+            { group: 'A', name: 'A11: Data file owns enforcement', fn: testA11_dataFileOwnsEnforcement },
             { group: 'B', name: 'B2: One-off + schedule same blocklist', fn: testB2_oneOffPlusScheduleSameBlocklist },
             { group: 'C', name: 'C2: Clear-all manual blocks', fn: testC2_clearAllManualBlocks },
             { group: 'C', name: 'C3: Max difficulty blocklist start/clear', fn: testC3_maxDifficultyBlocklistStartClear },
             { group: 'F', name: 'F1: Set blocked apps command path', fn: testF1_setBlockedAppsCommandPath },
             { group: 'F', name: 'F2: Protected app payload path', fn: testF2_protectedAppPayloadPath },
-            { group: 'G', name: 'G1: Duplicate blocklist then start/clear path', fn: testG1_duplicateThenRun }
+            { group: 'G', name: 'G1: Duplicate blocklist then start/clear path', fn: testG1_duplicateThenRun },
+            { group: 'H', name: 'H2: Concurrent allowlists union', fn: testH2_concurrentAllowlistsUnion },
+            { group: 'H', name: 'H3: Allowlist + blocklist overlap', fn: testH3_allowlistBlocklistOverlap },
+            { group: 'H', name: 'H4: Pause/resume allowlist enforcement path', fn: testH4_pauseResumeAllowlistEnforcementPath }
         ];
     }
 
@@ -969,7 +1059,7 @@
 
         if (selectedProfile === PROFILE_FULL && results.failed > 0) {
             console.log('\nGroup failure summary (full profile):');
-            ['A', 'B', 'C', 'D', 'E', 'F', 'G'].forEach(groupKey => {
+            ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(groupKey => {
                 const g = groupResults.get(groupKey);
                 if (!g) return;
                 const passedOverTotal = `${g.passed}/${g.total}`;

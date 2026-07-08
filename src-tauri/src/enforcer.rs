@@ -55,8 +55,8 @@ fn website_blocking_active(app: &AppHandle) -> bool {
         Some(p) => p,
         None => return false,
     };
-    let (domains, _blocks) = crate::native_host::derive_payload(&path);
-    !domains.is_empty()
+    let (_domains, blocks) = crate::native_host::derive_payload(&path);
+    blocks.iter().any(|b| !b.domains.is_empty())
 }
 
 /// True if the user has explicitly opted in to browser enforcement

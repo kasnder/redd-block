@@ -162,8 +162,7 @@
                         class="onboarding-app-icon">
                     <div class="welcome-onboarding-title-text">
                         <h1 id="eula-welcome-title-ios" class="eula-welcome-title-ios">Welcome to ReDD Blocker</h1>
-                        <p id="eula-onboarding-subtitle-ios" class="welcome-onboarding-subtitle eula-mobile-subtitle">Create a space for calm focus, by blocking
-the apps and websites that pull you away.</p>
+                        <p id="eula-onboarding-subtitle-ios" class="welcome-onboarding-subtitle eula-mobile-subtitle">Create a space for calm focus, by blocking the apps and websites that pull you away.</p>
                     </div>
                 </div>
 
@@ -698,7 +697,7 @@ the apps and websites that pull you away.</p>
                                             <label class="time-label" id="duration-label">Duration</label>
                                             <div class="duration-input-wrapper">
                                                 <input type="number" id="duration-minutes-input" class="duration-input"
-                                                    min="1" max="99999" value="60">
+                                                    inputmode="numeric" min="1" max="99999" value="60">
                                                 <span class="duration-unit" id="duration-unit-label">min</span>
                                             </div>
                                         </div>
@@ -1036,12 +1035,14 @@ the apps and websites that pull you away.</p>
                 <h3 id="modal-title">Create focus space</h3>
 
                 <div id="active-blocklist-warning" class="warning-banner hidden">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+                        aria-hidden="true">
                         <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="8" x2="12" y2="12"></line>
-                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                        <line x1="12" y1="16" x2="12" y2="12"></line>
+                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
                     </svg>
-                    <span id="active-blocklist-warning-text">This blocklist is active. Some settings are locked.</span>
+                    <span id="active-blocklist-warning-text">This focus space is active. Some settings are locked.</span>
                 </div>
 
                 <div class="form-group">
@@ -1109,6 +1110,32 @@ the apps and websites that pull you away.</p>
                             </label>
                         </div>
                     </div>
+                </div>
+
+                <div class="form-group" id="blocklist-mode-group">
+                    <label id="blocklist-mode-label">Mode</label>
+                    <div class="mode-toggle" id="blocklist-mode-toggle">
+                        <button type="button" class="mode-btn radio-option active" data-mode="blocklist"
+                            id="blocklist-mode-blocklist">
+                            <svg class="mode-btn-icon mode-btn-icon--block" width="16" height="16" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" aria-hidden="true">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <path d="m4.9 4.9 14.2 14.2"></path>
+                            </svg>
+                            <span class="mode-btn-label" id="blocklist-mode-blocklist-label">Block</span>
+                        </button>
+                        <button type="button" class="mode-btn radio-option" data-mode="allowlist"
+                            id="blocklist-mode-allowlist">
+                            <svg class="mode-btn-icon mode-btn-icon--allow" width="18" height="18" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                stroke-linejoin="round" aria-hidden="true">
+                                <path d="M20 6 9 17l-5-5"></path>
+                            </svg>
+                            <span class="mode-btn-label" id="blocklist-mode-allowlist-label">Allow</span>
+                        </button>
+                    </div>
+                    <p class="form-hint" id="blocklist-mode-hint">Only the websites and apps you add will be blocked.</p>
                 </div>
 
                 <div class="form-group">
@@ -1198,11 +1225,12 @@ the apps and websites that pull you away.</p>
                                 also use the folder button to find the app.</span>
                         </span>
                     </label>
-                    <div class="tags-input-container">
+                    <div class="tags-input-container tags-input-stacked">
                         <div id="modal-apps-tags" class="tags-container"></div>
-                        <div class="input-with-button">
-                            <input type="text" id="modal-app-input" placeholder="e.g., Safari" class="form-input">
-                            <button type="button" id="modal-browse-apps-btn" class="browse-btn"
+                        <div class="input-with-button apps-input-with-button">
+                            <input type="text" id="modal-app-input" placeholder="e.g., Safari" class="form-input"
+                                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+                            <button type="button" id="modal-browse-apps-btn" class="browse-btn browse-btn-apps"
                                 title="Browse Applications">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                     stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1243,7 +1271,7 @@ the apps and websites that pull you away.</p>
                                         <button type="button" id="override-count-minus" class="override-count-step-btn"
                                             aria-label="Decrease">−</button>
                                         <input type="number" id="override-count" class="override-count-input form-input"
-                                            value="50" min="5" max="6600">
+                                            inputmode="numeric" value="50" min="5" max="6600">
                                         <button type="button" id="override-count-plus" class="override-count-step-btn"
                                             aria-label="Increase">+</button>
                                     </div>
@@ -1427,17 +1455,17 @@ the apps and websites that pull you away.</p>
                             <label class="time-label" id="pause-for-label">PAUSE FOR</label>
                             <div class="pause-duration-inputs">
                                 <div class="pause-time-input-group">
-                                    <input type="number" id="pause-days" min="0" max="365" value="0"
+                                    <input type="number" id="pause-days" inputmode="numeric" min="0" max="365" value="0"
                                         class="pause-time-input">
                                     <span class="pause-time-unit">days</span>
                                 </div>
                                 <div class="pause-time-input-group">
-                                    <input type="number" id="pause-hours" min="0" max="23" value="0"
+                                    <input type="number" id="pause-hours" inputmode="numeric" min="0" max="23" value="0"
                                         class="pause-time-input">
                                     <span class="pause-time-unit">hrs</span>
                                 </div>
                                 <div class="pause-time-input-group">
-                                    <input type="number" id="pause-minutes" min="0" max="59" value="30"
+                                    <input type="number" id="pause-minutes" inputmode="numeric" min="0" max="59" value="30"
                                         class="pause-time-input">
                                     <span class="pause-time-unit">mins</span>
                                 </div>
@@ -1919,6 +1947,11 @@ the apps and websites that pull you away.</p>
                                 </div>
                                 <h2 class="app-blocking-warning-heading" id="schedule-overlay-preview-heading"></h2>
                                 <p class="app-blocking-warning-summary" id="schedule-overlay-preview-summary"></p>
+                                <div class="app-blocking-allowlist-apps hidden"
+                                    id="schedule-overlay-preview-allowlist-apps">
+                                    <div class="app-blocking-allowlist-pills"
+                                        id="schedule-overlay-preview-allowlist-pills"></div>
+                                </div>
                                 <div class="app-blocking-warning-actions schedule-overlay-preview-actions">
                                     <button type="button" class="modal-btn primary-btn app-blocking-lets-go-btn"
                                         id="schedule-overlay-preview-lets-go">
@@ -1934,6 +1967,7 @@ the apps and websites that pull you away.</p>
                                         <span id="schedule-overlay-preview-lets-go-label">Let's go!</span>
                                     </button>
                                 </div>
+                                <p class="app-blocking-warning-note hidden" id="schedule-overlay-preview-note"></p>
                             </div>
                         </div>
                     </div>
@@ -2135,7 +2169,7 @@ the apps and websites that pull you away.</p>
                                     <span id="grace-period-hint-text" class="settings-row-hint">Seconds to re-enable before the browser closes.</span>
                                 </div>
                                 <div id="settings-grace-input-wrap" class="settings-row-control settings-grace-input-wrap">
-                                    <input id="grace-seconds-input" type="number" min="5" max="300" step="5"
+                                    <input id="grace-seconds-input" type="number" inputmode="numeric" min="5" max="300" step="5"
                                         class="grace-seconds-input" value="60" aria-describedby="grace-period-hint-text">
                                     <span id="grace-input-lock-tooltip" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
                                 </div>
@@ -2519,6 +2553,9 @@ the apps and websites that pull you away.</p>
                     </div>
                     <h2 id="app-blocking-warning-heading" class="app-blocking-warning-heading"></h2>
                     <p id="app-blocking-warning-summary" class="app-blocking-warning-summary"></p>
+                    <div class="app-blocking-allowlist-apps hidden" id="app-blocking-warning-allowlist-apps">
+                        <div class="app-blocking-allowlist-pills" id="app-blocking-warning-allowlist-pills"></div>
+                    </div>
                     <div class="app-blocking-warning-actions">
                         <button type="button" id="app-blocking-snooze-btn"
                             class="modal-btn cancel-btn app-blocking-snooze-btn hidden">
@@ -2539,6 +2576,7 @@ the apps and websites that pull you away.</p>
                             <span id="app-blocking-lets-go-btn-label">Let's go!</span>
                         </button>
                     </div>
+                    <p id="app-blocking-warning-note" class="app-blocking-warning-note hidden"></p>
                 </div>
             </div>
         </div>

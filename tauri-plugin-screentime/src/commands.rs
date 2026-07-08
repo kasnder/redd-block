@@ -151,12 +151,14 @@ pub(crate) async fn set_resume_payload<R: Runtime>(
     domains: Vec<String>,
     app_token_data: Option<Vec<String>>,
     category_token_data: Option<Vec<String>>,
+    mode: Option<String>,
 ) -> Result<SuccessResponse> {
     app.screentime().set_resume_payload(SetResumePayloadRequest {
         block_id,
         domains,
         app_token_data,
         category_token_data,
+        mode,
     })
 }
 
@@ -167,12 +169,14 @@ pub(crate) async fn set_block_end_state<R: Runtime>(
     domains: Vec<String>,
     app_token_data: Option<Vec<String>>,
     category_token_data: Option<Vec<String>>,
+    mode: Option<String>,
 ) -> Result<SuccessResponse> {
     app.screentime().set_block_end_state(SetBlockEndStateRequest {
         block_id,
         domains,
         app_token_data,
         category_token_data,
+        mode,
     })
 }
 
@@ -183,9 +187,11 @@ pub(crate) async fn show_activity_picker<R: Runtime>(
     app: AppHandle<R>,
     initial_application_token_data: Option<Vec<String>>,
     initial_category_token_data: Option<Vec<String>>,
+    mode: Option<String>,
 ) -> Result<ActivityPickerResponse> {
     app.screentime().show_activity_picker(ActivityPickerRequest {
         initial_application_token_data,
         initial_category_token_data,
+        mode,
     })
 }

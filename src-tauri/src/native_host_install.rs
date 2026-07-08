@@ -318,9 +318,10 @@ fn windows_manifest_path(browser: BrowserTarget) -> Option<PathBuf> {
     Some(dir.join(format!("{HOST_NAME}-{}.json", browser_slug(browser))))
 }
 
-/// `true` when the manifest file, HKCU registry entry, and host binary
-/// are all present and consistent. Chrome discovers hosts via registry
-/// only — a manifest file on disk without the key yields "host not found".
+/// `true` when the manifest file, HKCU registry entry, host binary,
+/// and manifest body (path, allowed origins, etc.) are all present and
+/// consistent. Chrome discovers hosts via registry only — a manifest
+/// file on disk without the key yields "host not found".
 #[cfg(target_os = "windows")]
 pub fn native_host_is_current(browser: BrowserTarget) -> bool {
     let Ok(expected) = host_binary_path_for_manifest() else {
@@ -335,13 +336,16 @@ pub fn native_host_is_current(browser: BrowserTarget) -> bool {
     if !windows_registry_points_at_manifest(browser, &manifest_path) {
         return false;
     }
+    let Ok(manifest_binary) = manifest_binary_path() else {
+        return false;
+    };
     let Ok(raw) = std::fs::read_to_string(&manifest_path) else {
         return false;
     };
     let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return false;
     };
-    val.get("path").and_then(|p| p.as_str()) == Some(expected.as_str())
+    val == manifest_body(browser, &manifest_binary)
 }
 
 #[cfg(target_os = "windows")]
@@ -434,8 +438,8 @@ pub fn install_native_host_for(browser: BrowserTarget) -> std::io::Result<()> {
     install_one(browser, &binary)
 }
 
-/// `true` when the browser's manifest is missing or points at a different
-/// binary (e.g. after `tauri dev` rebuild or .pkg reinstall).
+/// `true` when the browser's manifest is missing or differs from the
+/// manifest we would write right now (binary path, allowed origins, etc).
 pub fn manifest_needs_update(browser: BrowserTarget, binary: &str) -> bool {
     let Some(dir) = browser.manifest_dir() else {
         return true;
@@ -447,7 +451,7 @@ pub fn manifest_needs_update(browser: BrowserTarget, binary: &str) -> bool {
     let Ok(val) = serde_json::from_str::<serde_json::Value>(&raw) else {
         return true;
     };
-    val.get("path").and_then(|p| p.as_str()) != Some(binary)
+    val != manifest_body(browser, binary)
 }
 
 /// On macOS, ensure every Chromium browser set to extension mode has an

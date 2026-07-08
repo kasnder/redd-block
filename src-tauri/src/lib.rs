@@ -98,6 +98,8 @@ tauri_nspanel::tauri_panel! {
 pub mod app_watcher;
 #[cfg(target_os = "macos")]
 pub mod app_group;
+#[cfg(target_os = "macos")]
+pub mod window_inventory;
 #[cfg(not(target_os = "ios"))]
 pub mod enforcer;
 // JOMO-style website blocking via macOS Automation (Apple Events) — the

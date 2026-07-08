@@ -62,10 +62,24 @@ pub struct BlockAppsResponse {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StartBlockRequest {
+    /// Legacy field: domains to BLOCK (blocklist semantics). Kept for back-compat.
     pub domains: Vec<String>,
     pub app_token_data: Option<Vec<String>>,
     pub category_token_data: Option<Vec<String>>,
-    /// Blocklist label for shield copy (Pass 5); omit on older clients.
+    /// Pre-resolved blocked/allowed split of the active manual union. When
+    /// allowed_* fields are present, Swift applies `.all(except:)` semantics.
+    /// All optional so older payloads decode unchanged.
+    #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub blocked_domains: Option<Vec<String>>,
+    #[serde(default)]
+    pub allowed_domains: Option<Vec<String>>,
+    #[serde(default)]
+    pub blocked_app_token_data: Option<Vec<String>>,
+    #[serde(default)]
+    pub allowed_app_token_data: Option<Vec<String>>,
+    /// Blocklist label for shield copy; omit on older clients.
     #[serde(default)]
     pub blocklist_emoji: Option<String>,
     #[serde(default)]
@@ -76,6 +90,19 @@ pub struct StartBlockRequest {
     pub block_start_ms: Option<f64>,
     #[serde(default)]
     pub block_end_ms: Option<f64>,
+    /// Shield-attribution display fields for the earliest-started active
+    /// allow-mode block (the fields above describe the overall display winner,
+    /// which may be a blocklist block). Omit when no allowlist block is active.
+    #[serde(default)]
+    pub allowlist_blocklist_emoji: Option<String>,
+    #[serde(default)]
+    pub allowlist_blocklist_name: Option<String>,
+    #[serde(default)]
+    pub allowlist_blocklist_color_hex: Option<String>,
+    #[serde(default)]
+    pub allowlist_block_start_ms: Option<f64>,
+    #[serde(default)]
+    pub allowlist_block_end_ms: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -128,6 +155,10 @@ pub struct ScheduleEntryRequest {
     pub blocklist_emoji: Option<String>,
     pub blocklist_name: Option<String>,
     pub blocklist_color_hex: Option<String>,
+    /// "allowlist" when this entry's domains/tokens are ALLOWED items;
+    /// absent/"blocklist" = blocked items (legacy semantics).
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -158,6 +189,9 @@ pub struct SetResumePayloadRequest {
     pub domains: Vec<String>,
     pub app_token_data: Option<Vec<String>>,
     pub category_token_data: Option<Vec<String>>,
+    /// "allowlist" when this payload's items are ALLOWED items.
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -167,6 +201,9 @@ pub struct SetBlockEndStateRequest {
     pub domains: Vec<String>,
     pub app_token_data: Option<Vec<String>>,
     pub category_token_data: Option<Vec<String>>,
+    /// "allowlist" when this payload's items are ALLOWED items.
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 // --- Activity Picker ---
@@ -176,6 +213,10 @@ pub struct SetBlockEndStateRequest {
 pub struct ActivityPickerRequest {
     pub initial_application_token_data: Option<Vec<String>>,
     pub initial_category_token_data: Option<Vec<String>>,
+    /// "allowlist" when picking for an allow-mode focus space — the iOS picker
+    /// then expands category picks into individual member app tokens.
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

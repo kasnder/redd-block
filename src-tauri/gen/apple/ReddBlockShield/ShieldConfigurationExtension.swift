@@ -69,11 +69,14 @@ private enum ShieldSnapshotPresenter {
         if let category, let row = categoryAttribution(snapshot: snapshot, category: category) {
             rows.append(row)
         }
-        guard let picked = bestAttribution(rows) else {
+        // No per-target row: the target may be blocked for NOT being on an
+        // active allow list — attribute via the section-level fallback.
+        guard let picked = bestAttribution(rows)
+            ?? ShieldAttributionPicker.winningAllowlistFallback(snapshot: snapshot) else {
             return fallbackConfiguration
         }
         let blockedName = application.localizedDisplayName ?? "This app"
-        return buildConfiguration(blockedName: blockedName, attribution: picked)
+        return buildConfiguration(blockedName: blockedName, attribution: picked, isApp: true)
     }
 
     static func configuration(
@@ -90,12 +93,13 @@ private enum ShieldSnapshotPresenter {
         if let category, let row = categoryAttribution(snapshot: snapshot, category: category) {
             rows.append(row)
         }
-        guard let picked = bestAttribution(rows) else {
+        guard let picked = bestAttribution(rows)
+            ?? ShieldAttributionPicker.winningAllowlistFallback(snapshot: snapshot) else {
             return fallbackConfiguration
         }
         let raw = webDomain.domain?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let displayHost = raw.isEmpty ? "This site" : raw
-        return buildConfiguration(blockedName: displayHost, attribution: picked)
+        return buildConfiguration(blockedName: displayHost, attribution: picked, isApp: false)
     }
 
     // MARK: - Lookups (keys must match Pass 4–6 writers)
@@ -129,15 +133,20 @@ private enum ShieldSnapshotPresenter {
 
     // MARK: - Shield.Configuration assembly
 
-    private static func buildConfiguration(blockedName: String, attribution: ShieldAttribution) -> ShieldConfiguration {
-        let subtitleText = truncate(makeSubtitle(blockedName: blockedName, attribution: attribution))
+    private static func buildConfiguration(blockedName: String, attribution: ShieldAttribution, isApp: Bool) -> ShieldConfiguration {
+        let subtitleText = truncate(makeSubtitle(blockedName: blockedName, attribution: attribution, isApp: isApp))
         let subtitle = ShieldConfiguration.Label(text: subtitleText, color: .label)
         return shieldChromeConfiguration(subtitle: subtitle)
     }
 
-    private static func makeSubtitle(blockedName: String, attribution: ShieldAttribution) -> String {
-        let opener = "\(blockedName) is on your current blocklist."
-        var blockInfo: [String] = [detailSectionHeading(sourceId: attribution.sourceId)]
+    private static func makeSubtitle(blockedName: String, attribution: ShieldAttribution, isApp: Bool) -> String {
+        let isAllowlist = attribution.isAllowlistSource == true
+        let opener = isAllowlist
+            ? "\(blockedName) isn't one of the \(isApp ? "apps" : "ones") you've allowed yourself to use."
+            : "\(blockedName) is on your current blocklist."
+        var blockInfo: [String] = [
+            isAllowlist ? "Focus space information:" : detailSectionHeading(sourceId: attribution.sourceId)
+        ]
         let pill = pillLine(attribution: attribution)
         if !pill.isEmpty {
             blockInfo.append(pill)

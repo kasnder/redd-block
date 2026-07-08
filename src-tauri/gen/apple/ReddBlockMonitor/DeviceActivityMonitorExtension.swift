@@ -47,28 +47,70 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         recomputeActiveScheduleUnion()
     }
     
-    /// Handle one-off resume: load manual state + resume payload, merge, apply to default store, write back to App Group, remove payload.
+    /// Re-tag a merged/subtracted payload as allowlist so the record keeps its semantics.
+    private func taggedAllowlist(_ payload: ManualBlockStatePayload) -> ManualBlockStatePayload {
+        ManualBlockStatePayload(
+            domains: payload.domains,
+            appTokenData: payload.appTokenData,
+            categoryTokenData: payload.categoryTokenData,
+            days: nil,
+            mode: "allowlist"
+        )
+    }
+    
+    /// Re-derive both channels' web filters and app/category shields from
+    /// App Group state (allowlist-aware, cross-channel). Callers must persist
+    /// their record updates BEFORE calling this.
+    private func reapplyDerivedPolicies(now: Date = Date()) {
+        IOSWebPolicyApplier.reapplyWebPolicy(now: now)
+        IOSAppPolicyApplier.reapplyAppPolicy(now: now)
+    }
+
+    /// Handle one-off resume: merge the resume payload into the record matching its
+    /// mode (blocked vs allowed are separate App Group records), re-apply, clean up.
     private func handleResumeOneOff(blockId: String) {
         guard let resumePayload = SharedManualBlockStore.loadResumePayload(blockId: blockId) else {
             return
         }
-        let base = SharedManualBlockStore.loadManualBlockState()
-        let merged = mergePayloads(base: base, extra: resumePayload)
-        applyToDefaultStore(from: merged)
-        SharedManualBlockStore.saveManualBlockState(merged)
+        if resumePayload.isAllowlist {
+            let base = SharedManualBlockStore.loadManualAllowlistState()
+            let merged = taggedAllowlist(mergePayloads(base: base, extra: resumePayload))
+            SharedManualBlockStore.saveManualAllowlistState(merged)
+        } else {
+            let base = SharedManualBlockStore.loadManualBlockState()
+            let merged = mergePayloads(base: base, extra: resumePayload)
+            SharedManualBlockStore.saveManualBlockState(merged)
+        }
+        reapplyDerivedPolicies()
         SharedManualBlockStore.removeResumePayload(blockId: blockId)
     }
-    
-    /// Handle one-off block end (Option B): load current manual state, subtract this block's payload, apply to default store, write back to App Group.
+
+    /// Handle one-off block end (Option B): subtract this block's payload from the
+    /// record matching its mode, re-apply, write back.
     private func handleBlockEndOneOff(blockId: String) {
         guard let toRemove = SharedManualBlockStore.loadBlockEndState(blockId: blockId) else {
             return
         }
-        let current = SharedManualBlockStore.loadManualBlockState()
         let emptyPayload = ManualBlockStatePayload(domains: [], appTokenData: [], categoryTokenData: [], days: nil)
-        let newState = subtractPayloads(current: current ?? emptyPayload, subtract: toRemove)
-        applyToDefaultStore(from: newState)
-        SharedManualBlockStore.saveManualBlockState(newState)
+        if toRemove.isAllowlist {
+            let current = SharedManualBlockStore.loadManualAllowlistState()
+            let newState = taggedAllowlist(subtractPayloads(current: current ?? emptyPayload, subtract: toRemove))
+            if newState.isEmptyPayload {
+                SharedManualBlockStore.clearManualAllowlistState()
+            } else {
+                SharedManualBlockStore.saveManualAllowlistState(newState)
+            }
+        } else {
+            let current = SharedManualBlockStore.loadManualBlockState()
+            let newState = subtractPayloads(current: current ?? emptyPayload, subtract: toRemove)
+            SharedManualBlockStore.saveManualBlockState(newState)
+            if newState.isEmptyPayload {
+                // Clear residual default-store settings; the derived reapply
+                // below restores anything a still-active source needs.
+                defaultStore.clearAllSettings()
+            }
+        }
+        reapplyDerivedPolicies()
         SharedManualBlockStore.removeBlockEndState(blockId: blockId)
     }
     
@@ -106,47 +148,6 @@ class ReddBlockMonitor: DeviceActivityMonitor {
         )
     }
     
-    /// Apply payload to the default (manual) store.
-    private func applyToDefaultStore(from data: ManualBlockStatePayload) {
-        if data.domains.isEmpty && data.appTokenData.isEmpty && data.categoryTokenData.isEmpty {
-            defaultStore.webContent.blockedByFilter = nil
-            defaultStore.shield.applications = nil
-            defaultStore.shield.applicationCategories = nil
-            defaultStore.clearAllSettings()
-            return
-        }
-        if !data.domains.isEmpty {
-            let webDomains = Set(data.domains.prefix(50).map { WebDomain(domain: $0) })
-            defaultStore.webContent.blockedByFilter = .specific(webDomains)
-        } else {
-            defaultStore.webContent.blockedByFilter = nil
-        }
-        var appTokens = Set<ApplicationToken>()
-        for tokenString in data.appTokenData {
-            if let tokenData = Data(base64Encoded: tokenString),
-               let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
-                appTokens.insert(token)
-            }
-        }
-        if appTokens.isEmpty {
-            defaultStore.shield.applications = nil
-        } else {
-            defaultStore.shield.applications = appTokens
-        }
-        var categoryTokens = Set<ActivityCategoryToken>()
-        for tokenString in data.categoryTokenData {
-            if let tokenData = Data(base64Encoded: tokenString),
-               let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
-                categoryTokens.insert(token)
-            }
-        }
-        if categoryTokens.isEmpty {
-            defaultStore.shield.applicationCategories = nil
-        } else {
-            defaultStore.shield.applicationCategories = .specific(categoryTokens)
-        }
-    }
-    
     /// Called by the system when a scheduled DeviceActivity interval ends.
     override func intervalDidEnd(for activity: DeviceActivityName) {
         super.intervalDidEnd(for: activity)
@@ -178,129 +179,32 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     
     // MARK: - Helpers
     
-    /// Current weekday in same encoding as frontend/helper: Mon=0 … Sun=6.
-    private static func currentWeekdayMon0() -> Int {
-        // Calendar.weekday: 1=Sun, 2=Mon, …, 7=Sat
-        let weekday = Calendar.current.component(.weekday, from: Date())
-        return (weekday - 2 + 7) % 7
-    }
-
-    private func isPauseActive(_ data: ScheduleBlockData, nowMs: Double) -> Bool {
-        guard data.isPaused == true else { return false }
-        guard let pauseEndTimestampMs = data.pauseEndTimestampMs else { return true }
-        return pauseEndTimestampMs > nowMs
-    }
-    
-    /// Recompute and apply the union of all schedule entries that are active at "now".
-    /// This prevents stale shields and keeps overlap handling consistent on start/end events.
+    /// Recompute enforcement for all schedule entries that are active at "now".
+    /// This prevents stale shields and keeps overlap handling consistent on
+    /// start/end events. Web content and app/category shields are derived state
+    /// owned by the shared appliers (allowlist-aware, cross-channel); this
+    /// method owns clearing when nothing is active and the shield snapshot
+    /// (the writer partitions blocklist rows vs the allowlist fallback itself).
     private func recomputeActiveScheduleUnion(now: Date = Date()) {
         let allSchedules = SharedScheduleStore.loadAll()
         NSLog("[ReDD Schedule] recomputeActiveScheduleUnion schedules=%d", allSchedules.count)
-        var activeDomains = Set<WebDomain>()
-        var activeAppTokens = Set<ApplicationToken>()
-        var activeCategoryTokens = Set<ActivityCategoryToken>()
         var activePairs: [(String, ScheduleBlockData)] = []
 
-        for (id, data) in allSchedules where isScheduleDataActiveNow(data, now: now) {
+        for (id, data) in allSchedules where data.isActiveNow(now: now) {
+            NSLog(
+                "[ReDD Schedule] active schedule id=%@ mode=%@ domains=%d apps=%d categories=%d",
+                id, data.mode ?? "blocklist", data.domains.count, data.appTokenData.count, data.categoryTokenData.count
+            )
             activePairs.append((id, data))
-            NSLog("[ReDD Schedule] active schedule id=%@ domains=%d apps=%d categories=%d", id, data.domains.count, data.appTokenData.count, data.categoryTokenData.count)
-            for domain in data.domains.prefix(50) {
-                activeDomains.insert(WebDomain(domain: domain))
-            }
-            for tokenString in data.appTokenData {
-                if let tokenData = Data(base64Encoded: tokenString),
-                   let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
-                    activeAppTokens.insert(token)
-                }
-            }
-            for tokenString in data.categoryTokenData {
-                if let tokenData = Data(base64Encoded: tokenString),
-                   let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
-                    activeCategoryTokens.insert(token)
-                }
-            }
         }
 
-        applyScheduleUnion(
-            domains: activeDomains,
-            appTokens: activeAppTokens,
-            categoryTokens: activeCategoryTokens
-        )
-        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: activePairs, now: now)
-    }
-    
-    /// Apply schedule union and clear stale settings when a component is empty.
-    private func applyScheduleUnion(
-        domains: Set<WebDomain>,
-        appTokens: Set<ApplicationToken>,
-        categoryTokens: Set<ActivityCategoryToken>
-    ) {
-        NSLog("[ReDD Schedule] applyScheduleUnion domains=%d apps=%d categories=%d", domains.count, appTokens.count, categoryTokens.count)
-        store.webContent.blockedByFilter = domains.isEmpty ? nil : .specific(domains)
-        store.shield.applications = appTokens.isEmpty ? nil : appTokens
-        store.shield.applicationCategories = categoryTokens.isEmpty ? nil : .specific(categoryTokens)
-
-        if domains.isEmpty && appTokens.isEmpty && categoryTokens.isEmpty {
+        if activePairs.isEmpty {
             store.clearAllSettings()
         }
+        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: activePairs, now: now)
+        reapplyDerivedPolicies(now: now)
     }
 
-    /// Evaluate whether a persisted schedule entry should be active now.
-    /// If start/end times are missing (legacy payload), fall back to day-only matching.
-    private func isScheduleDataActiveNow(_ data: ScheduleBlockData, now: Date = Date()) -> Bool {
-        let nowMs = now.timeIntervalSince1970 * 1000.0
-        if isPauseActive(data, nowMs: nowMs) {
-            NSLog(
-                "[ReDD Schedule] inactive: paused now=%f pauseEnd=%@",
-                nowMs,
-                data.pauseEndTimestampMs.map { String($0) } ?? "nil"
-            )
-            return false
-        }
-        if let activeFrom = data.activeFromTimestampMs, nowMs < activeFrom {
-            NSLog("[ReDD Schedule] inactive: before activeFrom now=%f activeFrom=%f", nowMs, activeFrom)
-            return false
-        }
-        if let activeUntil = data.activeUntilTimestampMs, nowMs > activeUntil {
-            NSLog("[ReDD Schedule] inactive: after activeUntil now=%f activeUntil=%f", nowMs, activeUntil)
-            return false
-        }
-
-        let today = Self.currentWeekdayMon0()
-        let currentMins = Calendar.current.component(.hour, from: now) * 60 + Calendar.current.component(.minute, from: now)
-
-        let hasDayFilter = !(data.days?.isEmpty ?? true)
-        let includesToday = data.days?.contains(today) ?? true
-
-        guard let startHour = data.startHour,
-              let startMinute = data.startMinute,
-              let endHour = data.endHour,
-              let endMinute = data.endMinute else {
-            // Legacy schedule payload: evaluate by weekday only.
-            return !hasDayFilter || includesToday
-        }
-
-        let startMins = startHour * 60 + startMinute
-        let endMins = endHour * 60 + endMinute
-
-        if endMins > startMins {
-            if hasDayFilter && !includesToday { return false }
-            return currentMins >= startMins && currentMins < endMins
-        }
-
-        // Cross-midnight segment
-        let yesterday = today == 0 ? 6 : today - 1
-        let includesYesterday = data.days?.contains(yesterday) ?? true
-
-        if hasDayFilter {
-            let inEveningPortion = includesToday && currentMins >= startMins
-            let inMorningPortion = includesYesterday && currentMins < endMins
-            return inEveningPortion || inMorningPortion
-        }
-
-        return currentMins >= startMins || currentMins < endMins
-    }
-    
     /// Extract a schedule ID from a DeviceActivityName.
     /// Activity names follow the format "redd-block-{id}".
     /// Falls back to "default" for the legacy "redd-block-schedule" name.

@@ -27,6 +27,10 @@ struct ShieldAttribution: Codable, Equatable {
     var blocklistColorHex: String?
     var blockStartedAtMs: Double?
     var blockEndsAtMs: Double?
+    /// True when this attribution comes from an allow-mode focus space, so
+    /// renderers pick allowlist copy ("isn't on your allow list"). Optional
+    /// (default nil = blocklist) for back-compat with pre-field snapshots.
+    var isAllowlistSource: Bool? = nil
 }
 
 /// Attribution maps for one store channel (manual or schedule).
@@ -37,9 +41,49 @@ struct ShieldAttributionSection: Codable, Equatable {
     var appByTokenData: [String: ShieldAttribution]
     /// Keys: base64 `ActivityCategoryToken` blobs (same encoding as `ScheduleBlockData.categoryTokenData`).
     var categoryByTokenData: [String: ShieldAttribution]
+    /// Present when this channel enforces an allowlist. Allowlist-blocked
+    /// targets are "everything else", so no per-target row exists — renderers
+    /// use this when no row matches (target blocked for NOT being allowed).
+    var allowlistFallback: ShieldAttribution? = nil
 
     static var empty: ShieldAttributionSection {
         ShieldAttributionSection(domainByNormalizedHost: [:], appByTokenData: [:], categoryByTokenData: [:])
+    }
+}
+
+// Explicit decoders (in extensions, preserving the memberwise inits): new
+// optional members decode as nil on pre-field snapshot data, matching the
+// ScheduleBlockData back-compat style. schemaVersion stays 1.
+extension ShieldAttribution {
+    private enum CodingKeys: String, CodingKey {
+        case sourceId, enforcementStartedAtMs, blocklistEmoji, blocklistName
+        case blocklistColorHex, blockStartedAtMs, blockEndsAtMs, isAllowlistSource
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.sourceId = try c.decode(String.self, forKey: .sourceId)
+        self.enforcementStartedAtMs = try c.decode(Double.self, forKey: .enforcementStartedAtMs)
+        self.blocklistEmoji = try c.decodeIfPresent(String.self, forKey: .blocklistEmoji)
+        self.blocklistName = try c.decodeIfPresent(String.self, forKey: .blocklistName)
+        self.blocklistColorHex = try c.decodeIfPresent(String.self, forKey: .blocklistColorHex)
+        self.blockStartedAtMs = try c.decodeIfPresent(Double.self, forKey: .blockStartedAtMs)
+        self.blockEndsAtMs = try c.decodeIfPresent(Double.self, forKey: .blockEndsAtMs)
+        self.isAllowlistSource = try c.decodeIfPresent(Bool.self, forKey: .isAllowlistSource)
+    }
+}
+
+extension ShieldAttributionSection {
+    private enum CodingKeys: String, CodingKey {
+        case domainByNormalizedHost, appByTokenData, categoryByTokenData, allowlistFallback
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.domainByNormalizedHost = try c.decodeIfPresent([String: ShieldAttribution].self, forKey: .domainByNormalizedHost) ?? [:]
+        self.appByTokenData = try c.decodeIfPresent([String: ShieldAttribution].self, forKey: .appByTokenData) ?? [:]
+        self.categoryByTokenData = try c.decodeIfPresent([String: ShieldAttribution].self, forKey: .categoryByTokenData) ?? [:]
+        self.allowlistFallback = try c.decodeIfPresent(ShieldAttribution.self, forKey: .allowlistFallback)
     }
 }
 
@@ -101,6 +145,13 @@ enum ShieldAttributionPicker {
     static func winningCategoryRow(tokenDataKey: String, snapshot: ShieldUISnapshot) -> ShieldAttribution? {
         preferred(snapshot.manual?.categoryByTokenData[tokenDataKey], snapshot.schedule?.categoryByTokenData[tokenDataKey])
     }
+
+    /// Section-level fallback when no per-target row matches: the target is
+    /// blocked for NOT being on an active allow list. Same first-started-wins
+    /// precedence across channels.
+    static func winningAllowlistFallback(snapshot: ShieldUISnapshot) -> ShieldAttribution? {
+        preferred(snapshot.manual?.allowlistFallback, snapshot.schedule?.allowlistFallback)
+    }
 }
 
 // MARK: - Persistence
@@ -136,13 +187,26 @@ struct SharedShieldSnapshotStore {
 // MARK: - Schedule union → snapshot (DeviceActivityMonitor + plugin re-apply)
 
 /// Writes `ShieldUISnapshot.schedule` from schedules that are **active right now**, preserving `manual`.
+/// Pass ALL active entries (blocklist and allowlist): blocklist entries get per-target
+/// rows; allowlist entries get no rows (their items are not blocked) and instead feed
+/// `allowlistFallback` from the earliest-anchored active allowlist entry.
 enum ShieldScheduleSnapshotWriter {
     static func persistScheduleUnion(activeEntries: [(String, ScheduleBlockData)], now: Date = Date()) {
         let nowMs = now.timeIntervalSince1970 * 1000
         let previous = SharedShieldSnapshotStore.load()
         let manual = previous?.manual
 
-        guard !activeEntries.isEmpty else {
+        let blockEntries = activeEntries.filter { !$0.1.isAllowlist }
+        let allowEntries = activeEntries.filter { $0.1.isAllowlist }
+
+        var allowlistFallback: ShieldAttribution? = nil
+        if let picked = pickBest(entries: allowEntries, now: now, matches: { _ in true }) {
+            var row = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2, now: now)
+            row.isAllowlistSource = true
+            allowlistFallback = row
+        }
+
+        guard !blockEntries.isEmpty || allowlistFallback != nil else {
             let snap = ShieldUISnapshot(
                 schemaVersion: ShieldUISnapshot.currentSchemaVersion,
                 updatedAtMs: nowMs,
@@ -154,9 +218,9 @@ enum ShieldScheduleSnapshotWriter {
         }
 
         var domainMap: [String: ShieldAttribution] = [:]
-        let domainKeys = Set(activeEntries.flatMap { $0.1.domains.prefix(50).map { ShieldSnapshotNormalization.normalizedWebHost($0) } })
+        let domainKeys = Set(blockEntries.flatMap { $0.1.domains.prefix(50).map { ShieldSnapshotNormalization.normalizedWebHost($0) } })
         for key in domainKeys {
-            if let picked = pickBest(entries: activeEntries, now: now, matches: { d in
+            if let picked = pickBest(entries: blockEntries, now: now, matches: { d in
                 d.domains.prefix(50).contains { ShieldSnapshotNormalization.normalizedWebHost($0) == key }
             }) {
                 domainMap[key] = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2, now: now)
@@ -164,29 +228,27 @@ enum ShieldScheduleSnapshotWriter {
         }
 
         var appMap: [String: ShieldAttribution] = [:]
-        let appKeys = Set(activeEntries.flatMap { $0.1.appTokenData })
+        let appKeys = Set(blockEntries.flatMap { $0.1.appTokenData })
         for token in appKeys {
-            if let picked = pickBest(entries: activeEntries, now: now, matches: { $0.appTokenData.contains(token) }) {
+            if let picked = pickBest(entries: blockEntries, now: now, matches: { $0.appTokenData.contains(token) }) {
                 appMap[token] = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2, now: now)
             }
         }
 
         var categoryMap: [String: ShieldAttribution] = [:]
-        let categoryKeys = Set(activeEntries.flatMap { $0.1.categoryTokenData })
+        let categoryKeys = Set(blockEntries.flatMap { $0.1.categoryTokenData })
         for token in categoryKeys {
-            if let picked = pickBest(entries: activeEntries, now: now, matches: { $0.categoryTokenData.contains(token) }) {
+            if let picked = pickBest(entries: blockEntries, now: now, matches: { $0.categoryTokenData.contains(token) }) {
                 categoryMap[token] = attribution(scheduleId: picked.0, data: picked.1, enforcementMs: picked.2, now: now)
             }
         }
 
-        let scheduleSection: ShieldAttributionSection? =
-            domainMap.isEmpty && appMap.isEmpty && categoryMap.isEmpty
-            ? nil
-            : ShieldAttributionSection(
-                domainByNormalizedHost: domainMap,
-                appByTokenData: appMap,
-                categoryByTokenData: categoryMap
-            )
+        let scheduleSection = ShieldAttributionSection(
+            domainByNormalizedHost: domainMap,
+            appByTokenData: appMap,
+            categoryByTokenData: categoryMap,
+            allowlistFallback: allowlistFallback
+        )
         let snap = ShieldUISnapshot(
             schemaVersion: ShieldUISnapshot.currentSchemaVersion,
             updatedAtMs: nowMs,

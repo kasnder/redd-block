@@ -102,11 +102,15 @@ flowchart TD
     enforcer -->|grace_force_quit| browsers[Running_browsers]
 ```
 
-**Single source of truth for “what is blocked right now” (desktop):**
-`redd-block-data.json` → `native_host::derive_payload()` computes the active
-domain set from `activeBlocks`, `schedules`, and `blocklists`. Both the
-Automation watcher and the native-messaging host re-read this file; the
-frontend writes it via `save_data` before starting or editing blocks.
+**Single source of truth for desktop website rules:**
+`redd-block-data.json` → `native_host::derive_payload()` computes both the
+legacy flat blocklist domain set and the richer per-block website metadata from
+`activeBlocks`, `schedules`, and `blocklists`. Website composition matches
+desktop app enforcement: blocklist domains always block, and when allowlist
+website blocks are active the union of allowlisted domains is allowed while
+everything else is blocked. Both the Automation watcher and the native-messaging
+host re-read this file; the frontend writes it via `save_data` before starting
+or editing blocks.
 
 ---
 
@@ -202,11 +206,16 @@ on the v2 extension path.
    `<resources>/blocked/blocked.html` → `file://` URL.
 2. Every **1 s** tick, for each **running** supported browser (main process
    detected via sysinfo):
-   - read active blocked domains from `native_host::derive_payload()`,
-   - if empty, restore any tabs still parked on the block page,
-   - if non-empty, AppleScript-reads open tab URLs; matching tabs get
-     `location` set to the block page with the same query params the
-     extension uses (`url`, `blocklist`, etc.).
+   - read active blocks (mode-aware `blocks[]`) from
+     `native_host::derive_payload()`,
+   - if no web enforcement is active, restore any tabs still parked on the
+     block page,
+   - otherwise, AppleScript-reads open tab URLs; a tab is redirected when its
+     host matches a blocklist-mode domain, **or** when any allowlist block is
+     active and the host is not in the allowed union (blocklist wins on
+     overlap; `url_is_blocked` in `web_automation.rs`). Redirect sets
+     `location` to the block page with the same query params the extension
+     uses (`url`, `blocklist`, `mode`, etc.).
 3. All Apple Events serialize through a global mutex — concurrent osascript
    from the watcher, enforcer, and Tauri commands can deadlock macOS's
    AppleEvent manager.
@@ -240,11 +249,11 @@ for website blocking on macOS.
 flowchart TD
     tick[Every_1s_tick] --> running{Browser_running}
     running -->|No| skip[Skip_browser]
-    running -->|Yes| domains[derive_payload_domains]
-    domains --> empty{Any_domains}
-    empty -->|No| restore[Restore_tabs_on_block_page]
-    empty -->|Yes| script[AppleScript_read_tabs]
-    script --> match{URL_on_blocklist}
+    running -->|Yes| blocks[derive_payload_blocks]
+    blocks --> active{Web_enforcement_active}
+    active -->|No| restore[Restore_tabs_on_block_page]
+    active -->|Yes| script[AppleScript_read_tabs]
+    script --> match{Blocklist_match_or_allowlist_active_and_host_not_allowed}
     match -->|Yes| redirect[Set_tab_to_file_block_page]
     match -->|No| done[Leave_tab]
 ```
@@ -265,8 +274,10 @@ manifests pointing at the installed binary.
 Protocol (`native_host.rs`):
 
 - 4-byte little-endian length + UTF-8 JSON per message
-- on connect: read `redd-block-data.json`, derive domains, push
-  `{ "blocklist": [...] }`
+- on connect: read `redd-block-data.json`, derive website rules, push
+  `{ "blocklist": [...], "blocks": [...] }`
+- `blocklist` remains the legacy blocklist-only domain array; `blocks` is an
+  additive contract used for richer metadata and allowlist-aware website rules
 - re-push on file change (`notify`) and every 30 s (schedule time transitions)
 - empty list when nothing active → extension clears blocking
 
@@ -274,7 +285,10 @@ Protocol (`native_host.rs`):
 
 `extension_install.rs` can auto-install or hint on Windows where supported.
 The extension performs the actual page redirect to `blocked.html` (shipped
-with the extension assets, not the Automation bundle path).
+with the extension assets, not the Automation bundle path). Both copies share
+the same `blocked.js` contract: redirect URLs carry block metadata query params
+(including `mode=allowlist` vs `blocklist`) so subtitle, pill, site, reason,
+and countdown rows render identically on Automation and extension paths.
 
 ### 5.3 Windows watchdog
 
@@ -291,6 +305,9 @@ Firefox on macOS follows the Windows-style extension + native-messaging model:
 - extension installed **manually** from the Firefox Add-ons store (no auto-install)
 - `profile_scan.rs` scans the Firefox profile for extension presence,
   enabled state, and private-browsing allowance
+- the host-backed extension path consumes the same website allowlist semantics
+  as `src-tauri/src/web_automation.rs` (blocklist wins, then allowlist union);
+  only the enforcement location differs
 - enforcer treats Firefox like a Windows browser (extension compliance, not
   Automation TCC)
 
@@ -304,8 +321,10 @@ Firefox on macOS follows the Windows-style extension + native-messaging model:
 
 The enforcer is active only when **all** of:
 
-1. `website_blocking_active()` — `derive_payload()` returns a non-empty domain
-   set (respects pause, schedule windows, one-off expiry),
+1. `website_blocking_active()` — `derive_payload()` returns at least one block
+   with non-empty domains, blocklist **or** allowlist mode (respects pause,
+   schedule windows, one-off expiry). Allowlist domains never populate the
+   legacy flat domain list, so the gate reads the per-block metadata,
 2. `settings.enforcementEnabled === true` — user opt-in (default **off**),
 3. at least one enforced browser process is **running**.
 
@@ -348,7 +367,28 @@ Per blocked-app PID state machine:
 
 Protected apps (ReDD Blocker itself, Finder, shell processes) are never targeted.
 Schedule and manual app lists merge in the frontend; `set_blocked_apps_via_helper`
-(shim) forwards to `app_blocking::set_blocked_apps`.
+(shim) forwards to `app_blocking::set_blocked_apps` with the full mode-aware
+policy: `apps`, `newly_added`, `allowed_apps`, `allowlist_active`,
+`allowlist_newly_started`.
+
+**Allow-mode app blocking** inverts the target set: while an allowlist with
+apps is active, any app **not** on the allowed union is a quit candidate
+(`sweep_allowlist`). Semantics differ from blocklist mode:
+
+- **At allow-mode start** (`allowlist_newly_started`, one-shot): every
+  currently visible non-allowed regular app gets the "Let's go!" warning —
+  nothing is quit silently on that tick. If nothing needs closing, a sentinel
+  `__allowlist_intention__` entry (PID 0) raises an intention-only overlay so
+  the user still confirms the session; acknowledging dismisses it with no
+  countdown.
+- **Mid-session:** only the **frontmost** non-allowed app is enrolled and
+  silently quit — background agents keep running.
+- Allowlist-origin entries get a re-check before each quit step
+  (`allowlist_entry_still_user_facing`): if the PID is no longer user-facing,
+  the quit is aborted. Blocklist entries keep the unconditional behavior.
+
+Same state machine on macOS and Windows; only process enumeration and quit
+primitives differ. Linux has no app watcher (no-op).
 
 macOS warning overlay uses a custom `MainPanel` NSPanel (`lib.rs`) so the
 countdown can float over third-party fullscreen Spaces without stealing focus.
@@ -384,6 +424,10 @@ can suppress upcoming segments until pause end or manual resume.
 
 Effective website blocking is the union of active one-off and currently active
 schedule segments. Shared domains stay blocked while any source is active.
+When any **allowlist** source is active, the effective website policy becomes
+allow-union-minus-blocked (concurrent allowlists union their allowed sets;
+an explicitly blocked domain always wins on overlap) — same rule on both the
+Automation and extension channels, and mirrored on iOS (§12.3).
 `hasAnyEnforcedBlocks()` in `src/app.js` gates override-all, uninstall prompts,
 and similar UX.
 
@@ -465,7 +509,9 @@ Apple Screen Time (FamilyControls, ManagedSettings, DeviceActivity) via
 - Two `ManagedSettingsStore` instances: default (manual blocks) and named
   `"schedule"` (DeviceActivityMonitor extension)
 - Activity picker selection and schedule payloads in iOS App Group storage
-- 50-domain cap per store; authorization required before blocking
+- 50-item cap per store (domains and app tokens); blocklist mode truncates,
+  allow mode fails validation instead of truncating (§12.3); authorization
+  required before blocking
 
 ### 12.2 Flows
 
@@ -484,6 +530,97 @@ flowchart TD
     cmd --> manual[ManagedSettingsStore_default]
     cmd --> sched[ManagedSettingsStore_schedule_via_monitor]
 ```
+
+### 12.3 Allow-mode focus spaces (allowlists)
+
+iOS enforces allow-mode focus spaces with Apple-native primitives: websites via
+`webContent.blockedByFilter = .all(except: Set<WebDomain>)`, apps via
+`shield.applicationCategories = .all(except: Set<ApplicationToken>)`. Both cap
+exceptions at 50 per store.
+
+**Effective-policy resolver.** Enforcement is derived state. Per resource type
+(websites, app tokens), independently:
+
+- No active allowlist source with items of that type → `specific-block`:
+  each channel keeps its own legacy `.specific` sets (blocklist behavior,
+  unchanged).
+- Any active allowlist source → `all-except(allowedUnion − blockedUnion)`:
+  concurrent allowlists union; an item on any active blocklist is removed from
+  the exceptions (**blocklist wins on overlap**, matching desktop). An empty
+  exception set is legal ("block everything of that type") and never falls back
+  to blocklist mode.
+
+The resolver exists twice, deliberately mirrored: JS
+(`deriveIOSEffectiveWebsitePolicy` / `deriveIOSEffectiveAppPolicy` in
+`src/app.js`, used for pre-validation; tested in `blocking-tests.js` T55–T62)
+and Swift (`IOSPolicyResolver` + `IOSWebPolicyApplier` / `IOSAppPolicyApplier`
+in the shared `ScheduleData.swift`, used for enforcement).
+
+**Two-store stacking rule.** ManagedSettings stacks restrictively — a store can
+never make another store less restrictive, so two different `.all(except:)`
+sets enforce their INTERSECTION. Whenever a channel applies an allowlist
+policy, its exception set is therefore the **cross-channel union** of allowed
+items (manual allowlist record + active allowlist schedule entries) minus
+blocked items. Both writers (plugin on the default store, monitor extension on
+the `"schedule"` store) call the same shared appliers after every App Group
+record change; a channel with no active allowlist of its own keeps its exact
+legacy `.specific` sets.
+
+**App Group records.** The manual channel keeps blocked items
+(`redd.manualBlockState`, mode nil) and allowed items
+(`redd.manualAllowlistState`, mode `"allowlist"`) in separate records so
+block-end/resume one-off subtract/merge math never mixes semantics. Schedule
+entries carry a per-entry `mode` field.
+
+**Hard limits, never truncation.** Blocklist mode keeps the legacy `prefix(50)`
+truncation. Allowlist mode fails loudly instead — truncating an allow list
+over-blocks. JS pre-validates both caps before any store write; Swift
+double-checks in `startBlock` (returns `success: false`) and, as a last-resort
+belt-and-braces guard, the appliers clamp deterministically (over-blocking is
+the fail-safe direction for a blocker).
+
+**Category tokens are excluded from allow mode; the picker expands them
+instead.** Apple's `.all(except:)` takes application tokens only; categories
+cannot be exceptions. When the picker opens for an allow-mode focus space
+(`mode: "allowlist"` on `show_activity_picker`), the selection is created with
+`FamilyActivitySelection(includeEntireCategory: true)`, so ticking a category
+returns individual tokens for every app currently in it — those are stored and
+enforced; the category token itself is dropped by the plugin. This also covers
+iOS auto-promoting "all apps in a category" ticks to a category token. Caveat:
+the expansion is a snapshot — apps installed into that category later are NOT
+allowed until re-selected. Category tokens can therefore only reach an
+allow-mode start via legacy selections (or a block→allow mode switch); the
+start gate then warns (OK/Cancel) and proceeds with app tokens only. In
+`specific-block` mode category shields behave as before, and the block-mode
+picker still returns unexpanded category tokens (expanding them would risk
+Apple's silent 50-token `shield.applications` cap).
+
+**Shield attribution.** Allowlist-blocked targets are "everything else", so no
+per-target snapshot row exists. `ShieldAttributionSection.allowlistFallback`
+(one per channel, earliest-started active allowlist source, marked
+`isAllowlistSource`) is used when no per-target row matches; the shield then
+renders "X isn't one of the apps you've allowed yourself to use." (or "ones"
+for websites) under a "Focus space information:" section with the
+focus-space pill and timing, mirroring the desktop allowlist block page. Explicit blocklist rows are unchanged and win per-target as before.
+
+**Device-validation findings (2026-07-07, physical iPhone).** `.all(except:)`
+exceptions are reliably honored — allowed apps open with no shield, and no
+generic "Restricted" shield was observed. Known **under-blocking carve-outs**
+(platform ceiling, also unshieldable in blocklist mode):
+
+1. Apps in Settings › Screen Time › **Always Allowed** resist the category
+   shield.
+2. Several first-party system apps are exempt from `.all`-style shields
+   (observed: Settings, Clock, Find My, Health, Wallet, Files, Magnifier,
+   Fitness, Phone, Safari). The Safari leak is mitigated: the web filter still
+   blocks non-allowed sites inside it.
+3. Other FamilyControls-authorized Screen Time apps (observed: AppBlock, Jomo,
+   Foqos) are exempt from other apps' category shields — the same mechanism
+   that exempts ReDD Blocker itself. Undocumented Apple behavior.
+
+**Out of scope on iOS:** desktop-style process watching/force-quit, the
+"Let's go!" warning overlay, and the diagnostics view (its data source is the
+desktop `current_blocking` state and shows nothing on iOS).
 
 ---
 
@@ -510,6 +647,8 @@ Desktop surfaces include:
 - app version and backend mode (`automation` on macOS, `extension` on Windows)
 - Automation permission status per browser (macOS)
 - extension scan summary (Firefox on macOS; all browsers on Windows)
+- current enforcement snapshot (`current_blocking`): per-block breakdown with
+  mode, plus allowlist state (`allowlist_active`, allowed website/app unions)
 - hosts file contents (should be clean post-migration)
 - relevant paths and logs
 

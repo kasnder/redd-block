@@ -23,6 +23,7 @@ class BlockAppsForTokensArgs: Decodable {
 class UnblockAppsArgs: Decodable {}
 
 class StartBlockArgs: Decodable {
+    /// Legacy field: domains to BLOCK (blocklist semantics). Kept for back-compat.
     let domains: [String]
     let appTokenData: [String]?
     let categoryTokenData: [String]?
@@ -31,6 +32,21 @@ class StartBlockArgs: Decodable {
     let blocklistColorHex: String?
     let blockStartMs: Double?
     let blockEndMs: Double?
+    /// Pre-resolved blocked/allowed split of the active manual union.
+    /// Optional so older payloads decode unchanged.
+    let mode: String?
+    let blockedDomains: [String]?
+    let allowedDomains: [String]?
+    let blockedAppTokenData: [String]?
+    let allowedAppTokenData: [String]?
+    /// Shield-attribution display fields for the earliest-started active
+    /// allow-mode block (the per-target display fields above describe the
+    /// overall display winner, which may be a blocklist block).
+    let allowlistBlocklistEmoji: String?
+    let allowlistBlocklistName: String?
+    let allowlistBlocklistColorHex: String?
+    let allowlistBlockStartMs: Double?
+    let allowlistBlockEndMs: Double?
 }
 
 class ScheduleBlockArgs: Decodable {
@@ -72,6 +88,9 @@ class ScheduleEntry: Decodable {
     let blocklistEmoji: String?
     let blocklistName: String?
     let blocklistColorHex: String?
+    /// "allowlist" when this entry's domains/tokens are ALLOWED items;
+    /// nil/"blocklist" = blocked items (legacy semantics).
+    let mode: String?
 }
 
 class SetSchedulesArgs: Decodable {
@@ -81,6 +100,11 @@ class SetSchedulesArgs: Decodable {
 class ShowActivityPickerArgs: Decodable {
     let initialApplicationTokenData: [String]?
     let initialCategoryTokenData: [String]?
+    /// "allowlist" when picking for an allow-mode focus space. Allow-mode
+    /// enforcement (`.all(except:)`) only accepts individual app tokens, so
+    /// the picker then expands category picks into their member apps
+    /// (`includeEntireCategory`) and drops the category tokens themselves.
+    let mode: String?
 }
 
 // One-off DeviceActivity (pause resume / block end)
@@ -94,6 +118,8 @@ class SetResumePayloadArgs: Decodable {
     let domains: [String]
     let appTokenData: [String]?
     let categoryTokenData: [String]?
+    /// "allowlist" when this payload's items are ALLOWED items.
+    let mode: String?
 }
 
 class SetBlockEndStateArgs: Decodable {
@@ -101,6 +127,8 @@ class SetBlockEndStateArgs: Decodable {
     let domains: [String]
     let appTokenData: [String]?
     let categoryTokenData: [String]?
+    /// "allowlist" when this payload's items are ALLOWED items.
+    let mode: String?
 }
 
 // MARK: - Activity Picker SwiftUI View
@@ -217,10 +245,12 @@ struct ActivityPickerView: View {
     @State private var selection: FamilyActivitySelection
     @State private var step: PickerStep = .picker
     let initialSelection: FamilyActivitySelection
+    let isAllowMode: Bool
 
-    init(initialSelection: FamilyActivitySelection = FamilyActivitySelection(), onDone: @escaping (FamilyActivitySelection) -> Void, onCancel: @escaping () -> Void) {
+    init(initialSelection: FamilyActivitySelection = FamilyActivitySelection(), isAllowMode: Bool = false, onDone: @escaping (FamilyActivitySelection) -> Void, onCancel: @escaping () -> Void) {
         self._selection = State(initialValue: initialSelection)
         self.initialSelection = initialSelection
+        self.isAllowMode = isAllowMode
         self.onDone = onDone
         self.onCancel = onCancel
     }
@@ -231,8 +261,18 @@ struct ActivityPickerView: View {
         NavigationStack {
             Group {
                 if step == .picker {
-                    FamilyActivityPicker(selection: $selection)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 0) {
+                        if isAllowMode {
+                            Text("Selecting a category allows the apps currently in it — each app is added individually.")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal)
+                                .padding(.vertical, 8)
+                        }
+                        FamilyActivityPicker(selection: $selection)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 } else {
                     SelectedReviewView(selection: selection, onDone: { onDone(selection) })
                 }
@@ -397,22 +437,28 @@ class ScreentimePlugin: Plugin {
                 topVC = presented
             }
 
+            let isAllowMode = args.mode == "allowlist"
             let hasExplicitInitialSelection =
                 args.initialApplicationTokenData != nil || args.initialCategoryTokenData != nil
             let initialSelection = decodeSelection(
                 applicationTokenData: args.initialApplicationTokenData,
-                categoryTokenData: args.initialCategoryTokenData
-            ) ?? (hasExplicitInitialSelection ? FamilyActivitySelection() : ScreentimePlugin.currentSelection)
-            
+                categoryTokenData: args.initialCategoryTokenData,
+                includeEntireCategory: isAllowMode
+            ) ?? (hasExplicitInitialSelection ? FamilyActivitySelection(includeEntireCategory: isAllowMode) : ScreentimePlugin.currentSelection)
+
             let pickerView = ActivityPickerView(
                 initialSelection: initialSelection,
+                isAllowMode: isAllowMode,
                 onDone: { selection in
                     // Store the selection
                     ScreentimePlugin.currentSelection = selection
 
+                    // Allow mode: `includeEntireCategory` expanded category picks
+                    // into member app tokens, which are the only thing
+                    // `.all(except:)` can enforce — drop the category tokens.
                     let encodedAppTokens = self.encodeApplicationTokens(selection.applicationTokens)
-                    let encodedCategoryTokens = self.encodeCategoryTokens(selection.categoryTokens)
-                    
+                    let encodedCategoryTokens = isAllowMode ? [] : self.encodeCategoryTokens(selection.categoryTokens)
+
                     // Dismiss the picker
                     topVC.dismiss(animated: true) {
                         var response: [String: Any] = [
@@ -420,7 +466,7 @@ class ScreentimePlugin: Plugin {
                             "applicationTokens": encodedAppTokens,
                             "categoryTokens": encodedCategoryTokens,
                             "applicationCount": selection.applicationTokens.count,
-                            "categoryCount": selection.categoryTokens.count
+                            "categoryCount": isAllowMode ? 0 : selection.categoryTokens.count
                         ]
                         invoke.resolve(response)
                     }
@@ -486,7 +532,8 @@ class ScreentimePlugin: Plugin {
 
     private func decodeSelection(
         applicationTokenData: [String]?,
-        categoryTokenData: [String]?
+        categoryTokenData: [String]?,
+        includeEntireCategory: Bool = false
     ) -> FamilyActivitySelection? {
         let appTokens = decodeApplicationTokens(applicationTokenData)
         let categoryTokens = decodeCategoryTokens(categoryTokenData)
@@ -495,7 +542,7 @@ class ScreentimePlugin: Plugin {
             return nil
         }
 
-        var selection = FamilyActivitySelection()
+        var selection = FamilyActivitySelection(includeEntireCategory: includeEntireCategory)
         selection.applicationTokens = appTokens
         selection.categoryTokens = categoryTokens
         return selection
@@ -505,6 +552,8 @@ class ScreentimePlugin: Plugin {
 
     /// Updates App Group `ShieldUISnapshot.manual` after the default store changes. Pass `nil` for an
     /// axis to leave that axis’s prior snapshot entries unchanged (e.g. `blockApps` does not clear domains).
+    /// `replaceAllowlistFallback: true` overwrites the manual allowlist fallback with `allowlistFallback`
+    /// (including clearing it with nil); false preserves the prior value (legacy single-axis callers).
     private func persistManualShieldSnapshot(
         replaceDomains: [String]?,
         replaceAppTokens: [String]?,
@@ -513,13 +562,16 @@ class ScreentimePlugin: Plugin {
         blocklistName: String? = nil,
         blocklistColorHex: String? = nil,
         blockStartMs: Double? = nil,
-        blockEndMs: Double? = nil
+        blockEndMs: Double? = nil,
+        replaceAllowlistFallback: Bool = false,
+        allowlistFallback: ShieldAttribution? = nil
     ) {
         let previous = SharedShieldSnapshotStore.load()
         let scheduleSection = previous?.schedule
         var domainMap = previous?.manual?.domainByNormalizedHost ?? [:]
         var appMap = previous?.manual?.appByTokenData ?? [:]
         var categoryMap = previous?.manual?.categoryByTokenData ?? [:]
+        let fallback = replaceAllowlistFallback ? allowlistFallback : previous?.manual?.allowlistFallback
 
         let nowMs = Date().timeIntervalSince1970 * 1000
         let startedMs = blockStartMs ?? nowMs
@@ -554,13 +606,14 @@ class ScreentimePlugin: Plugin {
         }
 
         let manualSection: ShieldAttributionSection?
-        if domainMap.isEmpty && appMap.isEmpty && categoryMap.isEmpty {
+        if domainMap.isEmpty && appMap.isEmpty && categoryMap.isEmpty && fallback == nil {
             manualSection = nil
         } else {
             manualSection = ShieldAttributionSection(
                 domainByNormalizedHost: domainMap,
                 appByTokenData: appMap,
-                categoryByTokenData: categoryMap
+                categoryByTokenData: categoryMap,
+                allowlistFallback: fallback
             )
         }
 
@@ -679,21 +732,34 @@ class ScreentimePlugin: Plugin {
         }
         let args = try invoke.parseArgs(StartBlockArgs.self)
         
-        // Block websites (only when domains provided); for app-only blocks, clear web filter
+        // Allowlist exceptions: never truncate — clamping an allow list over-blocks.
+        // JS pre-validates; this is the native double-check.
+        let allowedDomains = args.allowedDomains ?? []
+        guard allowedDomains.count <= IOSWebPolicyApplier.exceptionLimit else {
+            invoke.resolve([
+                "success": false,
+                "error": "Allow lists support up to 50 websites on iOS (\(allowedDomains.count) allowed)."
+            ])
+            return
+        }
+        let allowedAppTokenData = args.allowedAppTokenData ?? []
+        guard allowedAppTokenData.count <= IOSAppPolicyApplier.exceptionLimit else {
+            invoke.resolve([
+                "success": false,
+                "error": "Allow lists support up to 50 apps on iOS (\(allowedAppTokenData.count) allowed)."
+            ])
+            return
+        }
+
         let truncated = args.domains.count > 50
         let webDomains = Set(args.domains.prefix(50).map { WebDomain(domain: $0) })
-        if webDomains.isEmpty {
-            store.webContent.blockedByFilter = nil
-        } else {
-            store.webContent.blockedByFilter = .specific(webDomains)
-        }
-        
+
         let appTokens = decodeApplicationTokens(args.appTokenData)
         let categoryTokens = decodeCategoryTokens(args.categoryTokenData)
-        store.shield.applications = appTokens.isEmpty ? nil : appTokens
-        store.shield.applicationCategories = categoryTokens.isEmpty ? nil : .specific(categoryTokens)
-        
-        // Persist current manual block state to App Group so extension can merge on resume/block-end
+
+        // Persist current manual block state to App Group so extension can merge on resume/block-end.
+        // This record holds BLOCKED items only (mode nil); allowed items live in the
+        // separate allowlist record so merge/subtract math never mixes semantics.
         let manualState = buildScheduleData(
             domains: args.domains,
             appTokenData: args.appTokenData,
@@ -701,6 +767,41 @@ class ScreentimePlugin: Plugin {
             days: nil
         )
         SharedManualBlockStore.saveManualBlockState(manualState)
+        if allowedDomains.isEmpty && allowedAppTokenData.isEmpty {
+            SharedManualBlockStore.clearManualAllowlistState()
+        } else {
+            SharedManualBlockStore.saveManualAllowlistState(
+                buildScheduleData(
+                    domains: allowedDomains,
+                    appTokenData: allowedAppTokenData,
+                    categoryTokenData: nil,
+                    days: nil,
+                    mode: "allowlist"
+                )
+            )
+        }
+        // Web filter and app shields are derived state: recompute both channels
+        // from the App Group.
+        IOSWebPolicyApplier.reapplyWebPolicy()
+        IOSAppPolicyApplier.reapplyAppPolicy()
+
+        // Allowed items get no per-target rows (they are not blocked); the
+        // section-level fallback attributes "blocked for not being allowed"
+        // shields to the earliest-started active allow-mode block.
+        var manualAllowlistFallback: ShieldAttribution? = nil
+        if !allowedDomains.isEmpty || !allowedAppTokenData.isEmpty {
+            let nowMs = Date().timeIntervalSince1970 * 1000
+            manualAllowlistFallback = ShieldAttribution(
+                sourceId: "manual",
+                enforcementStartedAtMs: args.allowlistBlockStartMs ?? nowMs,
+                blocklistEmoji: args.allowlistBlocklistEmoji,
+                blocklistName: args.allowlistBlocklistName,
+                blocklistColorHex: args.allowlistBlocklistColorHex,
+                blockStartedAtMs: args.allowlistBlockStartMs ?? nowMs,
+                blockEndsAtMs: args.allowlistBlockEndMs,
+                isAllowlistSource: true
+            )
+        }
 
         persistManualShieldSnapshot(
             replaceDomains: Array(args.domains.prefix(50)),
@@ -710,7 +811,9 @@ class ScreentimePlugin: Plugin {
             blocklistName: args.blocklistName,
             blocklistColorHex: args.blocklistColorHex,
             blockStartMs: args.blockStartMs,
-            blockEndMs: args.blockEndMs
+            blockEndMs: args.blockEndMs,
+            replaceAllowlistFallback: true,
+            allowlistFallback: manualAllowlistFallback
         )
         
         var response: [String: Any] = [
@@ -734,9 +837,16 @@ class ScreentimePlugin: Plugin {
         
         // Clear manual block state in App Group so extension has no stale data
         SharedManualBlockStore.saveManualBlockState(ScheduleBlockData(domains: [], appTokenData: [], categoryTokenData: [], days: nil))
+        SharedManualBlockStore.clearManualAllowlistState()
 
-        persistManualShieldSnapshot(replaceDomains: [], replaceAppTokens: [], replaceCategoryTokens: [])
-        
+        persistManualShieldSnapshot(
+            replaceDomains: [],
+            replaceAppTokens: [],
+            replaceCategoryTokens: [],
+            replaceAllowlistFallback: true,
+            allowlistFallback: nil
+        )
+
         // Also clear the named "schedule" store used by DeviceActivityMonitor
         // Since we use separate stores for manual vs schedule blocks, both
         // must be cleared for a complete "stop everything" action.
@@ -858,7 +968,8 @@ class ScreentimePlugin: Plugin {
                 pauseEndTimestampMs: entry.pauseEndTimestampMs,
                 blocklistEmoji: entry.blocklistEmoji,
                 blocklistName: entry.blocklistName,
-                blocklistColorHex: entry.blocklistColorHex
+                blocklistColorHex: entry.blocklistColorHex,
+                mode: entry.mode
             )
             SharedScheduleStore.save(id: entry.id, data: scheduleData)
             
@@ -921,6 +1032,9 @@ class ScreentimePlugin: Plugin {
         let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
         scheduleStore.clearAllSettings()
         ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [])
+        // Removed schedules may change the cross-channel allowlist union.
+        IOSWebPolicyApplier.reapplyWebPolicy()
+        IOSAppPolicyApplier.reapplyAppPolicy()
         invoke.resolve(["success": true])
     }
     
@@ -980,7 +1094,8 @@ class ScreentimePlugin: Plugin {
             domains: args.domains,
             appTokenData: args.appTokenData,
             categoryTokenData: args.categoryTokenData,
-            days: nil
+            days: nil,
+            mode: args.mode
         )
         SharedManualBlockStore.saveResumePayload(blockId: args.blockId, payload)
         invoke.resolve(["success": true])
@@ -997,7 +1112,8 @@ class ScreentimePlugin: Plugin {
             domains: args.domains,
             appTokenData: args.appTokenData,
             categoryTokenData: args.categoryTokenData,
-            days: nil
+            days: nil,
+            mode: args.mode
         )
         SharedManualBlockStore.saveBlockEndState(blockId: args.blockId, payload)
         invoke.resolve(["success": true])
@@ -1021,7 +1137,8 @@ class ScreentimePlugin: Plugin {
         pauseEndTimestampMs: Double? = nil,
         blocklistEmoji: String? = nil,
         blocklistName: String? = nil,
-        blocklistColorHex: String? = nil
+        blocklistColorHex: String? = nil,
+        mode: String? = nil
     ) -> ScheduleBlockData {
         return ScheduleBlockData(
             domains: domains ?? [],
@@ -1038,7 +1155,8 @@ class ScreentimePlugin: Plugin {
             pauseEndTimestampMs: pauseEndTimestampMs,
             blocklistEmoji: blocklistEmoji,
             blocklistName: blocklistName,
-            blocklistColorHex: blocklistColorHex
+            blocklistColorHex: blocklistColorHex,
+            mode: mode
         )
     }
 
@@ -1107,102 +1225,26 @@ class ScreentimePlugin: Plugin {
     
     // MARK: - Re-apply active schedule blocks after clear (pause / setSchedules with removal)
     
-    /// Current weekday in same encoding as frontend/extension: Mon=0 … Sun=6.
-    private static func currentWeekdayMon0() -> Int {
-        let weekday = Calendar.current.component(.weekday, from: Date())
-        return (weekday - 2 + 7) % 7
-    }
-
-    private func isPauseActive(isPaused: Bool?, pauseEndTimestampMs: Double?, nowMs: Double) -> Bool {
-        guard isPaused == true else { return false }
-        guard let pauseEndTimestampMs else { return true }
-        return pauseEndTimestampMs > nowMs
-    }
-    
-    /// True if the segment's time window and day filter include the current time.
-    private func isSegmentActiveNow(entry: ScheduleEntry) -> Bool {
-        let now = Date()
-        let nowMs = now.timeIntervalSince1970 * 1000.0
-        if isPauseActive(isPaused: entry.isPaused, pauseEndTimestampMs: entry.pauseEndTimestampMs, nowMs: nowMs) {
-            return false
-        }
-        if let activeFrom = entry.activeFromTimestampMs, nowMs < activeFrom {
-            return false
-        }
-        if let activeUntil = entry.activeUntilTimestampMs, nowMs > activeUntil {
-            return false
-        }
-        let today = Self.currentWeekdayMon0()
-        if let days = entry.days, !days.isEmpty {
-            if !days.contains(today) {
-                return false
-            }
-        }
-        let currentMins = Calendar.current.component(.hour, from: now) * 60 + Calendar.current.component(.minute, from: now)
-        let startMins = entry.startHour * 60 + entry.startMinute
-        let endMins = entry.endHour * 60 + entry.endMinute
-        if endMins > startMins {
-            return currentMins >= startMins && currentMins < endMins
-        }
-        let yesterdayDay = today == 0 ? 6 : today - 1
-        if let days = entry.days, !days.isEmpty {
-            let inEvening = days.contains(today) && currentMins >= startMins
-            let inMorning = days.contains(yesterdayDay) && currentMins < endMins
-            return inEvening || inMorning
-        }
-        return currentMins >= startMins || currentMins < endMins
-    }
-    
-    /// After clearing the schedule store, re-apply the union of blocks for all remaining
-    /// segments that are currently in their active time window.
+    /// After clearing the schedule store, re-derive enforcement for all remaining
+    /// segments that are currently in their active time window. Web content and
+    /// app/category shields are derived state handled by the shared appliers
+    /// (allowlist-aware, cross-channel); this method owns clearing when nothing
+    /// is active and the shield snapshot (the writer partitions blocklist rows
+    /// vs the allowlist fallback itself).
     private func reapplyActiveScheduleBlocksToStore(entries: [ScheduleEntry]) {
         let now = Date()
-        var allDomains = Set<WebDomain>()
-        var allAppTokens = Set<ApplicationToken>()
-        var allCategoryTokens = Set<ActivityCategoryToken>()
         var activePairs: [(String, ScheduleBlockData)] = []
-        for entry in entries where isSegmentActiveNow(entry: entry) {
-            guard let data = SharedScheduleStore.load(id: entry.id) else { continue }
+        for entry in entries {
+            guard let data = SharedScheduleStore.load(id: entry.id), data.isActiveNow(now: now) else { continue }
             activePairs.append((entry.id, data))
-            for domain in data.domains.prefix(50) {
-                allDomains.insert(WebDomain(domain: domain))
-            }
-            for tokenString in data.appTokenData {
-                if let tokenData = Data(base64Encoded: tokenString),
-                   let token = try? JSONDecoder().decode(ApplicationToken.self, from: tokenData) {
-                    allAppTokens.insert(token)
-                }
-            }
-            for tokenString in data.categoryTokenData {
-                if let tokenData = Data(base64Encoded: tokenString),
-                   let token = try? JSONDecoder().decode(ActivityCategoryToken.self, from: tokenData) {
-                    allCategoryTokens.insert(token)
-                }
-            }
         }
-        let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
-        if allDomains.isEmpty && allAppTokens.isEmpty && allCategoryTokens.isEmpty {
+        if activePairs.isEmpty {
+            let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
             scheduleStore.clearAllSettings()
-            ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: [], now: now)
-            return
-        }
-        let domainArray = Array(allDomains.prefix(50))
-        if domainArray.isEmpty {
-            scheduleStore.webContent.blockedByFilter = nil
-        } else {
-            scheduleStore.webContent.blockedByFilter = .specific(Set(domainArray))
-        }
-        if allAppTokens.isEmpty {
-            scheduleStore.shield.applications = nil
-        } else {
-            scheduleStore.shield.applications = allAppTokens
-        }
-        if allCategoryTokens.isEmpty {
-            scheduleStore.shield.applicationCategories = nil
-        } else {
-            scheduleStore.shield.applicationCategories = .specific(allCategoryTokens)
         }
         ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: activePairs, now: now)
+        IOSWebPolicyApplier.reapplyWebPolicy(now: now)
+        IOSAppPolicyApplier.reapplyAppPolicy(now: now)
     }
     
     private func statusString(_ status: AuthorizationStatus) -> String {

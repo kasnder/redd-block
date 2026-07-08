@@ -108,9 +108,20 @@ pub fn set_blocked_apps_via_helper(
     app: tauri::AppHandle,
     apps: Vec<String>,
     newly_added: Vec<String>,
+    allowed_apps: Vec<String>,
+    allowlist_active: bool,
+    allowlist_newly_started: bool,
     state: State<AppWatcherState>,
 ) -> HelperResult {
-    super::app_blocking::set_blocked_apps(app, apps, newly_added, state);
+    super::app_blocking::set_blocked_apps(
+        app,
+        apps,
+        newly_added,
+        allowed_apps,
+        allowlist_active,
+        allowlist_newly_started,
+        state,
+    );
     HelperResult::ok()
 }
 

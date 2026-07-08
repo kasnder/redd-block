@@ -164,11 +164,13 @@ fn spawn_stdin_reader(tx: mpsc::Sender<HostEvent>) {
     });
 }
 
-/// Send a payload to the extension over stdout. Emits both the flat
+/// Send a payload to the extension over stdout. Emits both the legacy flat
 /// `blocklist` (domain strings) and the richer `blocks` array
-/// (per-block metadata: name, emoji, color, source, startedAt, endsAt).
-/// `background.js` consumes both; older clients that only know about
-/// `blocklist` ignore `blocks` cleanly.
+/// (per-block metadata: name, emoji, color, mode, source, startedAt, endsAt).
+/// `blocklist` remains the backward-compatible contract: only blocklist-mode
+/// website domains belong there. `blocks` is additive, so allowlist-only
+/// website sessions intentionally serialize as an empty flat `blocklist` plus
+/// one or more allowlist entries in `blocks`.
 fn send_payload(domains: &[String], blocks: &[BlockInfo]) {
     #[derive(Serialize)]
     struct Msg<'a> {
@@ -229,8 +231,10 @@ fn mtime(path: &std::path::Path) -> Option<SystemTime> {
 }
 
 /// Per-block metadata sent alongside the flat `blocklist`. Mirrors the
-/// `blocks[]` shape the ReDD Focus extension reads and forwards to
-/// `blocked.html` for the pill / source / countdown UI.
+/// additive `blocks[]` shape the ReDD Focus extension reads and forwards to
+/// `blocked.html` for the pill / source / countdown UI. Consumers must treat
+/// every field here as optional/backward-compatible and fall back to legacy
+/// flat-blocklist behavior when `blocks` or `mode` are absent.
 #[derive(Debug, Clone, Serialize)]
 pub struct BlockInfo {
     #[serde(rename = "blocklistId")]
@@ -241,7 +245,15 @@ pub struct BlockInfo {
     pub emoji: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// `"blocklist"` (default) or `"allowlist"`. In allowlist mode `domains`
+    /// lists sites the user *may* visit; everything else is blocked.
+    #[serde(default = "default_blocklist_mode")]
+    pub mode: String,
     pub domains: Vec<String>,
+    /// Apps from the blocklist for this active segment (blocked or allowed
+    /// depending on `mode`). Omitted on the extension wire when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub apps: Vec<String>,
     pub source: &'static str, // "schedule" | "activeBlock"
     #[serde(rename = "endsAt", skip_serializing_if = "Option::is_none")]
     pub ends_at: Option<u64>,
@@ -249,10 +261,18 @@ pub struct BlockInfo {
     pub started_at: Option<u64>,
 }
 
-/// Read redd-block-data.json and compute (a) the deduped flat domain list,
-/// (b) the per-block metadata array sorted ascending by `endsAt`. This
-/// is the single source of truth for what the extension sees on every
-/// frame.
+fn default_blocklist_mode() -> String {
+    "blocklist".to_string()
+}
+
+pub fn blocklist_mode_is_allowlist(mode: &str) -> bool {
+    mode.eq_ignore_ascii_case("allowlist")
+}
+
+/// Read redd-block-data.json and compute (a) the deduped legacy flat
+/// blocklist domain list, (b) the additive per-block metadata array sorted
+/// ascending by `endsAt`. This is the single source of truth for what the
+/// extension sees on every frame.
 pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInfo>) {
     let raw = match std::fs::read_to_string(data_path) {
         Ok(s) => s,
@@ -274,18 +294,40 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
     let schedules =
         data.get("schedules").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
-    // (name, emoji, color, websites_lowercased) for the matching blocklist.
-    let blocklist_meta = |id: &str| -> Option<(Option<String>, Option<String>, Option<String>, Vec<String>)> {
+    // (name, emoji, color, mode, websites_lowercased, apps) for the matching blocklist.
+    let blocklist_meta = |id: &str| -> Option<(
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        String,
+        Vec<String>,
+        Vec<String>,
+    )> {
         blocklists.iter().find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id)).map(|b| {
             let name = b.get("name").and_then(|v| v.as_str()).map(String::from);
             let emoji = b.get("emoji").and_then(|v| v.as_str()).map(String::from);
             let color = b.get("color").and_then(|v| v.as_str()).map(String::from);
+            let mode = b
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("blocklist")
+                .to_string();
             let websites: Vec<String> = b
                 .get("websites")
                 .and_then(|v| v.as_array())
                 .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_lowercase())).collect())
                 .unwrap_or_default();
-            (name, emoji, color, websites)
+            let apps: Vec<String> = b
+                .get("apps")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .filter(|n| !crate::app_watcher::is_protected_app_name(n))
+                        .collect()
+                })
+                .unwrap_or_default();
+            (name, emoji, color, mode, websites, apps)
         })
     };
 
@@ -303,16 +345,23 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
             Some(s) => s,
             None => continue,
         };
-        if let Some((name, emoji, color, websites)) = blocklist_meta(id) {
-            for w in &websites {
-                domains.insert(w.clone());
+        if let Some((name, emoji, color, mode, websites, apps)) = blocklist_meta(id) {
+            // Flat `blocklist` is legacy extension blacklist semantics — only
+            // blocklist-mode domains belong here. Allowlist enforcement reads
+            // `blocks[].mode` + `blocks[].domains` instead.
+            if !blocklist_mode_is_allowlist(&mode) {
+                for w in &websites {
+                    domains.insert(w.clone());
+                }
             }
             blocks.push(BlockInfo {
                 blocklist_id: id.to_string(),
                 name,
                 emoji,
                 color,
+                mode,
                 domains: websites,
+                apps,
                 source: "activeBlock",
                 ends_at: Some(end),
                 started_at: Some(start),
@@ -329,16 +378,20 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
             Some(s) => s,
             None => continue,
         };
-        if let Some((name, emoji, color, websites)) = blocklist_meta(id) {
-            for w in &websites {
-                domains.insert(w.clone());
+        if let Some((name, emoji, color, mode, websites, apps)) = blocklist_meta(id) {
+            if !blocklist_mode_is_allowlist(&mode) {
+                for w in &websites {
+                    domains.insert(w.clone());
+                }
             }
             blocks.push(BlockInfo {
                 blocklist_id: id.to_string(),
                 name,
                 emoji,
                 color,
+                mode,
                 domains: websites,
+                apps,
                 source: "schedule",
                 ends_at: m.ends_at,
                 started_at: m.started_at,
@@ -380,17 +433,24 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
     let schedules =
         data.get("schedules").and_then(|v| v.as_array()).cloned().unwrap_or_default();
 
-    let blocklist_apps = |id: &str| -> Vec<String> {
-        blocklists
-            .iter()
-            .find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id))
-            .and_then(|b| b.get("apps").and_then(|v| v.as_array()))
-            .map(|a| {
-                a.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default()
+    let blocklist_apps = |id: &str| -> Option<(String, Vec<String>)> {
+        blocklists.iter().find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id)).map(|b| {
+            let mode = b
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("blocklist")
+                .to_string();
+            let apps: Vec<String> = b
+                .get("apps")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            (mode, apps)
+        })
     };
 
     let mut apps: std::collections::BTreeSet<String> = Default::default();
@@ -405,7 +465,13 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
         let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) else {
             continue;
         };
-        for app in blocklist_apps(id) {
+        let Some((mode, block_apps)) = blocklist_apps(id) else {
+            continue;
+        };
+        if blocklist_mode_is_allowlist(&mode) {
+            continue;
+        }
+        for app in block_apps {
             if !crate::app_watcher::is_protected_app_name(&app) {
                 apps.insert(app);
             }
@@ -419,7 +485,105 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
         let Some(id) = sch.get("blocklistId").and_then(|v| v.as_str()) else {
             continue;
         };
-        for app in blocklist_apps(id) {
+        let Some((mode, block_apps)) = blocklist_apps(id) else {
+            continue;
+        };
+        if blocklist_mode_is_allowlist(&mode) {
+            continue;
+        }
+        for app in block_apps {
+            if !crate::app_watcher::is_protected_app_name(&app) {
+                apps.insert(app);
+            }
+        }
+    }
+
+    apps.into_iter().collect()
+}
+
+/// Effective allowed-app set for allowlist-mode blocks at `now()`.
+/// Mirrors the frontend's `collectManualAllowedApps` /
+/// `collectScheduleAllowedApps` merge.
+pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
+    let raw = match std::fs::read_to_string(data_path) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+    let data: Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => return vec![],
+    };
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+
+    let blocklists =
+        data.get("blocklists").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let active =
+        data.get("activeBlocks").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let schedules =
+        data.get("schedules").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+
+    let blocklist_apps = |id: &str| -> Option<(String, Vec<String>)> {
+        blocklists.iter().find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id)).map(|b| {
+            let mode = b
+                .get("mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("blocklist")
+                .to_string();
+            let apps: Vec<String> = b
+                .get("apps")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
+                .unwrap_or_default();
+            (mode, apps)
+        })
+    };
+
+    let mut apps: std::collections::BTreeSet<String> = Default::default();
+
+    for ab in &active {
+        let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
+        let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
+        let paused = ab.get("isPaused").and_then(|v| v.as_bool()).unwrap_or(false);
+        if paused || now_ms < start || now_ms >= end {
+            continue;
+        }
+        let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some((mode, block_apps)) = blocklist_apps(id) else {
+            continue;
+        };
+        if !blocklist_mode_is_allowlist(&mode) {
+            continue;
+        }
+        for app in block_apps {
+            if !crate::app_watcher::is_protected_app_name(&app) {
+                apps.insert(app);
+            }
+        }
+    }
+
+    for sch in &schedules {
+        if match_schedule_now(sch, now_ms).is_none() {
+            continue;
+        }
+        let Some(id) = sch.get("blocklistId").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some((mode, block_apps)) = blocklist_apps(id) else {
+            continue;
+        };
+        if !blocklist_mode_is_allowlist(&mode) {
+            continue;
+        }
+        for app in block_apps {
             if !crate::app_watcher::is_protected_app_name(&app) {
                 apps.insert(app);
             }
@@ -674,10 +838,28 @@ pub struct DerivedBlocklist {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use serde::Deserialize;
+    use serde_json::{json, Value};
     use std::fs;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[derive(Debug, Deserialize)]
+    struct HostPayloadCompat {
+        blocklist: Vec<String>,
+        #[serde(default)]
+        blocks: Vec<CompatBlockInfo>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct CompatBlockInfo {
+        #[serde(rename = "blocklistId")]
+        blocklist_id: String,
+        #[serde(default = "default_blocklist_mode")]
+        mode: String,
+        #[serde(default)]
+        domains: Vec<String>,
+    }
 
     fn temp_json_path(name: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -685,6 +867,12 @@ mod tests {
             .map(|d| d.as_nanos())
             .unwrap_or(0);
         std::env::temp_dir().join(format!("redd-block-{name}-{unique}.json"))
+    }
+
+    fn write_temp_json(name: &str, data: &Value) -> PathBuf {
+        let path = temp_json_path(name);
+        fs::write(&path, serde_json::to_vec(data).unwrap()).unwrap();
+        path
     }
 
     #[test]
@@ -763,5 +951,291 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert_eq!(apps, vec!["Notes".to_string()]);
+    }
+
+    #[test]
+    fn derive_allowed_apps_uses_resolved_one_shot_windows() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = temp_json_path("resolved-one-shot-allowlist-apps");
+        let data = json!({
+            "blocklists": [{
+                "id": "bl-allow",
+                "name": "Allowlist",
+                "mode": "allowlist",
+                "websites": [],
+                "apps": ["Mail"]
+            }],
+            "activeBlocks": [],
+            "schedules": [{
+                "id": "sch-allow",
+                "blocklistId": "bl-allow",
+                "repeatType": "no",
+                "createdAt": now.saturating_sub(3_600_000),
+                "segments": [{
+                    "startHour": 0,
+                    "startMinute": 0,
+                    "endHour": 0,
+                    "endMinute": 0,
+                    "days": [0]
+                }],
+                "resolvedSegments": [{
+                    "startHour": 0,
+                    "startMinute": 0,
+                    "endHour": 0,
+                    "endMinute": 0,
+                    "days": [],
+                    "activeFromTimestampMs": now.saturating_sub(60_000),
+                    "activeUntilTimestampMs": now + 60_000
+                }]
+            }],
+            "settings": {}
+        });
+
+        fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        let apps = derive_allowed_apps(&path);
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(apps, vec!["Mail".to_string()]);
+    }
+
+    #[test]
+    fn derive_payload_keeps_one_shot_allowlist_schedule_metadata() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let active_from = now.saturating_sub(60_000);
+        let active_until = now + 60_000;
+        let path = temp_json_path("resolved-one-shot-allowlist-payload");
+        let data = json!({
+            "blocklists": [{
+                "id": "bl-allow-web",
+                "name": "Allow Websites",
+                "mode": "allowlist",
+                "websites": ["docs.example.com"],
+                "apps": []
+            }],
+            "activeBlocks": [],
+            "schedules": [{
+                "id": "sch-allow-web",
+                "blocklistId": "bl-allow-web",
+                "repeatType": "no",
+                "createdAt": now.saturating_sub(3_600_000),
+                "segments": [{
+                    "startHour": 0,
+                    "startMinute": 0,
+                    "endHour": 0,
+                    "endMinute": 0,
+                    "days": [0]
+                }],
+                "resolvedSegments": [{
+                    "startHour": 0,
+                    "startMinute": 0,
+                    "endHour": 0,
+                    "endMinute": 0,
+                    "days": [],
+                    "activeFromTimestampMs": active_from,
+                    "activeUntilTimestampMs": active_until
+                }]
+            }],
+            "settings": {}
+        });
+
+        fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        let (domains, blocks) = derive_payload(&path);
+        let _ = fs::remove_file(&path);
+
+        assert!(domains.is_empty(), "allowlist domains should not leak into legacy flat blacklist payload");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].blocklist_id, "bl-allow-web");
+        assert_eq!(blocks[0].mode, "allowlist");
+        assert_eq!(blocks[0].source, "schedule");
+        assert_eq!(blocks[0].domains, vec!["docs.example.com".to_string()]);
+        assert_eq!(blocks[0].started_at, Some(active_from));
+        assert_eq!(blocks[0].ends_at, Some(active_until));
+    }
+
+    #[test]
+    fn derive_payload_keeps_allowlist_only_websites_out_of_legacy_blocklist() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = write_temp_json(
+            "allowlist-only-active-websites",
+            &json!({
+                "blocklists": [{
+                    "id": "bl-allow-web",
+                    "name": "Allow Websites",
+                    "mode": "allowlist",
+                    "websites": ["github.com", "docs.rs"],
+                    "apps": []
+                }],
+                "activeBlocks": [{
+                    "blocklistId": "bl-allow-web",
+                    "startTime": now.saturating_sub(60_000),
+                    "endTime": now + 60_000
+                }],
+                "schedules": [],
+                "settings": {}
+            }),
+        );
+
+        let (domains, blocks) = derive_payload(&path);
+        let _ = fs::remove_file(&path);
+
+        assert!(domains.is_empty(), "legacy flat blocklist stays empty for allowlist-only website sessions");
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].mode, "allowlist");
+        assert_eq!(
+            blocks[0].domains,
+            vec!["github.com".to_string(), "docs.rs".to_string()]
+        );
+    }
+
+    #[test]
+    fn derive_payload_keeps_legacy_flat_blocklist_for_blocklist_mode_only() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = write_temp_json(
+            "mixed-website-payload",
+            &json!({
+                "blocklists": [
+                    {
+                        "id": "bl-block",
+                        "name": "Block Social",
+                        "websites": ["reddit.com"],
+                        "apps": []
+                    },
+                    {
+                        "id": "bl-allow",
+                        "name": "Allow Work",
+                        "mode": "allowlist",
+                        "websites": ["github.com"],
+                        "apps": []
+                    }
+                ],
+                "activeBlocks": [
+                    {
+                        "blocklistId": "bl-block",
+                        "startTime": now.saturating_sub(60_000),
+                        "endTime": now + 60_000
+                    },
+                    {
+                        "blocklistId": "bl-allow",
+                        "startTime": now.saturating_sub(30_000),
+                        "endTime": now + 60_000
+                    }
+                ],
+                "schedules": [],
+                "settings": {}
+            }),
+        );
+
+        let (domains, blocks) = derive_payload(&path);
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(domains, vec!["reddit.com".to_string()]);
+        assert_eq!(blocks.len(), 2);
+        assert!(blocks.iter().any(|b| b.blocklist_id == "bl-block" && b.mode == "blocklist"));
+        assert!(blocks.iter().any(|b| b.blocklist_id == "bl-allow" && b.mode == "allowlist"));
+    }
+
+    #[test]
+    fn current_payload_serializes_empty_legacy_blocklist_with_additive_allowlist_blocks() {
+        #[derive(Serialize)]
+        struct Msg<'a> {
+            blocklist: &'a [String],
+            blocks: &'a [BlockInfo],
+        }
+
+        let domains = Vec::<String>::new();
+        let blocks = vec![BlockInfo {
+            blocklist_id: "allow".to_string(),
+            name: Some("Allow".to_string()),
+            emoji: None,
+            color: None,
+            mode: "allowlist".to_string(),
+            domains: vec!["github.com".to_string()],
+            apps: vec![],
+            source: "activeBlock",
+            ends_at: Some(999),
+            started_at: Some(111),
+        }];
+
+        let payload = serde_json::to_value(Msg {
+            blocklist: &domains,
+            blocks: &blocks,
+        })
+        .unwrap();
+
+        assert_eq!(payload.get("blocklist").unwrap(), &json!([]));
+        assert_eq!(payload["blocks"][0]["mode"], "allowlist");
+        assert_eq!(payload["blocks"][0]["domains"], json!(["github.com"]));
+    }
+
+    #[test]
+    fn extension_payload_compat_accepts_legacy_flat_blocklist_only_shape() {
+        let payload: HostPayloadCompat = serde_json::from_value(json!({
+            "blocklist": ["reddit.com"]
+        }))
+        .unwrap();
+
+        assert_eq!(payload.blocklist, vec!["reddit.com".to_string()]);
+        assert!(payload.blocks.is_empty());
+    }
+
+    #[test]
+    fn extension_payload_compat_defaults_missing_block_mode_to_blocklist() {
+        let payload: HostPayloadCompat = serde_json::from_value(json!({
+            "blocklist": ["reddit.com"],
+            "blocks": [{
+                "blocklistId": "legacy-block",
+                "domains": ["reddit.com"]
+            }]
+        }))
+        .unwrap();
+
+        assert_eq!(payload.blocks.len(), 1);
+        assert_eq!(payload.blocks[0].blocklist_id, "legacy-block");
+        assert_eq!(payload.blocks[0].mode, "blocklist");
+        assert_eq!(payload.blocks[0].domains, vec!["reddit.com".to_string()]);
+    }
+
+    #[test]
+    fn derive_payload_includes_per_block_apps() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = temp_json_path("per-block-apps");
+        let data = json!({
+            "blocklists": [{
+                "id": "bl-apps",
+                "name": "Work apps",
+                "mode": "allowlist",
+                "websites": [],
+                "apps": ["Mail", "Notes"]
+            }],
+            "activeBlocks": [{
+                "blocklistId": "bl-apps",
+                "startTime": now.saturating_sub(60_000),
+                "endTime": now + 60_000
+            }],
+            "schedules": [],
+            "settings": {}
+        });
+
+        fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        let (_domains, blocks) = derive_payload(&path);
+        let _ = fs::remove_file(&path);
+
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].apps, vec!["Mail".to_string(), "Notes".to_string()]);
     }
 }

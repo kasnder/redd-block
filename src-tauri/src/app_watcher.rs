@@ -51,6 +51,9 @@ use tauri::{AppHandle, Emitter};
 
 pub type BlockedApps = Arc<RwLock<HashSet<String>>>;
 
+#[cfg(target_os = "macos")]
+use crate::window_inventory::user_facing_window_pids;
+
 /// Steady-state poll cadence while a schedule is active but no blocked
 /// app is currently being tracked — the common idle case. We only need
 /// to notice a newly-launched blocked app within a couple of seconds,
@@ -81,39 +84,58 @@ const PROTECTED: &[&str] = &[
     "ReDD Blocker", "Fristed", "ReDD Block", "redd-block", "ReddBlock",
     "System Events", "Finder", "loginwindow", "WindowServer",
     "explorer.exe", "dwm.exe", "winlogon.exe", "svchost.exe",
+    "Taskmgr", "Task Manager",
 ];
 
 fn is_protected(name: &str) -> bool {
     is_protected_app_name(name)
 }
 
-/// Whether an app label must never be killed by the watcher.
-pub fn is_protected_app_name(name: &str) -> bool {
-    PROTECTED.iter().any(|p| name.eq_ignore_ascii_case(p))
+fn is_self_pid(pid: sysinfo::Pid) -> bool {
+    std::process::id() == pid.as_u32()
 }
 
-/// Match a running process against a user-facing blocked-app label.
+fn is_protected_process(name: &str, pid: sysinfo::Pid) -> bool {
+    is_self_pid(pid) || is_protected(name)
+}
+
+/// Whether an app label must never be killed by the watcher.
+pub fn is_protected_app_name(name: &str) -> bool {
+    let stem = name.strip_suffix(".exe").unwrap_or(name);
+    PROTECTED
+        .iter()
+        .any(|p| name.eq_ignore_ascii_case(p) || stem.eq_ignore_ascii_case(p))
+}
+
+/// Match a running process against a user-facing app label.
 /// On macOS the label is usually the `.app` bundle name (e.g.
 /// "Android Studio") while `sysinfo` reports the bundle executable
 /// (e.g. "studio") — also accept processes whose path lives inside
 /// `/Applications/<label>.app/`.
-fn process_matches_blocked(blocked: &str, proc_name: &str, proc_exe: Option<&std::path::Path>) -> bool {
+fn process_matches_app_label(label: &str, proc_name: &str, proc_exe: Option<&std::path::Path>) -> bool {
     let stem = proc_name.strip_suffix(".exe").unwrap_or(proc_name);
-    if blocked.eq_ignore_ascii_case(proc_name) || blocked.eq_ignore_ascii_case(stem) {
+    if label.eq_ignore_ascii_case(proc_name) || label.eq_ignore_ascii_case(stem) {
         return true;
     }
     #[cfg(target_os = "macos")]
     if let Some(exe) = proc_exe {
-        let needle = format!("/{}.app/", blocked);
-        if exe
-            .to_string_lossy()
-            .to_ascii_lowercase()
-            .contains(&needle.to_ascii_lowercase())
-        {
+        let exe_lower = exe.to_string_lossy().to_ascii_lowercase();
+        let needle = format!("/{}.app", label.to_ascii_lowercase());
+        if exe_lower.contains(&format!("{needle}/")) || exe_lower.ends_with(&needle) {
             return true;
         }
     }
     false
+}
+
+fn process_matches_blocked(blocked: &str, proc_name: &str, proc_exe: Option<&std::path::Path>) -> bool {
+    process_matches_app_label(blocked, proc_name, proc_exe)
+}
+
+fn process_is_allowed(allowed: &[String], proc_name: &str, proc_exe: Option<&std::path::Path>) -> bool {
+    allowed
+        .iter()
+        .any(|label| process_matches_app_label(label, proc_name, proc_exe))
 }
 
 // ---- Public handle --------------------------------------------------------
@@ -126,54 +148,73 @@ fn process_matches_blocked(blocked: &str, proc_name: &str, proc_exe: Option<&std
 /// in the blocked set when the user opened them) skip the warning and
 /// go straight to silent Cmd-Q + grace + SIGKILL.
 type PendingWarningApps = Arc<Mutex<HashSet<String>>>;
+type AllowedApps = Arc<RwLock<HashSet<String>>>;
 
-/// Public handle returned from `start`. Use `set_apps` to update the
-/// effective blocked set; drop-or-call-`stop` to tear down the watcher.
+/// Public handle returned from `start`. Use `set_policy` to update the
+/// effective blocked/allowed sets; drop-or-call-`stop` to tear down.
 pub struct Handle {
     apps: BlockedApps,
+    allowed_apps: AllowedApps,
+    allowlist_active: Arc<AtomicBool>,
+    allowlist_warn_pending: Arc<AtomicBool>,
     pending_warning_apps: PendingWarningApps,
     stop: Arc<AtomicBool>,
     join: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
 impl Handle {
-    /// Update the effective blocked-app set. The frontend passes the
-    /// full new set as `names` and, separately, the subset that just
-    /// transitioned from "not blocked" to "blocked" as `newly_added`
-    /// — those are the apps that should raise the Let's-go warning
-    /// on their next first-sighting (block-just-starting path), as
-    /// opposed to mid-block app launches which get the silent SIGTERM
-    /// path. The frontend is the source of truth for that transition
-    /// because it owns block / schedule lifecycle and can distinguish
-    /// "app-launch initialization" (no warnings) from "user just
-    /// started a block / a schedule just fired" (warn for everything
-    /// in `newly_added`).
-    pub fn set_apps(&self, names: Vec<String>, newly_added: Vec<String>) {
+    /// Update blocklist-mode blocked apps and allowlist-mode allowed apps.
+    pub fn set_policy(
+        &self,
+        blocked: Vec<String>,
+        newly_added_blocked: Vec<String>,
+        allowed: Vec<String>,
+        allowlist_active: bool,
+        allowlist_newly_started: bool,
+    ) {
         log::info!(
-            "app_watcher::set_apps called: {} blocked, {} newly added",
-            names.len(),
-            newly_added.len()
+            "app_watcher::set_policy: {} blocked, {} newly blocked, {} allowed, allowlist_active={allowlist_active}",
+            blocked.len(),
+            newly_added_blocked.len(),
+            allowed.len(),
         );
         if let Ok(mut w) = self.apps.write() {
             w.clear();
-            for n in names {
+            for n in blocked {
                 if is_protected(&n) {
                     continue;
                 }
                 w.insert(n);
             }
         }
-        if !newly_added.is_empty() {
+        if let Ok(mut w) = self.allowed_apps.write() {
+            w.clear();
+            for n in allowed {
+                if is_protected(&n) {
+                    continue;
+                }
+                w.insert(n);
+            }
+        }
+        self.allowlist_active
+            .store(allowlist_active, Ordering::SeqCst);
+        if allowlist_newly_started {
+            self.allowlist_warn_pending.store(true, Ordering::SeqCst);
+        }
+        if !newly_added_blocked.is_empty() {
             if let Ok(mut p) = self.pending_warning_apps.lock() {
-                for n in newly_added {
+                for n in newly_added_blocked {
                     if !is_protected(&n) {
                         p.insert(n);
                     }
                 }
             }
         }
-        // The poll loop picks up the new set on its next tick — no
-        // need for an immediate sweep here.
+    }
+
+    /// Backward-compatible wrapper for blocklist-only updates.
+    pub fn set_apps(&self, names: Vec<String>, newly_added: Vec<String>) {
+        self.set_policy(names, newly_added, vec![], false, false);
     }
 
     pub fn stop(&self) {
@@ -199,6 +240,24 @@ impl Handle {
             Err(_) => Vec::new(),
         }
     }
+
+    /// Snapshot of the currently effective allowlist-mode allowed-app set,
+    /// sorted alphabetically. Used by diagnostics.
+    pub fn current_allowed_apps(&self) -> Vec<String> {
+        match self.allowed_apps.read() {
+            Ok(h) => {
+                let mut v: Vec<String> = h.iter().cloned().collect();
+                v.sort();
+                v
+            }
+            Err(_) => Vec::new(),
+        }
+    }
+
+    /// Whether allowlist-mode app enforcement is active (non-empty allowed set).
+    pub fn is_allowlist_active(&self) -> bool {
+        self.allowlist_active.load(Ordering::SeqCst)
+    }
 }
 
 /// Start the watcher. One polling thread per Handle.
@@ -212,16 +271,33 @@ impl Handle {
 /// (no frontend to render them anyway).
 pub fn start(app: Option<AppHandle>) -> Handle {
     let apps: BlockedApps = Arc::new(RwLock::new(HashSet::new()));
+    let allowed_apps: AllowedApps = Arc::new(RwLock::new(HashSet::new()));
+    let allowlist_active = Arc::new(AtomicBool::new(false));
+    let allowlist_warn_pending = Arc::new(AtomicBool::new(false));
     let pending_warning_apps: PendingWarningApps = Arc::new(Mutex::new(HashSet::new()));
     let stop = Arc::new(AtomicBool::new(false));
     let apps_for_thread = apps.clone();
+    let allowed_for_thread = allowed_apps.clone();
+    let allowlist_active_for_thread = allowlist_active.clone();
+    let allowlist_warn_for_thread = allowlist_warn_pending.clone();
     let pending_for_thread = pending_warning_apps.clone();
     let stop_for_thread = stop.clone();
     let join = std::thread::spawn(move || {
-        run(app, apps_for_thread, pending_for_thread, stop_for_thread)
+        run(
+            app,
+            apps_for_thread,
+            allowed_for_thread,
+            allowlist_active_for_thread,
+            allowlist_warn_for_thread,
+            pending_for_thread,
+            stop_for_thread,
+        )
     });
     Handle {
         apps,
+        allowed_apps,
+        allowlist_active,
+        allowlist_warn_pending,
         pending_warning_apps,
         stop,
         join: Mutex::new(Some(join)),
@@ -321,7 +397,6 @@ fn emit_warning_show(app: Option<&AppHandle>, pid: u32, name: &str, _total_secs:
     blocking_warning_begin(app);
     if let Some(a) = app {
         crate::commands::show_blocking_warning_shell_without_stealing_focus(a);
-        crate::commands::activate_external_process_by_pid(pid);
     }
     if let Some(app) = app {
         let _ = app.emit(
@@ -361,6 +436,24 @@ enum PidPhase {
     PostQuit { kill_at: Instant },
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EntryOrigin {
+    Blocklist,
+    Allowlist,
+}
+
+/// Sentinel PID for the allowlist block-start overlay when no non-allowed
+/// apps need closing — the frontend renders intention-only copy.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+const ALLOWLIST_INTENTION_PID_RAW: u32 = 0;
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+const ALLOWLIST_INTENTION_NAME: &str = "__allowlist_intention__";
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn allowlist_intention_pid() -> sysinfo::Pid {
+    sysinfo::Pid::from_u32(ALLOWLIST_INTENTION_PID_RAW)
+}
+
 #[derive(Debug)]
 struct PidEntry {
     /// The user-list name we matched against this process — emitted
@@ -377,6 +470,13 @@ struct PidEntry {
     /// would underflow / falsely tear down panel mode while a
     /// concurrent block-start warning is still up.
     warning_raised: bool,
+    /// Why this PID was enrolled. Allowlist-origin entries get the
+    /// user-facing-window re-check before any quit action; blocklist
+    /// entries keep the existing behavior unchanged.
+    origin: EntryOrigin,
+    /// Allowlist block-start reminder with no apps to close yet. Dismissed
+    /// immediately when the user clicks "Let's go!" — no PreQuit countdown.
+    intention_only: bool,
 }
 
 // ---- Run loop -------------------------------------------------------------
@@ -385,22 +485,36 @@ struct PidEntry {
 fn run(
     app: Option<AppHandle>,
     apps: BlockedApps,
+    allowed_apps: AllowedApps,
+    allowlist_active: Arc<AtomicBool>,
+    allowlist_warn_pending: Arc<AtomicBool>,
     pending_warning_apps: PendingWarningApps,
     stop: Arc<AtomicBool>,
 ) {
     let mut entries: HashMap<sysinfo::Pid, PidEntry> = HashMap::new();
-    // One `System` kept alive across sweeps so sysinfo does incremental
-    // diffs — and caches each process's exe path — instead of building a
-    // fresh table and re-reading the whole process list cold every tick.
     let mut sys = sysinfo::System::new();
     while !stop.load(Ordering::SeqCst) {
-        sweep(app.as_ref(), &apps, &pending_warning_apps, &mut entries, &mut sys);
-        // Poll fast only while a countdown is in flight; otherwise idle
-        // at the slower cadence to keep background CPU / battery low.
-        let interval = if entries.is_empty() {
-            POLL_INTERVAL
-        } else {
+        sweep(
+            app.as_ref(),
+            &apps,
+            &allowed_apps,
+            &allowlist_active,
+            &allowlist_warn_pending,
+            &pending_warning_apps,
+            &mut entries,
+            &mut sys,
+        );
+        // Poll fast while a countdown is in flight, or while an allowlist
+        // block-start sweep is pending so visible apps behind ReDD Blocker
+        // are caught within ~500ms instead of the 2s idle cadence.
+        let interval = if !entries.is_empty() {
             POLL_INTERVAL_ACTIVE
+        } else if allowlist_warn_pending.load(Ordering::SeqCst) {
+            Duration::from_millis(500)
+        } else if allowlist_active.load(Ordering::SeqCst) {
+            POLL_INTERVAL_ACTIVE
+        } else {
+            POLL_INTERVAL
         };
         std::thread::sleep(interval);
     }
@@ -419,6 +533,9 @@ fn run(
 fn run(
     _app: Option<AppHandle>,
     _apps: BlockedApps,
+    _allowed_apps: AllowedApps,
+    _allowlist_active: Arc<AtomicBool>,
+    _allowlist_warn_pending: Arc<AtomicBool>,
     _pending_warning_apps: PendingWarningApps,
     _stop: Arc<AtomicBool>,
 ) {
@@ -430,6 +547,9 @@ fn run(
 fn sweep(
     app: Option<&AppHandle>,
     apps: &BlockedApps,
+    allowed_apps: &AllowedApps,
+    allowlist_active: &AtomicBool,
+    allowlist_warn_pending: &AtomicBool,
     pending_warning_apps: &PendingWarningApps,
     entries: &mut HashMap<sysinfo::Pid, PidEntry>,
     sys: &mut sysinfo::System,
@@ -440,6 +560,11 @@ fn sweep(
         Ok(g) => g.iter().cloned().collect(),
         Err(_) => return,
     };
+    let allowed: Vec<String> = match allowed_apps.read() {
+        Ok(g) => g.iter().cloned().collect(),
+        Err(_) => return,
+    };
+    let allowlist_on = allowlist_active.load(Ordering::SeqCst);
 
     // One-shot snapshot — the names in here are eligible for the
     // AwaitingUserAck warning on this sweep's first-sighting. Drained
@@ -449,12 +574,8 @@ fn sweep(
         Ok(mut p) => p.drain().collect(),
         Err(_) => HashSet::new(),
     };
-    if blocked.is_empty() {
+    if blocked.is_empty() && !allowlist_on {
         if !entries.is_empty() {
-            // Block ended (e.g. user paused / cleared) — clear any
-            // in-flight warnings so the UI stops showing them. Skip
-            // hide-emit for mid-block PIDs (warning_raised=false)
-            // since they never had a corresponding show.
             for (pid, entry) in entries.drain() {
                 if entry.warning_raised {
                     emit_warning_hide(
@@ -483,26 +604,51 @@ fn sweep(
 
     let now = Instant::now();
     let mut still_alive: HashSet<sysinfo::Pid> = HashSet::new();
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    let allowlist_window_pids = if allowlist_on && !allowed.is_empty() {
+        Some(current_user_facing_window_pids())
+    } else {
+        None
+    };
 
     // If the user clicked "Let's go!" since the last sweep, transition
     // every PID currently in `AwaitingUserAck` into `PreQuit`. Atomic
     // swap so we consume the signal exactly once.
     let user_acked = USER_ACK_PENDING.swap(false, Ordering::SeqCst);
     if user_acked {
-        for entry in entries.values_mut() {
-            if matches!(entry.phase, PidPhase::AwaitingUserAck) {
+        let mut intention_dismissed: Vec<sysinfo::Pid> = Vec::new();
+        for (pid, entry) in entries.iter_mut() {
+            if !matches!(entry.phase, PidPhase::AwaitingUserAck) {
+                continue;
+            }
+            if entry.intention_only {
+                intention_dismissed.push(*pid);
+                continue;
+            }
+            log::info!(
+                "app_watcher: user ack received for '{}'; entering PreQuit",
+                entry.matched_name
+            );
+            entry.phase = PidPhase::PreQuit { quit_at: now + PREQUIT_DURATION };
+        }
+        for pid in intention_dismissed {
+            if let Some(entry) = entries.remove(&pid) {
                 log::info!(
-                    "app_watcher: user ack received for '{}'; entering PreQuit",
+                    "app_watcher: allowlist intention ack for pid={pid} name='{}'",
                     entry.matched_name
                 );
-                entry.phase = PidPhase::PreQuit { quit_at: now + PREQUIT_DURATION };
+                if entry.warning_raised {
+                    emit_warning_hide(app, pid.as_u32(), &entry.matched_name, HideReason::Resolved);
+                }
             }
         }
     }
 
+    let mut blocklist_matched: HashSet<sysinfo::Pid> = HashSet::new();
+
     for (pid, proc_) in sys.processes() {
         let name = proc_.name().to_string_lossy().to_string();
-        if name.is_empty() || is_protected(&name) {
+        if name.is_empty() || is_protected_process(&name, *pid) {
             continue;
         }
         let proc_exe = proc_.exe();
@@ -514,6 +660,7 @@ fn sweep(
             None => continue,
         };
         still_alive.insert(*pid);
+        blocklist_matched.insert(*pid);
 
         match entries.entry(*pid) {
             Entry::Vacant(slot) => {
@@ -535,6 +682,8 @@ fn sweep(
                         matched_name,
                         phase: PidPhase::AwaitingUserAck,
                         warning_raised: true,
+                        origin: EntryOrigin::Blocklist,
+                        intention_only: false,
                     });
                 } else {
                     // Mid-block app launch — the user opened a
@@ -552,6 +701,8 @@ fn sweep(
                         matched_name,
                         phase: PidPhase::PostQuit { kill_at: now + POSTQUIT_GRACE },
                         warning_raised: false,
+                        origin: EntryOrigin::Blocklist,
+                        intention_only: false,
                     });
                 }
             }
@@ -617,6 +768,65 @@ fn sweep(
         }
     }
 
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if allowlist_on && !allowed.is_empty() {
+        sweep_allowlist(
+            app,
+            &allowed,
+            allowlist_warn_pending,
+            entries,
+            sys,
+            now,
+            &mut still_alive,
+            allowlist_window_pids.as_ref(),
+        );
+    }
+
+    // Advance in-flight allowlist (and any other non-blocklist) entries even
+    // when they are no longer frontmost — otherwise switching away aborts
+    // a polite-quit / SIGKILL timer mid-flight.
+    let tracked: Vec<sysinfo::Pid> = entries.keys().copied().collect();
+    for pid in tracked {
+        if blocklist_matched.contains(&pid) {
+            continue;
+        }
+        let Some(proc_) = sys.process(pid) else {
+            continue;
+        };
+        still_alive.insert(pid);
+        let name = proc_.name().to_string_lossy().to_string();
+        if let Some(entry) = entries.get_mut(&pid) {
+            let matched = entry.matched_name.clone();
+            let warned = entry.warning_raised;
+            let origin = entry.origin;
+            let intention_only = entry.intention_only;
+            if advance_pid_entry(
+                app,
+                pid,
+                &name,
+                proc_,
+                &mut entry.phase,
+                &matched,
+                warned,
+                origin,
+                intention_only,
+                now,
+                #[cfg(any(target_os = "macos", target_os = "windows"))]
+                allowlist_window_pids.as_ref(),
+            ) {
+                entries.remove(&pid);
+            }
+        }
+    }
+
+    // Allowlist block-start with no apps to close uses a sentinel PID, not a
+    // real process — keep it off the "process is gone" cleanup path until ack.
+    for (pid, entry) in entries.iter() {
+        if entry.intention_only && matches!(entry.phase, PidPhase::AwaitingUserAck) {
+            still_alive.insert(*pid);
+        }
+    }
+
     // PIDs we were tracking that are no longer alive — they exited
     // (cleanly via the user saving + quitting, or via SIGKILL when the
     // PostQuit grace elapsed). Hide any in-flight warning UI for them.
@@ -641,11 +851,686 @@ fn sweep(
     }
 }
 
+/// Advance a tracked PID one step through the quit state machine.
+/// Returns `true` when the entry should be removed (SIGKILL completed).
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn advance_pid_entry(
+    app: Option<&AppHandle>,
+    pid: sysinfo::Pid,
+    proc_name: &str,
+    proc_: &sysinfo::Process,
+    phase: &mut PidPhase,
+    matched_name: &str,
+    warning_raised: bool,
+    origin: EntryOrigin,
+    intention_only: bool,
+    now: Instant,
+    #[cfg(any(target_os = "macos", target_os = "windows"))] allowlist_window_pids: Option<&HashSet<u32>>,
+) -> bool {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if origin == EntryOrigin::Allowlist
+        && !intention_only
+        && !allowlist_entry_still_user_facing(pid, allowlist_window_pids)
+    {
+        if warning_raised {
+            emit_warning_hide(app, pid.as_u32(), matched_name, HideReason::Resolved);
+        }
+        return true;
+    }
+
+    let next = match phase {
+        PidPhase::AwaitingUserAck => PidPhase::AwaitingUserAck,
+        PidPhase::PreQuit { quit_at } => {
+            let quit_at = *quit_at;
+            if now < quit_at {
+                PidPhase::PreQuit { quit_at }
+            } else {
+                log::info!(
+                    "app_watcher: PreQuit elapsed for pid={pid} name='{proc_name}'; sending polite quit"
+                );
+                request_graceful_quit(pid, proc_name, proc_);
+                PidPhase::PostQuit {
+                    kill_at: now + POSTQUIT_GRACE,
+                }
+            }
+        }
+        PidPhase::PostQuit { kill_at } => {
+            let kill_at = *kill_at;
+            if now < kill_at {
+                PidPhase::PostQuit { kill_at }
+            } else {
+                log::info!(
+                    "app_watcher: PostQuit grace elapsed for pid={pid} name='{proc_name}'; SIGKILL"
+                );
+                if proc_.kill() {
+                    if warning_raised {
+                        emit_warning_hide(
+                            app,
+                            pid.as_u32(),
+                            matched_name,
+                            HideReason::ForceKilled,
+                        );
+                    }
+                    return true;
+                }
+                log::warn!(
+                    "app_watcher: SIGKILL failed for pid={pid} name='{proc_name}' — will retry"
+                );
+                PidPhase::PostQuit { kill_at }
+            }
+        }
+    };
+    *phase = next;
+    false
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn refresh_pid(sys: &mut sysinfo::System, pid: sysinfo::Pid) {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, UpdateKind};
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
+}
+
+/// Allowlist enforcement. On block start (`allowlist_warn_pending`) every
+/// visible regular app is checked so apps left open behind ReDD Blocker
+/// still get closed. **Every** visible non-allowed app gets the user-ack
+/// warning on that one sweep — not just the first. After that, only the
+/// frontmost app is checked so background agents (Dropbox, etc.) keep running.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn sweep_allowlist(
+    app: Option<&AppHandle>,
+    allowed: &[String],
+    allowlist_warn_pending: &AtomicBool,
+    entries: &mut HashMap<sysinfo::Pid, PidEntry>,
+    sys: &mut sysinfo::System,
+    now: Instant,
+    still_alive: &mut HashSet<sysinfo::Pid>,
+    allowlist_window_pids: Option<&HashSet<u32>>,
+) {
+    let block_start = allowlist_warn_pending.load(Ordering::SeqCst);
+    let targets = if block_start {
+        visible_non_allowed_regular_apps(allowed)
+    } else {
+        frontmost_non_allowed_app(allowed)
+    };
+
+    if !block_start && targets.is_empty() {
+        return;
+    }
+
+    // One-shot: the very next sweep after `set_policy(..., allowlist_newly_started)`
+    // scans every visible non-allowed app. All of them get the user-ack warning —
+    // never silent quit on the same tick (mid-block frontmost violations only).
+    let block_start_batch = block_start;
+    if block_start {
+        allowlist_warn_pending.store(false, Ordering::SeqCst);
+    }
+
+    let mut block_start_warning_raised = false;
+
+    for (pid, proc_name, display_name) in targets {
+        if is_protected_process(&proc_name, pid) {
+            continue;
+        }
+        if !allowlist_entry_still_user_facing(pid, allowlist_window_pids) {
+            continue;
+        }
+        refresh_pid(sys, pid);
+        let proc_exe = sys.process(pid).and_then(|p| p.exe().map(|p| p.to_path_buf()));
+        if process_is_allowed(allowed, &proc_name, proc_exe.as_deref()) {
+            continue;
+        }
+        let Some(proc_) = sys.process(pid) else {
+            log::debug!("app_watcher: allowlist skip pid={pid} name='{proc_name}' — not in process table");
+            continue;
+        };
+
+        still_alive.insert(pid);
+
+        match entries.entry(pid) {
+            Entry::Vacant(slot) => {
+                if block_start_batch {
+                    log::info!(
+                        "app_watcher: allowlist block-start pid={pid} name='{proc_name}'; raising user-ack warning"
+                    );
+                    emit_warning_show(app, pid.as_u32(), &display_name, PREQUIT_DURATION.as_secs());
+                    block_start_warning_raised = true;
+                    slot.insert(PidEntry {
+                        matched_name: display_name.clone(),
+                        phase: PidPhase::AwaitingUserAck,
+                        warning_raised: true,
+                        origin: EntryOrigin::Allowlist,
+                        intention_only: false,
+                    });
+                } else {
+                    log::info!(
+                        "app_watcher: allowlist sighting pid={pid} name='{proc_name}'; silent quit"
+                    );
+                    request_silent_quit(pid, &proc_name, proc_);
+                    slot.insert(PidEntry {
+                        matched_name: display_name,
+                        phase: PidPhase::PostQuit {
+                            kill_at: now + POSTQUIT_GRACE,
+                        },
+                        warning_raised: false,
+                        origin: EntryOrigin::Allowlist,
+                        intention_only: false,
+                    });
+                }
+            }
+            Entry::Occupied(_) => {}
+        }
+    }
+
+    if block_start_batch && !block_start_warning_raised {
+        raise_allowlist_intention_warning(app, entries);
+        still_alive.insert(allowlist_intention_pid());
+    }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn raise_allowlist_intention_warning(
+    app: Option<&AppHandle>,
+    entries: &mut HashMap<sysinfo::Pid, PidEntry>,
+) {
+    if entries.contains_key(&allowlist_intention_pid()) {
+        return;
+    }
+    log::info!("app_watcher: allowlist block-start with no closable apps; raising intention warning");
+    emit_warning_show(
+        app,
+        ALLOWLIST_INTENTION_PID_RAW,
+        ALLOWLIST_INTENTION_NAME,
+        PREQUIT_DURATION.as_secs(),
+    );
+    entries.insert(
+        allowlist_intention_pid(),
+        PidEntry {
+            matched_name: ALLOWLIST_INTENTION_NAME.to_string(),
+            phase: PidPhase::AwaitingUserAck,
+            warning_raised: true,
+            origin: EntryOrigin::Allowlist,
+            intention_only: true,
+        },
+    );
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn frontmost_non_allowed_app(_allowed: &[String]) -> Vec<(sysinfo::Pid, String, String)> {
+    let Some((pid, proc_name, display_name)) = frontmost_app_pid_and_name() else {
+        return Vec::new();
+    };
+    if proc_name.is_empty() || is_protected_process(&proc_name, pid) {
+        return Vec::new();
+    }
+    vec![(pid, proc_name, display_name)]
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn visible_non_allowed_regular_apps(allowed: &[String]) -> Vec<(sysinfo::Pid, String, String)> {
+    let mut out = Vec::new();
+    for (pid, proc_name, display_name, bundle_path) in visible_regular_running_apps() {
+        if is_protected_process(&proc_name, pid) {
+            continue;
+        }
+        let bundle_ref = bundle_path.as_deref();
+        if allowed.iter().any(|label| {
+            process_matches_app_label(label, &proc_name, bundle_ref)
+        }) {
+            continue;
+        }
+        out.push((pid, proc_name, display_name));
+    }
+    out
+}
+
+/// User-facing apps/windows that count as closable allowlist targets.
+#[cfg(target_os = "macos")]
+fn visible_regular_running_apps() -> Vec<(sysinfo::Pid, String, String, Option<std::path::PathBuf>)> {
+    use cocoa::base::{id, YES};
+    use objc::runtime::Class;
+    use objc::{msg_send, sel, sel_impl};
+
+    unsafe {
+        let ws_class = match Class::get("NSWorkspace") {
+            Some(c) => c,
+            None => return Vec::new(),
+        };
+        let ws: id = msg_send![ws_class, sharedWorkspace];
+        let apps: id = msg_send![ws, runningApplications];
+        if apps.is_null() {
+            return Vec::new();
+        }
+        let count: usize = msg_send![apps, count];
+        let mut out = Vec::new();
+        for i in 0..count {
+            let app: id = msg_send![apps, objectAtIndex: i];
+            if app.is_null() {
+                continue;
+            }
+            // NSApplicationActivationPolicyRegular == 0
+            let policy: i64 = msg_send![app, activationPolicy];
+            if policy != 0 {
+                continue;
+            }
+            let hidden: cocoa::base::BOOL = msg_send![app, isHidden];
+            if hidden == YES {
+                continue;
+            }
+            let raw_pid: i32 = msg_send![app, processIdentifier];
+            if raw_pid <= 0 {
+                continue;
+            }
+            let name: id = msg_send![app, localizedName];
+            if name.is_null() {
+                continue;
+            }
+            let cstr: *const i8 = msg_send![name, UTF8String];
+            if cstr.is_null() {
+                continue;
+            }
+            let name_str = std::ffi::CStr::from_ptr(cstr).to_string_lossy().into_owned();
+            let bundle: id = msg_send![app, bundleURL];
+            let bundle_path = if bundle.is_null() {
+                None
+            } else {
+                let path: id = msg_send![bundle, path];
+                if path.is_null() {
+                    None
+                } else {
+                    let p: *const i8 = msg_send![path, UTF8String];
+                    if p.is_null() {
+                        None
+                    } else {
+                        Some(std::path::PathBuf::from(
+                            std::ffi::CStr::from_ptr(p).to_string_lossy().into_owned(),
+                        ))
+                    }
+                }
+            };
+            out.push((sysinfo::Pid::from_u32(raw_pid as u32), name_str.clone(), name_str, bundle_path));
+        }
+        out
+    }
+}
+
+#[cfg(target_os = "windows")]
+#[derive(Clone)]
+struct UserFacingWindow {
+    pid: u32,
+    title: String,
+    class_name: String,
+}
+
+#[cfg(target_os = "windows")]
+const MIN_USER_WINDOW_EDGE_PX: i32 = 80;
+
+#[cfg(target_os = "windows")]
+fn humanize_windows_process_name(proc_name: &str) -> String {
+    let raw = proc_name.trim().strip_suffix(".exe").unwrap_or(proc_name.trim());
+    let spaced = raw
+        .replace(['_', '-'], " ")
+        .chars()
+        .enumerate()
+        .flat_map(|(idx, ch)| {
+            if idx > 0 && ch.is_ascii_uppercase() {
+                vec![' ', ch]
+            } else {
+                vec![ch]
+            }
+        })
+        .collect::<String>();
+    let normalized = spaced.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        proc_name.to_string()
+    } else {
+        normalized
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn display_name_from_window_title(title: &str, proc_name: &str) -> String {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return humanize_windows_process_name(proc_name);
+    }
+
+    for sep in [" - ", " — ", " – ", " | "] {
+        if let Some((_, tail)) = trimmed.rsplit_once(sep) {
+            let tail = tail.trim();
+            if !tail.is_empty() && tail.len() <= 64 {
+                return tail.to_string();
+            }
+        }
+    }
+
+    trimmed.to_string()
+}
+
+#[cfg(target_os = "windows")]
+fn is_windows_shell_input_surface(
+    class_name: &str,
+    proc_path: Option<&std::path::Path>,
+) -> bool {
+    let Some(path) = proc_path.and_then(|p| p.to_str()) else {
+        return false;
+    };
+    let path_lower = path.to_ascii_lowercase();
+    path_lower.contains("\\windows\\systemapps\\")
+        && class_name.eq_ignore_ascii_case("Windows.UI.Core.CoreWindow")
+}
+
+/// DWM-cloaked windows report `IsWindowVisible` but are hidden from the
+/// user (background UWP hosts like Realtek Audio Console, shell surfaces).
+#[cfg(target_os = "windows")]
+fn is_windows_cloaked_window(hwnd: windows::Win32::Foundation::HWND) -> bool {
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+
+    let mut cloaked = 0u32;
+    unsafe {
+        if DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_CLOAKED,
+            &mut cloaked as *mut _ as *mut _,
+            std::mem::size_of::<u32>() as u32,
+        )
+        .is_err()
+        {
+            return false;
+        }
+    }
+    cloaked != 0
+}
+
+#[cfg(target_os = "windows")]
+fn collect_user_facing_windows() -> Vec<UserFacingWindow> {
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM, RECT};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetClassNameW, GetWindow, GetWindowLongW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
+        GetWindowThreadProcessId, IsIconic, IsWindowVisible, GWL_EXSTYLE, GW_OWNER,
+        WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+    };
+
+    struct CollectCtx {
+        windows: Vec<UserFacingWindow>,
+    }
+
+    unsafe extern "system" fn collect_top_level(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let ctx = &mut *(lparam.0 as *mut CollectCtx);
+        if !IsWindowVisible(hwnd).as_bool() {
+            return BOOL(1);
+        }
+        if is_windows_cloaked_window(hwnd) {
+            return BOOL(1);
+        }
+        let owner = GetWindow(hwnd, GW_OWNER).unwrap_or(HWND::default());
+        if owner != HWND::default() {
+            return BOOL(1);
+        }
+
+        let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
+        if (ex_style & WS_EX_TOOLWINDOW.0) != 0 || (ex_style & WS_EX_NOACTIVATE.0) != 0 {
+            return BOOL(1);
+        }
+
+        let mut rect = RECT::default();
+        if GetWindowRect(hwnd, &mut rect).is_err() {
+            return BOOL(1);
+        }
+        let width = rect.right - rect.left;
+        let height = rect.bottom - rect.top;
+        if !IsIconic(hwnd).as_bool() && (width < MIN_USER_WINDOW_EDGE_PX || height < MIN_USER_WINDOW_EDGE_PX) {
+            return BOOL(1);
+        }
+
+        let title_len = GetWindowTextLengthW(hwnd);
+        if title_len <= 0 {
+            return BOOL(1);
+        }
+        let mut title_buf = vec![0u16; title_len as usize + 1];
+        let copied = GetWindowTextW(hwnd, &mut title_buf);
+        if copied <= 0 {
+            return BOOL(1);
+        }
+        let title = String::from_utf16_lossy(&title_buf[..copied as usize]).trim().to_string();
+        if title.is_empty() {
+            return BOOL(1);
+        }
+        let mut class_buf = [0u16; 256];
+        let class_len = GetClassNameW(hwnd, &mut class_buf);
+        let class_name = if class_len > 0 {
+            String::from_utf16_lossy(&class_buf[..class_len as usize])
+        } else {
+            String::new()
+        };
+
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid == 0 {
+            return BOOL(1);
+        }
+
+        ctx.windows.push(UserFacingWindow { pid, title, class_name });
+        BOOL(1)
+    }
+
+    let mut ctx = CollectCtx { windows: Vec::new() };
+    unsafe {
+        let ptr = (&mut ctx) as *mut CollectCtx as isize;
+        let _ = EnumWindows(Some(collect_top_level), LPARAM(ptr));
+    }
+    ctx.windows
+}
+
+#[cfg(target_os = "windows")]
+fn visible_regular_running_apps() -> Vec<(sysinfo::Pid, String, String, Option<std::path::PathBuf>)> {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    let windows = collect_user_facing_windows();
+    if windows.is_empty() {
+        return Vec::new();
+    }
+
+    let mut window_meta_by_pid: HashMap<u32, (String, String)> = HashMap::new();
+    let mut pids: Vec<sysinfo::Pid> = Vec::new();
+    for window in &windows {
+        window_meta_by_pid
+            .entry(window.pid)
+            .or_insert_with(|| (window.title.clone(), window.class_name.clone()));
+    }
+    for pid in window_meta_by_pid.keys().copied() {
+        pids.push(sysinfo::Pid::from_u32(pid));
+    }
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&pids),
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
+
+    let mut out = Vec::new();
+    for pid in pids {
+        let Some(proc_) = sys.process(pid) else {
+            continue;
+        };
+        let proc_name = proc_.name().to_string_lossy().to_string();
+        if proc_name.is_empty() || is_protected_process(&proc_name, pid) {
+            continue;
+        }
+        let proc_path = proc_.exe().map(|p| p.to_path_buf());
+        let (title, class_name) = match window_meta_by_pid.get(&pid.as_u32()) {
+            Some(meta) => meta,
+            None => continue,
+        };
+        if is_windows_shell_input_surface(class_name, proc_path.as_deref()) {
+            continue;
+        }
+        let display_name = display_name_from_window_title(title, &proc_name);
+        out.push((pid, proc_name, display_name, proc_path));
+    }
+    out
+}
+
+#[cfg(target_os = "macos")]
+fn frontmost_app_pid_and_name() -> Option<(sysinfo::Pid, String, String)> {
+    use cocoa::base::id;
+    use objc::runtime::Class;
+    use objc::{msg_send, sel, sel_impl};
+
+    unsafe {
+        let ws_class = Class::get("NSWorkspace")?;
+        let ws: id = msg_send![ws_class, sharedWorkspace];
+        let front: id = msg_send![ws, frontmostApplication];
+        if front.is_null() {
+            return None;
+        }
+        let raw_pid: i32 = msg_send![front, processIdentifier];
+        if raw_pid <= 0 {
+            return None;
+        }
+        let name: id = msg_send![front, localizedName];
+        if name.is_null() {
+            return None;
+        }
+        let cstr: *const i8 = msg_send![name, UTF8String];
+        if cstr.is_null() {
+            return None;
+        }
+        let name_str = std::ffi::CStr::from_ptr(cstr).to_string_lossy().into_owned();
+        Some((sysinfo::Pid::from_u32(raw_pid as u32), name_str.clone(), name_str))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn frontmost_app_pid_and_name() -> Option<(sysinfo::Pid, String, String)> {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId};
+
+    let hwnd = unsafe { GetForegroundWindow() };
+    if hwnd == HWND::default() {
+        return None;
+    }
+
+    let allowed_pids = current_user_facing_window_pids();
+
+    let mut raw_pid = 0u32;
+    unsafe {
+        GetWindowThreadProcessId(hwnd, Some(&mut raw_pid));
+    }
+    if raw_pid == 0 || !allowed_pids.contains(&raw_pid) {
+        return None;
+    }
+
+    let title_len = unsafe { GetWindowTextLengthW(hwnd) };
+    let mut title = String::new();
+    if title_len > 0 {
+        let mut title_buf = vec![0u16; title_len as usize + 1];
+        let copied = unsafe { GetWindowTextW(hwnd, &mut title_buf) };
+        if copied > 0 {
+            title = String::from_utf16_lossy(&title_buf[..copied as usize]).trim().to_string();
+        }
+    }
+
+    let pid = sysinfo::Pid::from_u32(raw_pid);
+    let mut sys = System::new();
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        true,
+        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+    );
+    let proc_ = sys.process(pid)?;
+    let proc_name = proc_.name().to_string_lossy().to_string();
+    if proc_name.is_empty() || is_protected_process(&proc_name, pid) {
+        return None;
+    }
+    let proc_path = proc_.exe().map(|p| p.to_path_buf());
+    let class_name = {
+        let mut buf = [0u16; 512];
+        let copied = unsafe {
+            windows::Win32::UI::WindowsAndMessaging::GetClassNameW(hwnd, &mut buf)
+        };
+        if copied > 0 {
+            String::from_utf16_lossy(&buf[..copied as usize])
+        } else {
+            String::new()
+        }
+    };
+    if is_windows_shell_input_surface(&class_name, proc_path.as_deref()) {
+        return None;
+    }
+    let display_name = display_name_from_window_title(&title, &proc_name);
+    Some((pid, proc_name, display_name))
+}
+
+#[cfg(target_os = "macos")]
+fn current_user_facing_window_pids() -> HashSet<u32> {
+    user_facing_window_pids()
+}
+
+#[cfg(target_os = "windows")]
+fn current_user_facing_window_pids() -> HashSet<u32> {
+    collect_user_facing_windows()
+        .into_iter()
+        .map(|window| window.pid)
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn allowlist_entry_still_user_facing(
+    pid: sysinfo::Pid,
+    allowlist_window_pids: Option<&HashSet<u32>>,
+) -> bool {
+    let Some(window_pids) = allowlist_window_pids else {
+        return false;
+    };
+    window_pids.contains(&pid.as_u32())
+}
+
+#[cfg(target_os = "macos")]
+fn allowlist_entry_still_user_facing(
+    pid: sysinfo::Pid,
+    allowlist_window_pids: Option<&HashSet<u32>>,
+) -> bool {
+    let Some(window_pids) = allowlist_window_pids else {
+        return false;
+    };
+    window_pids.contains(&pid.as_u32()) && pid_has_regular_activation_policy(pid)
+}
+
+#[cfg(target_os = "macos")]
+fn pid_has_regular_activation_policy(pid: sysinfo::Pid) -> bool {
+    use cocoa::base::id;
+    use objc::runtime::Class;
+    use objc::{msg_send, sel, sel_impl};
+
+    let raw_pid: i32 = pid.as_u32() as i32;
+    unsafe {
+        let Some(class) = Class::get("NSRunningApplication") else {
+            return false;
+        };
+        let app: id = msg_send![class, runningApplicationWithProcessIdentifier: raw_pid];
+        if app.is_null() {
+            return false;
+        }
+        let policy: i64 = msg_send![app, activationPolicy];
+        policy == 0
+    }
+}
+
 #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
 fn sweep(
     _app: Option<&AppHandle>,
     _apps: &BlockedApps,
-    _entries: &mut HashMap<u32, PidEntry>,
+    _allowed_apps: &AllowedApps,
+    _allowlist_active: &AtomicBool,
+    _allowlist_warn_pending: &AtomicBool,
+    _pending_warning_apps: &PendingWarningApps,
+    _entries: &mut HashMap<sysinfo::Pid, PidEntry>,
+    _sys: &mut sysinfo::System,
 ) {
 }
 

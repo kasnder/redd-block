@@ -151,6 +151,7 @@ Requires `settings.enforcementEnabled` (opt-in in extension/setup dialog). Grace
 - [ ] Re-grant before timer expires → banner clears, browser stays open
 - [ ] Let timer expire → browser force-quit; `enforcer://browser-closed` event
 - [ ] Start block → navigate to blocked domain → redirect to bundled `blocked.html` within ~1 s
+- [ ] **Allowlist (Automation):** start allowlist with `github.com` only → open `reddit.com` → bundled `blocked.html` subtitle says site is not on your current allowlist; pill/countdown/source rows still populate from block metadata
 
 ### macOS Firefox / Windows (extension)
 
@@ -158,6 +159,7 @@ Requires `settings.enforcementEnabled` (opt-in in extension/setup dialog). Grace
 - [ ] During active block with enforcement on: disable extension → grace countdown → force-quit at expiry
 - [ ] Re-enable before expiry → grace clears
 - [ ] Navigate to blocked domain → extension `blocked.html` with metadata
+- [ ] **Allowlist (extension):** start allowlist with `github.com` only → open `reddit.com` → extension `blocked.html` shows the same allowlist subtitle, pill, site row, reason, and countdown as Automation (via `mode=allowlist` query param)
 
 ### Native messaging (Windows + macOS Firefox)
 - [ ] Block active → blocked domain redirects in browser
@@ -202,6 +204,73 @@ Screen Time APIs — no hosts file, helper, or browser extension.
 - [ ] One-off and schedule blocking for websites/apps
 - [ ] Pause/resume and override flows
 - [ ] No desktop-only settings (Clean hosts, helper lifecycle)
+
+### 14.1 iOS allowlist matrix (Allow-mode focus spaces)
+
+Prereqs: physical device, Screen Time authorized, note any other authorized
+Screen Time apps and Settings › Screen Time › Always Allowed contents first
+(both are known enforcement carve-outs — see architecture.md §12.3).
+
+- [ ] Websites-only allowlist: allowed sites load, all other sites shielded (manual block)
+- [ ] Apps-only allowlist: allowed apps open (no shield, not even a generic "Restricted" one), other apps shielded, websites unaffected
+- [ ] Mixed allowlist (websites + Screen Time apps): both resource types enforce
+- [ ] Two concurrent allowlists: allowed sets union (both spaces' items usable)
+- [ ] Allowlist + blocklist overlap (domain): overlapping domain blocked, rest of allowlist intact
+- [ ] Allowlist + blocklist overlap (app token): overlapping app shielded (blocklist wins)
+- [ ] Manual allowlist ends via one-off with app fully closed: enforcement lifts
+- [ ] Allowlist schedule segment starts/ends with app fully closed: enforcement flips at boundaries
+- [ ] Pause → resume (manual and schedule): free during pause, allowlist (not blocklist) semantics return on resume
+- [ ] Stop-all clears both stores: no stuck shields or web filter afterwards
+- [ ] Shield copy on allowlist-blocked app: "isn't one of the apps you've allowed yourself to use" + "Focus space information:" + focus-space pill + timing line
+- [ ] Shield copy on allowlist-blocked site: "isn't one of the ones you've allowed yourself to use" + "Focus space information:" + focus-space pill + timing line
+- [ ] Explicit-blocklist shield copy unchanged (regression)
+- [ ] >50 allowed websites: start fails with the domain-limit alert, no enforcement
+- [ ] >50 allowed apps: start fails with the app-limit alert, no enforcement
+- [ ] Allow-mode picker shows the category-expansion footnote; ticking a category returns its member apps as individual app tokens and stores no category token (chip shows "N apps selected", N = member count)
+- [ ] Allow-mode start with a picker-expanded category: member apps stay usable, everything else shielded; no categories dialog
+- [ ] Legacy allow-mode selection with category tokens alongside apps: "App categories are not supported" dialog with Cancel/OK — OK starts with app tokens only, Cancel aborts the start
+- [ ] Allowlist with only unenforceable apps (desktop names / legacy categories-only): websites-only confirm dialog; decline aborts
+- [ ] Card "Allows {n}" / "Blocks {n}" counts every Screen Time app individually (block mode: each category still counts as 1)
+- [ ] Always Allowed app behavior recorded (expected: resists the shield)
+- [ ] Fresh-install upgrade with pre-existing shield snapshot data: shield extension renders without crashing
+- [ ] Save/edit/duplicate/import round-trips keep Allow mode; card shows "Allows N"
+
+---
+
+## 15. Desktop Allowlist (Allow-Mode Focus Spaces)
+
+Same channel split as blocklist mode: **macOS Safari/Chrome/Brave/Edge** enforce
+via Automation; **macOS Firefox + all Windows browsers** via the ReDD Focus
+extension. App allow-mode uses the in-process app watcher (macOS + Windows;
+no Linux). Run the website checks once per channel.
+
+Before manual checks, run the automated allowlist coverage: Tier 1 Category 14
+(`Cmd+Shift+T`), Tier 2 Group H (`runIntegrationTests('full')`), and
+`cargo test --lib` in `src-tauri`.
+
+### Websites (per channel: Automation, then extension)
+
+- [ ] Create allow-mode focus space (e.g. allow `github.com` only); card shows "Allows N"
+- [ ] Start manual block: `github.com` loads; `reddit.com` redirects to the block page
+- [ ] Block page shows allowlist copy ("not on your current allowlist") with the focus space's pill/emoji/countdown (`mode=allowlist` param)
+- [ ] Two concurrent allowlists (e.g. `github.com` / `wikipedia.org`): both load, everything else blocked (union)
+- [ ] Allowlist + blocklist overlap: blocklist blocking `github.com` runs alongside → `github.com` blocked (blocklist wins), block page attributes the blocklist space
+- [ ] Pause allowlist → all sites usable; resume → allowlist semantics return (not blocklist)
+- [ ] Schedule segment on an allowlist: enforcement flips at segment boundaries
+- [ ] Stop all: browsing fully restored; parked block-page tabs recover (Automation channel)
+
+### Apps (macOS and Windows)
+
+- [ ] Start allow-mode space with 1–2 allowed apps while several non-allowed apps are open: every visible non-allowed app gets the "Let's go!" warning (allowed-app pills shown); nothing is quit before acknowledging
+- [ ] Start with **no** closable apps open: intention-only overlay appears; "Let's go!" dismisses it with no countdown
+- [ ] Mid-session: bring a non-allowed app frontmost → it is quit (30 s wrap-up then polite quit); background agents keep running
+- [ ] Switch away from a warned non-allowed app before its quit lands → quit is aborted (no longer user-facing)
+- [ ] Allowed apps and protected apps (Finder, ReDD Blocker) are never targeted
+- [ ] End/stop: no further quits; previously warned apps reopen normally
+
+### Diagnostics
+
+- [ ] Diagnostics view shows "Current enforcement" with the allow-mode entry, mode label, and allowed website union while an allowlist is active
 
 ---
 
