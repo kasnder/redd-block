@@ -66,9 +66,9 @@ pub struct StartBlockRequest {
     pub domains: Vec<String>,
     pub app_token_data: Option<Vec<String>>,
     pub category_token_data: Option<Vec<String>>,
-    /// Allowlist groundwork (Pass 1+): pre-resolved split of the active manual
-    /// union. When allowed_* fields are present, Swift applies `.all(except:)`
-    /// semantics (Pass 2+). All optional so older payloads decode unchanged.
+    /// Pre-resolved blocked/allowed split of the active manual union. When
+    /// allowed_* fields are present, Swift applies `.all(except:)` semantics.
+    /// All optional so older payloads decode unchanged.
     #[serde(default)]
     pub mode: Option<String>,
     #[serde(default)]
@@ -79,7 +79,7 @@ pub struct StartBlockRequest {
     pub blocked_app_token_data: Option<Vec<String>>,
     #[serde(default)]
     pub allowed_app_token_data: Option<Vec<String>>,
-    /// Blocklist label for shield copy (Pass 5); omit on older clients.
+    /// Blocklist label for shield copy; omit on older clients.
     #[serde(default)]
     pub blocklist_emoji: Option<String>,
     #[serde(default)]
@@ -90,6 +90,19 @@ pub struct StartBlockRequest {
     pub block_start_ms: Option<f64>,
     #[serde(default)]
     pub block_end_ms: Option<f64>,
+    /// Shield-attribution display fields for the earliest-started active
+    /// allow-mode block (the fields above describe the overall display winner,
+    /// which may be a blocklist block). Omit when no allowlist block is active.
+    #[serde(default)]
+    pub allowlist_blocklist_emoji: Option<String>,
+    #[serde(default)]
+    pub allowlist_blocklist_name: Option<String>,
+    #[serde(default)]
+    pub allowlist_blocklist_color_hex: Option<String>,
+    #[serde(default)]
+    pub allowlist_block_start_ms: Option<f64>,
+    #[serde(default)]
+    pub allowlist_block_end_ms: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -176,7 +189,7 @@ pub struct SetResumePayloadRequest {
     pub domains: Vec<String>,
     pub app_token_data: Option<Vec<String>>,
     pub category_token_data: Option<Vec<String>>,
-    /// "allowlist" when this payload's items are ALLOWED items (Pass 2+).
+    /// "allowlist" when this payload's items are ALLOWED items.
     #[serde(default)]
     pub mode: Option<String>,
 }
@@ -188,7 +201,7 @@ pub struct SetBlockEndStateRequest {
     pub domains: Vec<String>,
     pub app_token_data: Option<Vec<String>>,
     pub category_token_data: Option<Vec<String>>,
-    /// "allowlist" when this payload's items are ALLOWED items (Pass 2+).
+    /// "allowlist" when this payload's items are ALLOWED items.
     #[serde(default)]
     pub mode: Option<String>,
 }

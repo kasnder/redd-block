@@ -69,7 +69,10 @@ private enum ShieldSnapshotPresenter {
         if let category, let row = categoryAttribution(snapshot: snapshot, category: category) {
             rows.append(row)
         }
-        guard let picked = bestAttribution(rows) else {
+        // No per-target row: the target may be blocked for NOT being on an
+        // active allow list — attribute via the section-level fallback.
+        guard let picked = bestAttribution(rows)
+            ?? ShieldAttributionPicker.winningAllowlistFallback(snapshot: snapshot) else {
             return fallbackConfiguration
         }
         let blockedName = application.localizedDisplayName ?? "This app"
@@ -90,7 +93,8 @@ private enum ShieldSnapshotPresenter {
         if let category, let row = categoryAttribution(snapshot: snapshot, category: category) {
             rows.append(row)
         }
-        guard let picked = bestAttribution(rows) else {
+        guard let picked = bestAttribution(rows)
+            ?? ShieldAttributionPicker.winningAllowlistFallback(snapshot: snapshot) else {
             return fallbackConfiguration
         }
         let raw = webDomain.domain?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -136,8 +140,13 @@ private enum ShieldSnapshotPresenter {
     }
 
     private static func makeSubtitle(blockedName: String, attribution: ShieldAttribution) -> String {
-        let opener = "\(blockedName) is on your current blocklist."
-        var blockInfo: [String] = [detailSectionHeading(sourceId: attribution.sourceId)]
+        let isAllowlist = attribution.isAllowlistSource == true
+        let opener = isAllowlist
+            ? "\(blockedName) isn't on your current allow list."
+            : "\(blockedName) is on your current blocklist."
+        var blockInfo: [String] = [
+            isAllowlist ? "Allow list information:" : detailSectionHeading(sourceId: attribution.sourceId)
+        ]
         let pill = pillLine(attribution: attribution)
         if !pill.isEmpty {
             blockInfo.append(pill)

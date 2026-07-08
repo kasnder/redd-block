@@ -183,28 +183,25 @@ class ReddBlockMonitor: DeviceActivityMonitor {
     /// This prevents stale shields and keeps overlap handling consistent on
     /// start/end events. Web content and app/category shields are derived state
     /// owned by the shared appliers (allowlist-aware, cross-channel); this
-    /// method owns clearing when nothing is active and the shield snapshot.
-    /// Allowlist entries contribute no snapshot rows yet (attribution lands in Pass 5).
+    /// method owns clearing when nothing is active and the shield snapshot
+    /// (the writer partitions blocklist rows vs the allowlist fallback itself).
     private func recomputeActiveScheduleUnion(now: Date = Date()) {
         let allSchedules = SharedScheduleStore.loadAll()
         NSLog("[ReDD Schedule] recomputeActiveScheduleUnion schedules=%d", allSchedules.count)
-        var blocklistPairs: [(String, ScheduleBlockData)] = []
-        var hasActiveEntries = false
+        var activePairs: [(String, ScheduleBlockData)] = []
 
         for (id, data) in allSchedules where data.isActiveNow(now: now) {
-            hasActiveEntries = true
             NSLog(
                 "[ReDD Schedule] active schedule id=%@ mode=%@ domains=%d apps=%d categories=%d",
                 id, data.mode ?? "blocklist", data.domains.count, data.appTokenData.count, data.categoryTokenData.count
             )
-            if data.isAllowlist { continue }
-            blocklistPairs.append((id, data))
+            activePairs.append((id, data))
         }
 
-        if !hasActiveEntries {
+        if activePairs.isEmpty {
             store.clearAllSettings()
         }
-        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: blocklistPairs, now: now)
+        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: activePairs, now: now)
         reapplyDerivedPolicies(now: now)
     }
 

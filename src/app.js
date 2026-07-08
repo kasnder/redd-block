@@ -604,6 +604,7 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
     const categoryTokenData = new Set();
 
     let displayWinner = null;
+    let allowlistDisplayWinner = null;
 
     for (const block of appData.activeBlocks || []) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
@@ -618,6 +619,17 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
                 && bid < String(displayWinner.block.blocklistId ?? ''))
         ) {
             displayWinner = { block, blocklist };
+        }
+        if (
+            isBlocklistAllowlistMode(blocklist)
+            && (
+                allowlistDisplayWinner == null
+                || block.startTime < allowlistDisplayWinner.block.startTime
+                || (block.startTime === allowlistDisplayWinner.block.startTime
+                    && bid < String(allowlistDisplayWinner.block.blocklistId ?? ''))
+            )
+        ) {
+            allowlistDisplayWinner = { block, blocklist };
         }
 
         if (isBlocklistAllowlistMode(blocklist)) {
@@ -661,6 +673,18 @@ function collectActiveIOSManualBlockPayload(now = Date.now()) {
         out.blockStartMs = block.startTime;
         out.blockEndMs = block.endTime;
         out.mode = isBlocklistAllowlistMode(blocklist) ? 'allowlist' : null;
+    }
+    if (allowlistDisplayWinner) {
+        // Shield attribution for "blocked because not allowed" targets: the
+        // earliest-started active allow-mode block, independent of the overall
+        // display winner above (which may be a blocklist block).
+        const { block, blocklist } = allowlistDisplayWinner;
+        out.allowlistBlocklistEmoji = blocklist.emoji ?? null;
+        out.allowlistBlocklistName = blocklist.name ?? null;
+        const c = blocklist.color;
+        out.allowlistBlocklistColorHex = typeof c === 'string' && c.length > 0 ? c : null;
+        out.allowlistBlockStartMs = block.startTime;
+        out.allowlistBlockEndMs = block.endTime;
     }
     return out;
 }

@@ -32,14 +32,21 @@ class StartBlockArgs: Decodable {
     let blocklistColorHex: String?
     let blockStartMs: Double?
     let blockEndMs: Double?
-    /// Allowlist groundwork: pre-resolved blocked/allowed split of the active
-    /// manual union. Optional so older payloads decode unchanged; enforcement
-    /// of the allowed_* fields lands in Pass 2+.
+    /// Pre-resolved blocked/allowed split of the active manual union.
+    /// Optional so older payloads decode unchanged.
     let mode: String?
     let blockedDomains: [String]?
     let allowedDomains: [String]?
     let blockedAppTokenData: [String]?
     let allowedAppTokenData: [String]?
+    /// Shield-attribution display fields for the earliest-started active
+    /// allow-mode block (the per-target display fields above describe the
+    /// overall display winner, which may be a blocklist block).
+    let allowlistBlocklistEmoji: String?
+    let allowlistBlocklistName: String?
+    let allowlistBlocklistColorHex: String?
+    let allowlistBlockStartMs: Double?
+    let allowlistBlockEndMs: Double?
 }
 
 class ScheduleBlockArgs: Decodable {
@@ -106,7 +113,7 @@ class SetResumePayloadArgs: Decodable {
     let domains: [String]
     let appTokenData: [String]?
     let categoryTokenData: [String]?
-    /// "allowlist" when this payload's items are ALLOWED items (Pass 2+).
+    /// "allowlist" when this payload's items are ALLOWED items.
     let mode: String?
 }
 
@@ -115,7 +122,7 @@ class SetBlockEndStateArgs: Decodable {
     let domains: [String]
     let appTokenData: [String]?
     let categoryTokenData: [String]?
-    /// "allowlist" when this payload's items are ALLOWED items (Pass 2+).
+    /// "allowlist" when this payload's items are ALLOWED items.
     let mode: String?
 }
 
@@ -521,6 +528,8 @@ class ScreentimePlugin: Plugin {
 
     /// Updates App Group `ShieldUISnapshot.manual` after the default store changes. Pass `nil` for an
     /// axis to leave that axis’s prior snapshot entries unchanged (e.g. `blockApps` does not clear domains).
+    /// `replaceAllowlistFallback: true` overwrites the manual allowlist fallback with `allowlistFallback`
+    /// (including clearing it with nil); false preserves the prior value (legacy single-axis callers).
     private func persistManualShieldSnapshot(
         replaceDomains: [String]?,
         replaceAppTokens: [String]?,
@@ -529,13 +538,16 @@ class ScreentimePlugin: Plugin {
         blocklistName: String? = nil,
         blocklistColorHex: String? = nil,
         blockStartMs: Double? = nil,
-        blockEndMs: Double? = nil
+        blockEndMs: Double? = nil,
+        replaceAllowlistFallback: Bool = false,
+        allowlistFallback: ShieldAttribution? = nil
     ) {
         let previous = SharedShieldSnapshotStore.load()
         let scheduleSection = previous?.schedule
         var domainMap = previous?.manual?.domainByNormalizedHost ?? [:]
         var appMap = previous?.manual?.appByTokenData ?? [:]
         var categoryMap = previous?.manual?.categoryByTokenData ?? [:]
+        let fallback = replaceAllowlistFallback ? allowlistFallback : previous?.manual?.allowlistFallback
 
         let nowMs = Date().timeIntervalSince1970 * 1000
         let startedMs = blockStartMs ?? nowMs
@@ -570,13 +582,14 @@ class ScreentimePlugin: Plugin {
         }
 
         let manualSection: ShieldAttributionSection?
-        if domainMap.isEmpty && appMap.isEmpty && categoryMap.isEmpty {
+        if domainMap.isEmpty && appMap.isEmpty && categoryMap.isEmpty && fallback == nil {
             manualSection = nil
         } else {
             manualSection = ShieldAttributionSection(
                 domainByNormalizedHost: domainMap,
                 appByTokenData: appMap,
-                categoryByTokenData: categoryMap
+                categoryByTokenData: categoryMap,
+                allowlistFallback: fallback
             )
         }
 
@@ -748,6 +761,24 @@ class ScreentimePlugin: Plugin {
         IOSWebPolicyApplier.reapplyWebPolicy()
         IOSAppPolicyApplier.reapplyAppPolicy()
 
+        // Allowed items get no per-target rows (they are not blocked); the
+        // section-level fallback attributes "blocked for not being allowed"
+        // shields to the earliest-started active allow-mode block.
+        var manualAllowlistFallback: ShieldAttribution? = nil
+        if !allowedDomains.isEmpty || !allowedAppTokenData.isEmpty {
+            let nowMs = Date().timeIntervalSince1970 * 1000
+            manualAllowlistFallback = ShieldAttribution(
+                sourceId: "manual",
+                enforcementStartedAtMs: args.allowlistBlockStartMs ?? nowMs,
+                blocklistEmoji: args.allowlistBlocklistEmoji,
+                blocklistName: args.allowlistBlocklistName,
+                blocklistColorHex: args.allowlistBlocklistColorHex,
+                blockStartedAtMs: args.allowlistBlockStartMs ?? nowMs,
+                blockEndsAtMs: args.allowlistBlockEndMs,
+                isAllowlistSource: true
+            )
+        }
+
         persistManualShieldSnapshot(
             replaceDomains: Array(args.domains.prefix(50)),
             replaceAppTokens: args.appTokenData ?? [],
@@ -756,7 +787,9 @@ class ScreentimePlugin: Plugin {
             blocklistName: args.blocklistName,
             blocklistColorHex: args.blocklistColorHex,
             blockStartMs: args.blockStartMs,
-            blockEndMs: args.blockEndMs
+            blockEndMs: args.blockEndMs,
+            replaceAllowlistFallback: true,
+            allowlistFallback: manualAllowlistFallback
         )
         
         var response: [String: Any] = [
@@ -782,8 +815,14 @@ class ScreentimePlugin: Plugin {
         SharedManualBlockStore.saveManualBlockState(ScheduleBlockData(domains: [], appTokenData: [], categoryTokenData: [], days: nil))
         SharedManualBlockStore.clearManualAllowlistState()
 
-        persistManualShieldSnapshot(replaceDomains: [], replaceAppTokens: [], replaceCategoryTokens: [])
-        
+        persistManualShieldSnapshot(
+            replaceDomains: [],
+            replaceAppTokens: [],
+            replaceCategoryTokens: [],
+            replaceAllowlistFallback: true,
+            allowlistFallback: nil
+        )
+
         // Also clear the named "schedule" store used by DeviceActivityMonitor
         // Since we use separate stores for manual vs schedule blocks, both
         // must be cleared for a complete "stop everything" action.
@@ -1166,23 +1205,20 @@ class ScreentimePlugin: Plugin {
     /// segments that are currently in their active time window. Web content and
     /// app/category shields are derived state handled by the shared appliers
     /// (allowlist-aware, cross-channel); this method owns clearing when nothing
-    /// is active and the shield snapshot. Allowlist entries contribute no
-    /// snapshot rows yet (allowlist attribution lands in Pass 5).
+    /// is active and the shield snapshot (the writer partitions blocklist rows
+    /// vs the allowlist fallback itself).
     private func reapplyActiveScheduleBlocksToStore(entries: [ScheduleEntry]) {
         let now = Date()
-        var blocklistPairs: [(String, ScheduleBlockData)] = []
-        var hasActiveEntries = false
+        var activePairs: [(String, ScheduleBlockData)] = []
         for entry in entries {
             guard let data = SharedScheduleStore.load(id: entry.id), data.isActiveNow(now: now) else { continue }
-            hasActiveEntries = true
-            if data.isAllowlist { continue }
-            blocklistPairs.append((entry.id, data))
+            activePairs.append((entry.id, data))
         }
-        if !hasActiveEntries {
+        if activePairs.isEmpty {
             let scheduleStore = ManagedSettingsStore(named: .init("schedule"))
             scheduleStore.clearAllSettings()
         }
-        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: blocklistPairs, now: now)
+        ShieldScheduleSnapshotWriter.persistScheduleUnion(activeEntries: activePairs, now: now)
         IOSWebPolicyApplier.reapplyWebPolicy(now: now)
         IOSAppPolicyApplier.reapplyAppPolicy(now: now)
     }
