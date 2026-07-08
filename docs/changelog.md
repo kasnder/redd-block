@@ -6,11 +6,38 @@ Release sections can use a leading `> …` blockquote for the headline summary.
 List cross-platform changes first under `###` headings (e.g. FOCUS SPACES &
 SCHEDULES), then platform-specific notes under nested headings:
 
-`### BY PLATFORM` → `#### DESKTOP` → `##### macOS` / `##### Windows` /
-`##### iOS`. Bullets use `- **Short title.** Longer description.` Legacy flat
-lists still work.
+`### BY PLATFORM` → `#### DESKTOP` → `##### macOS` / `##### Windows`, with
+`#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
+description.` Legacy flat lists still work.
 
 ## v3.5.0
+
+### ALLOW MODE
+
+- **Allow mode for focus spaces.** A focus space can now *allow* instead of
+  block: pick the apps and websites you can use, and everything else is blocked
+  while the space is active. Available on macOS, Windows, and iOS.
+- **Block / Allow.** Each space switches between **Block** and **Allow** in the
+  add/edit modal with clear indication of which mode you are on. Focus space 
+  cards show the mode and its items.
+- **Start overlay and warnings.** Starting an allow-mode space shows your
+  allowed apps and explains that other apps will be closed; only apps with real
+  open windows are targeted.
+- **Blocked pages.** The browser extension and macOS Automation blocked pages
+  use allow-mode framing when a site outside your allow list is redirected.
+- **iOS enforcement.** Allow-mode app and website blocking through Screen Time,
+  with allow-mode shield screens, start-gate dialogs, and category selections
+  expanded into real app counts.
+- **Diagnostics.** Diagnostics surface allow-mode enforcement
+
+### FOCUS SPACES & SCHEDULES
+
+- **One-shot schedules.** Non-repeating schedules are enforced reliably across
+  all backend paths.
+- **End time display.** The end time shown while a one-off block is running no
+  longer freezes.
+- **Active-space banner.** The warning banner reads "This focus space is
+  active. Some settings are locked." with a crisper icon.
 
 ### UPDATE BANNER
 
@@ -37,6 +64,11 @@ lists still work.
 #### DESKTOP
 
 - **Browser setup.** Subtitles wrap on narrow widths instead of overflowing.
+- **Voice messages.** Recording and playback of start-overlay voice messages is
+  more reliable — fixes dropouts, too-quiet recordings, and muted first
+  playback.
+- **Extension hints.** Browser native-messaging files are repaired whenever
+  they drift out of date, not only when the app moves.
 
 ##### macOS
 
@@ -54,6 +86,15 @@ lists still work.
 - **Microsoft Store extension blocking.** Browser extension setup works correctly
   in the Store build — native-messaging files are written where Chrome and Edge
   can find them.
+
+#### iOS
+
+- **EULA screen.** The licence agreement screen matches the layout and design
+  of the other onboarding screens.
+- **Number keypad.** Numeric-only input fields bring up the number keypad
+  instead of the full keyboard.
+- **Emoji picker.** On smaller screens the picker opens below the **+** button
+  and respects the safe area.
 
 - **Version:** 3.5.0 (macOS, Windows, and iOS).
 

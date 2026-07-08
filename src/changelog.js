@@ -273,6 +273,15 @@ export function filterReleaseNotesForPlatform(notes, platformKey) {
         }
 
         for (const child of group.children || []) {
+            // Platform section at the same level as DESKTOP (e.g. `#### iOS`).
+            if (labelMatchesPlatform(child.label, platform)) {
+                groups.push({
+                    label: child.label,
+                    items: [...child.items],
+                    children: [],
+                });
+                continue;
+            }
             if (normalizeGroupLabel(child.label) !== 'desktop') {
                 continue;
             }
