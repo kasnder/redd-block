@@ -697,7 +697,7 @@
                                             <label class="time-label" id="duration-label">Duration</label>
                                             <div class="duration-input-wrapper">
                                                 <input type="number" id="duration-minutes-input" class="duration-input"
-                                                    min="1" max="99999" value="60">
+                                                    inputmode="numeric" min="1" max="99999" value="60">
                                                 <span class="duration-unit" id="duration-unit-label">min</span>
                                             </div>
                                         </div>
@@ -1271,7 +1271,7 @@
                                         <button type="button" id="override-count-minus" class="override-count-step-btn"
                                             aria-label="Decrease">−</button>
                                         <input type="number" id="override-count" class="override-count-input form-input"
-                                            value="50" min="5" max="6600">
+                                            inputmode="numeric" value="50" min="5" max="6600">
                                         <button type="button" id="override-count-plus" class="override-count-step-btn"
                                             aria-label="Increase">+</button>
                                     </div>
@@ -1455,17 +1455,17 @@
                             <label class="time-label" id="pause-for-label">PAUSE FOR</label>
                             <div class="pause-duration-inputs">
                                 <div class="pause-time-input-group">
-                                    <input type="number" id="pause-days" min="0" max="365" value="0"
+                                    <input type="number" id="pause-days" inputmode="numeric" min="0" max="365" value="0"
                                         class="pause-time-input">
                                     <span class="pause-time-unit">days</span>
                                 </div>
                                 <div class="pause-time-input-group">
-                                    <input type="number" id="pause-hours" min="0" max="23" value="0"
+                                    <input type="number" id="pause-hours" inputmode="numeric" min="0" max="23" value="0"
                                         class="pause-time-input">
                                     <span class="pause-time-unit">hrs</span>
                                 </div>
                                 <div class="pause-time-input-group">
-                                    <input type="number" id="pause-minutes" min="0" max="59" value="30"
+                                    <input type="number" id="pause-minutes" inputmode="numeric" min="0" max="59" value="30"
                                         class="pause-time-input">
                                     <span class="pause-time-unit">mins</span>
                                 </div>
@@ -2169,7 +2169,7 @@
                                     <span id="grace-period-hint-text" class="settings-row-hint">Seconds to re-enable before the browser closes.</span>
                                 </div>
                                 <div id="settings-grace-input-wrap" class="settings-row-control settings-grace-input-wrap">
-                                    <input id="grace-seconds-input" type="number" min="5" max="300" step="5"
+                                    <input id="grace-seconds-input" type="number" inputmode="numeric" min="5" max="300" step="5"
                                         class="grace-seconds-input" value="60" aria-describedby="grace-period-hint-text">
                                     <span id="grace-input-lock-tooltip" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
                                 </div>
