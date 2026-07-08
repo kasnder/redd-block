@@ -213,6 +213,10 @@ pub struct SetBlockEndStateRequest {
 pub struct ActivityPickerRequest {
     pub initial_application_token_data: Option<Vec<String>>,
     pub initial_category_token_data: Option<Vec<String>>,
+    /// "allowlist" when picking for an allow-mode focus space — the iOS picker
+    /// then expands category picks into individual member app tokens.
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]

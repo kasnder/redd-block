@@ -579,10 +579,21 @@ double-checks in `startBlock` (returns `success: false`) and, as a last-resort
 belt-and-braces guard, the appliers clamp deterministically (over-blocking is
 the fail-safe direction for a blocker).
 
-**Category tokens are excluded from allow mode.** Apple's `.all(except:)`
-takes application tokens only; categories cannot be exceptions. The start gate
-warns and proceeds with app tokens only. In `specific-block` mode category
-shields behave as before.
+**Category tokens are excluded from allow mode; the picker expands them
+instead.** Apple's `.all(except:)` takes application tokens only; categories
+cannot be exceptions. When the picker opens for an allow-mode focus space
+(`mode: "allowlist"` on `show_activity_picker`), the selection is created with
+`FamilyActivitySelection(includeEntireCategory: true)`, so ticking a category
+returns individual tokens for every app currently in it — those are stored and
+enforced; the category token itself is dropped by the plugin. This also covers
+iOS auto-promoting "all apps in a category" ticks to a category token. Caveat:
+the expansion is a snapshot — apps installed into that category later are NOT
+allowed until re-selected. Category tokens can therefore only reach an
+allow-mode start via legacy selections (or a block→allow mode switch); the
+start gate then warns (OK/Cancel) and proceeds with app tokens only. In
+`specific-block` mode category shields behave as before, and the block-mode
+picker still returns unexpanded category tokens (expanding them would risk
+Apple's silent 50-token `shield.applications` cap).
 
 **Shield attribution.** Allowlist-blocked targets are "everything else", so no
 per-target snapshot row exists. `ShieldAttributionSection.allowlistFallback`

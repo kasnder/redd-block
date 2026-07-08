@@ -539,6 +539,21 @@ function formatIOSScreenTimeSelectionLabel(selection) {
     return parts.length > 0 ? `${parts.join(', ')} selected (Screen Time)` : '';
 }
 
+/**
+ * Mode-aware item count an iOS Screen Time selection contributes to
+ * "Blocks {n}" / "Allows {n}". Every app token counts individually — allow-mode
+ * selections store category picks already expanded into member app tokens by
+ * the picker. Category tokens only exist on block-mode (or legacy allow-mode)
+ * selections: in block mode a category enforces as one opaque unit, so it
+ * counts as 1; in allow mode category tokens are unenforceable and count as 0.
+ */
+function countIOSScreenTimeSelectionItems(selection, allowMode) {
+    const normalized = normalizeIOSScreenTimeSelection(selection);
+    if (!normalized) return 0;
+    const appCount = normalized.applicationCount || 0;
+    return allowMode ? appCount : appCount + (normalized.categoryCount || 0);
+}
+
 function getBlocklistRegularApps(blocklist) {
     if (!Array.isArray(blocklist?.apps)) return [];
     return blocklist.apps.filter(app => typeof app === 'string' && !isScreenTimeSummaryEntry(app));
@@ -8731,9 +8746,13 @@ function setupModalListeners() {
     if (isIOS && modalBrowseBtn) {
         modalBrowseBtn.addEventListener('click', async () => {
             try {
+                // Allow mode: the native picker expands category picks into
+                // their member app tokens (the only thing `.all(except:)` can
+                // enforce) and returns no category tokens.
                 const result = await tauriAPI.showActivityPicker({
                     initialApplicationTokenData: modalIOSScreenTimeSelection?.applicationTokens || [],
-                    initialCategoryTokenData: modalIOSScreenTimeSelection?.categoryTokens || []
+                    initialCategoryTokenData: modalIOSScreenTimeSelection?.categoryTokens || [],
+                    mode: getSelectedBlocklistModalMode()
                 });
                 if (!result.cancelled && (result.applicationCount > 0 || result.categoryCount > 0)) {
                     const previousSelection = cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection);
@@ -16184,10 +16203,15 @@ function closeBlocklistModal() {
 
 /** Override / pause modal summary, e.g. "Blocks 3 websites (a.com, b.com, c.com)". */
 function formatBlocklistModalSummary(blocklist) {
+    const isAllow = isBlocklistAllowlistMode(blocklist);
     const websiteCount = blocklist.websites?.length || 0;
     const displayApps = getBlocklistDisplayApps(blocklist);
-    const appCount = displayApps.length;
-    const mode = isBlocklistAllowlistMode(blocklist)
+    // Screen Time selection is one display label but counts each app it holds.
+    const screenTimeSelection = getBlocklistIOSScreenTimeSelection(blocklist);
+    const screenTimeCount = countIOSScreenTimeSelectionItems(screenTimeSelection, isAllow);
+    const hasScreenTimeLabel = !!formatIOSScreenTimeSelectionLabel(screenTimeSelection);
+    const appCount = displayApps.length - (hasScreenTimeLabel ? 1 : 0) + screenTimeCount;
+    const mode = isAllow
         ? tSettings('blocklistModalSummaryAllows')
         : tSettings('blocklistModalSummaryBlocks');
     const metaParts = [];
@@ -20364,15 +20388,15 @@ const SETTINGS_TRANSLATIONS = {
         placeholderAppBlock: 'e.g., Safari',
         placeholderAppAllow: 'e.g., Microsoft Word',
         allowlistIosNeedsWebsitesTitle: 'No websites / apps added',
-        allowlistIosNeedsWebsites: 'Add at least one website or app to start this allow-mode focus space. Note that selecting categories is not supported for allow-mode by Screen Time.',
+        allowlistIosNeedsWebsites: 'Add at least one website or app to start this allow-mode focus space. Selecting a category in the app picker adds the apps currently in it.',
         allowlistIosDomainLimitTitle: 'Too many websites added',
         allowlistIosDomainLimit: 'This focus space has {n} websites added, but the maximum number Screen Time allows is 50. Please remove some websites and try again.',
         allowlistIosTokenLimitTitle: 'Too many apps added',
         allowlistIosTokenLimit: 'This focus space has {n} apps added, but the maximum number Screen Time allows is 50. Please remove some apps and try again.',
         allowlistIosWebOnlyConfirmTitle: 'Unsupported app types',
-        allowlistIosWebOnlyConfirm: 'App categories and apps added outside Screen Time are not supported. Would you like to start this focus space with only websites selected? Websites outside the list will be blocked, and all apps will stay usable.',
+        allowlistIosWebOnlyConfirm: 'App categories and apps added outside Screen Time are not supported. Re-selecting apps with the app picker adds a category’s apps individually. Would you like to start this focus space with only websites selected? Websites outside the list will be blocked, and all apps will stay usable.',
         allowlistIosCategoriesIgnoredTitle: 'App categories are not supported',
-        allowlistIosCategoriesIgnored: 'Screen Time does not support adding app categories to allow-mode focus spaces. The selected categories will be ignored, and only the individually selected apps will stay usable.',
+        allowlistIosCategoriesIgnored: 'Screen Time does not support adding app categories to allow-mode focus spaces. The selected categories will be ignored, and only the individually selected apps will stay usable. Re-selecting apps with the app picker adds a category’s apps individually.',
         overrideDifficulty: 'Stop Difficulty',
         overrideMethod: 'Method',
         overrideWordsToType: 'Words to type',
@@ -21168,15 +21192,15 @@ const SETTINGS_TRANSLATIONS = {
         placeholderAppBlock: 'fx Safari',
         placeholderAppAllow: 'fx Microsoft Word',
         allowlistIosNeedsWebsitesTitle: 'Ingen hjemmesider/apps tilføjet',
-        allowlistIosNeedsWebsites: 'Tilføj mindst én hjemmeside eller app for at starte dette fokusrum i tilladelsestilstand. Bemærk, at valg af kategorier ikke understøttes af Screen Time i tilladelsestilstand.',
+        allowlistIosNeedsWebsites: 'Tilføj mindst én hjemmeside eller app for at starte dette fokusrum i tilladelsestilstand. Vælger du en kategori i app-vælgeren, tilføjes de apps, den aktuelt indeholder.',
         allowlistIosDomainLimitTitle: 'For mange hjemmesider tilføjet',
         allowlistIosDomainLimit: 'Dette fokusrum har {n} hjemmesider tilføjet, men Screen Time tillader højst 50. Fjern nogle hjemmesider og prøv igen.',
         allowlistIosTokenLimitTitle: 'For mange apps tilføjet',
         allowlistIosTokenLimit: 'Dette fokusrum har {n} apps tilføjet, men Screen Time tillader højst 50. Fjern nogle apps og prøv igen.',
         allowlistIosWebOnlyConfirmTitle: 'Ikke-understøttede apptyper',
-        allowlistIosWebOnlyConfirm: 'App-kategorier og apps tilføjet uden for Screen Time understøttes ikke. Vil du starte dette fokusrum med kun de valgte hjemmesider? Hjemmesider uden for listen blokeres, og alle apps forbliver brugbare.',
+        allowlistIosWebOnlyConfirm: 'App-kategorier og apps tilføjet uden for Screen Time understøttes ikke. Vælger du apps igen med app-vælgeren, tilføjes en kategoris apps individuelt. Vil du starte dette fokusrum med kun de valgte hjemmesider? Hjemmesider uden for listen blokeres, og alle apps forbliver brugbare.',
         allowlistIosCategoriesIgnoredTitle: 'App-kategorier understøttes ikke',
-        allowlistIosCategoriesIgnored: 'Screen Time understøtter ikke app-kategorier i fokusrum i tilladelsestilstand. De valgte kategorier ignoreres, og kun de individuelt valgte apps forbliver brugbare.',
+        allowlistIosCategoriesIgnored: 'Screen Time understøtter ikke app-kategorier i fokusrum i tilladelsestilstand. De valgte kategorier ignoreres, og kun de individuelt valgte apps forbliver brugbare. Vælger du apps igen med app-vælgeren, tilføjes en kategoris apps individuelt.',
         overrideDifficulty: 'Stop-sværhedsgrad',
         overrideMethod: 'Metode',
         overrideWordsToType: 'Ord at taste',
@@ -22134,7 +22158,12 @@ function buildBlocklistCardMetaHtml(blocklist) {
     const isAllow = isBlocklistAllowlistMode(blocklist);
     const showDetails = blocklist?.showItemDetails !== false;
     const labels = collectBlocklistCardSummaryLabels(blocklist);
-    const count = labels.length;
+    // The Screen Time selection renders as one aggregate label but counts
+    // every app it contains (mode-aware), so {n} reflects true item totals.
+    const screenTimeSelection = getBlocklistIOSScreenTimeSelection(blocklist);
+    const screenTimeCount = countIOSScreenTimeSelectionItems(screenTimeSelection, isAllow);
+    const hasScreenTimeLabel = !!formatIOSScreenTimeSelectionLabel(screenTimeSelection);
+    const count = labels.length - (hasScreenTimeLabel ? 1 : 0) + screenTimeCount;
     const prefixKey = isAllow ? 'blocklistCardAllowsFmt' : 'blocklistCardBlocksFmt';
     const prefixClass = isAllow ? 'blocklist-meta-prefix--allow' : 'blocklist-meta-prefix--block';
     const prefix = escapeHtml(tSettingsFmt(prefixKey, { n: String(count) }));

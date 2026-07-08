@@ -100,6 +100,11 @@ class SetSchedulesArgs: Decodable {
 class ShowActivityPickerArgs: Decodable {
     let initialApplicationTokenData: [String]?
     let initialCategoryTokenData: [String]?
+    /// "allowlist" when picking for an allow-mode focus space. Allow-mode
+    /// enforcement (`.all(except:)`) only accepts individual app tokens, so
+    /// the picker then expands category picks into their member apps
+    /// (`includeEntireCategory`) and drops the category tokens themselves.
+    let mode: String?
 }
 
 // One-off DeviceActivity (pause resume / block end)
@@ -240,10 +245,12 @@ struct ActivityPickerView: View {
     @State private var selection: FamilyActivitySelection
     @State private var step: PickerStep = .picker
     let initialSelection: FamilyActivitySelection
+    let isAllowMode: Bool
 
-    init(initialSelection: FamilyActivitySelection = FamilyActivitySelection(), onDone: @escaping (FamilyActivitySelection) -> Void, onCancel: @escaping () -> Void) {
+    init(initialSelection: FamilyActivitySelection = FamilyActivitySelection(), isAllowMode: Bool = false, onDone: @escaping (FamilyActivitySelection) -> Void, onCancel: @escaping () -> Void) {
         self._selection = State(initialValue: initialSelection)
         self.initialSelection = initialSelection
+        self.isAllowMode = isAllowMode
         self.onDone = onDone
         self.onCancel = onCancel
     }
@@ -254,8 +261,18 @@ struct ActivityPickerView: View {
         NavigationStack {
             Group {
                 if step == .picker {
-                    FamilyActivityPicker(selection: $selection)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    VStack(spacing: 0) {
+                        if isAllowMode {
+                            Text("Selecting a category allows the apps currently in it — each app is added individually.")
+                                .font(.footnote)
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal)
+                                .padding(.vertical, 8)
+                        }
+                        FamilyActivityPicker(selection: $selection)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
                 } else {
                     SelectedReviewView(selection: selection, onDone: { onDone(selection) })
                 }
@@ -420,22 +437,28 @@ class ScreentimePlugin: Plugin {
                 topVC = presented
             }
 
+            let isAllowMode = args.mode == "allowlist"
             let hasExplicitInitialSelection =
                 args.initialApplicationTokenData != nil || args.initialCategoryTokenData != nil
             let initialSelection = decodeSelection(
                 applicationTokenData: args.initialApplicationTokenData,
-                categoryTokenData: args.initialCategoryTokenData
-            ) ?? (hasExplicitInitialSelection ? FamilyActivitySelection() : ScreentimePlugin.currentSelection)
-            
+                categoryTokenData: args.initialCategoryTokenData,
+                includeEntireCategory: isAllowMode
+            ) ?? (hasExplicitInitialSelection ? FamilyActivitySelection(includeEntireCategory: isAllowMode) : ScreentimePlugin.currentSelection)
+
             let pickerView = ActivityPickerView(
                 initialSelection: initialSelection,
+                isAllowMode: isAllowMode,
                 onDone: { selection in
                     // Store the selection
                     ScreentimePlugin.currentSelection = selection
 
+                    // Allow mode: `includeEntireCategory` expanded category picks
+                    // into member app tokens, which are the only thing
+                    // `.all(except:)` can enforce — drop the category tokens.
                     let encodedAppTokens = self.encodeApplicationTokens(selection.applicationTokens)
-                    let encodedCategoryTokens = self.encodeCategoryTokens(selection.categoryTokens)
-                    
+                    let encodedCategoryTokens = isAllowMode ? [] : self.encodeCategoryTokens(selection.categoryTokens)
+
                     // Dismiss the picker
                     topVC.dismiss(animated: true) {
                         var response: [String: Any] = [
@@ -443,7 +466,7 @@ class ScreentimePlugin: Plugin {
                             "applicationTokens": encodedAppTokens,
                             "categoryTokens": encodedCategoryTokens,
                             "applicationCount": selection.applicationTokens.count,
-                            "categoryCount": selection.categoryTokens.count
+                            "categoryCount": isAllowMode ? 0 : selection.categoryTokens.count
                         ]
                         invoke.resolve(response)
                     }
@@ -509,7 +532,8 @@ class ScreentimePlugin: Plugin {
 
     private func decodeSelection(
         applicationTokenData: [String]?,
-        categoryTokenData: [String]?
+        categoryTokenData: [String]?,
+        includeEntireCategory: Bool = false
     ) -> FamilyActivitySelection? {
         let appTokens = decodeApplicationTokens(applicationTokenData)
         let categoryTokens = decodeCategoryTokens(categoryTokenData)
@@ -518,7 +542,7 @@ class ScreentimePlugin: Plugin {
             return nil
         }
 
-        var selection = FamilyActivitySelection()
+        var selection = FamilyActivitySelection(includeEntireCategory: includeEntireCategory)
         selection.applicationTokens = appTokens
         selection.categoryTokens = categoryTokens
         return selection

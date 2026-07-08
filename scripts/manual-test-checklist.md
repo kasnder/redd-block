@@ -226,8 +226,11 @@ Screen Time apps and Settings › Screen Time › Always Allowed contents first
 - [ ] Explicit-blocklist shield copy unchanged (regression)
 - [ ] >50 allowed websites: start fails with the domain-limit alert, no enforcement
 - [ ] >50 allowed apps: start fails with the app-limit alert, no enforcement
-- [ ] Categories alongside apps in an allowlist selection: "App categories are not supported" dialog with Cancel/OK — OK starts with app tokens only, Cancel aborts the start
-- [ ] Allowlist with only unenforceable apps (desktop names / categories-only): websites-only confirm dialog; decline aborts
+- [ ] Allow-mode picker shows the category-expansion footnote; ticking a category returns its member apps as individual app tokens and stores no category token (chip shows "N apps selected", N = member count)
+- [ ] Allow-mode start with a picker-expanded category: member apps stay usable, everything else shielded; no categories dialog
+- [ ] Legacy allow-mode selection with category tokens alongside apps: "App categories are not supported" dialog with Cancel/OK — OK starts with app tokens only, Cancel aborts the start
+- [ ] Allowlist with only unenforceable apps (desktop names / legacy categories-only): websites-only confirm dialog; decline aborts
+- [ ] Card "Allows {n}" / "Blocks {n}" counts every Screen Time app individually (block mode: each category still counts as 1)
 - [ ] Always Allowed app behavior recorded (expected: resists the shield)
 - [ ] Fresh-install upgrade with pre-existing shield snapshot data: shield extension renders without crashing
 - [ ] Save/edit/duplicate/import round-trips keep Allow mode; card shows "Allows N"

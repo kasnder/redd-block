@@ -187,9 +187,11 @@ pub(crate) async fn show_activity_picker<R: Runtime>(
     app: AppHandle<R>,
     initial_application_token_data: Option<Vec<String>>,
     initial_category_token_data: Option<Vec<String>>,
+    mode: Option<String>,
 ) -> Result<ActivityPickerResponse> {
     app.screentime().show_activity_picker(ActivityPickerRequest {
         initial_application_token_data,
         initial_category_token_data,
+        mode,
     })
 }
