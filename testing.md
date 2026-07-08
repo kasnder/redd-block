@@ -18,7 +18,7 @@ Each tier answers a different quality question:
 - **Tier 1**: Is our blocking logic correct as pure behavior?
 - **Tier 2**: Do app → Tauri command paths, data persistence, and migration cleanup behave correctly?
 
-No single tier is sufficient on its own. **Website blocking enforcement** (macOS Automation redirects, Windows/Firefox native messaging) is validated primarily through the **manual checklist** — Tier 2 still contains some legacy hosts-file assertions from the v1 helper era that do not prove v3 blocking works.
+No single tier is sufficient on its own. **Website blocking enforcement** (macOS Automation redirects, Windows/Firefox native messaging) is validated primarily through the **manual checklist** — Tier 2 asserts the Rust-derived enforcement snapshot (`current_blocking`), which proves derivation is correct but not that a browser actually redirects.
 
 ---
 
@@ -128,7 +128,7 @@ Default behavior with invalid/missing profile falls back to `core`.
 ### Tier 2 exact test IDs and profile coverage
 
 ### Testing Group A: One-off and schedule mechanics
-- **A1**: Legacy hosts modification path (**see limitations below**)
+- **A1**: Enforcement derivation path (start → enforced, stop → cleared)
 - **A2**: One-off start/end timing
 - **A3**: Schedule active-now path
 - **A4**: Future schedule path (**full only**)
@@ -138,7 +138,7 @@ Default behavior with invalid/missing profile falls back to `core`.
 - **A8**: Pause/resume schedule active path (**full only**)
 - **A9**: Pause natural-expiry schedule smoke (**full only**)
 - **A10**: Pause inactive schedule suppression path (**full only**)
-- **A11**: Pause state roundtrip (**full only**)
+- **A11**: Data file owns enforcement — the legacy `set_blocks_via_helper` shim is ack-only and must not affect derived enforcement (**full only**)
 
 Expected outcome for A2–A10, A11:
 - blocking and schedule state transitions succeed through save + shim command paths
@@ -150,13 +150,13 @@ Expected outcome for A2–A10, A11:
 - **B2**: One-off + schedule same blocklist (**full only**)
 
 ### Testing Group C: Clear and override semantics
-- **C1**: Scoped clear by blocklist ID (**legacy hosts assertion — see limitations**)
+- **C1**: Scoped clear by blocklist ID (shim ack + frontend clear path)
 - **C2**: Clear-all manual blocks (**full only**)
 - **C3**: Max difficulty blocklist start/clear path (**full only**)
 
-### Testing Group E: Hosts safety and cleanup invariants
-- **E1**: Clean hosts command path (v1 migration cleanup — strips markers if present)
-- **E2**: Diagnostics contract
+### Testing Group E: Legacy-command and diagnostics invariants
+- **E1**: Clean hosts command path (v1 migration cleanup — succeeds and is idempotent; v3 never writes hosts)
+- **E2**: Diagnostics contract (v3 shim: always-ready helper status, `app_version` + `backend` label)
 
 ### Testing Group F: App-block command-path checks (non-visual)
 - **F1**: Set blocked apps command path (**full only**)
@@ -204,10 +204,11 @@ that surface is manual checklist section 15.
 
 ### Important limitations
 
-- **All of groups A, B, C, and E** read back state through `get_helper_diagnostics`, whose v3 shim returns only `{ app_version, backend }` — no `success` flag and no hosts payload. Every one of those tests therefore fails with "diagnostics command failed" on v3. They validate legacy v1 helper assumptions and need rewriting against the modern read-back (`get_system_diagnostics` → `current_blocking`, the pattern Group H uses).
+- All groups now assert the Rust-derived enforcement snapshot (`get_system_diagnostics` → `current_blocking`), not the removed v1 hosts payload. This proves derivation and command paths, **not** browser-visible redirects.
+- The legacy `*_via_helper` clear/set commands are acknowledgment-only shims on v3; the real clear path is the frontend mutating app data and saving. The rewritten C/B tests exercise both (shim ack + real path); A11 pins that shim payloads alone never affect enforcement.
 - Some checks are command-path assertions, not UI-visible assertions.
 - Not a substitute for manual Automation TCC flows, extension install, or enforcer grace UX.
-- **Tech debt:** rewrite Tier 2 website assertions for v3 (Automation + native host) — tracked alongside renaming `updateHostsFile()`.
+- **Tech debt:** renaming `updateHostsFile()` (legacy name; it drives v3 sync).
 
 ---
 
@@ -243,7 +244,7 @@ Run these before merging changes to `web_automation.rs`, `native_host.rs`,
 ## Tier Comparison
 
 - **Tier 1 (logic)**: high breadth of logic permutations, zero system mutation.
-- **Tier 2 (integration)**: moderate breadth, Tauri command paths + stale hosts checks (Group H uses the modern `current_blocking` read-back).
+- **Tier 2 (integration)**: moderate breadth, Tauri command paths with the `current_blocking` enforcement snapshot as read-back.
 - **Rust unit tests**: enforcement decision logic (URL matching, allowlist composition, payload derivation).
 - **Manual checklist**: required for website enforcement, permissions, enforcer, and visual UX.
 
@@ -281,7 +282,7 @@ For release, run the **manual test checklist** (section **14. iOS-Specific**, in
 - **Tier 1 not running:**
   - confirm `src/index.html` includes `test-utils.js` and `blocking-tests.js`.
   - confirm shortcut handler in `src/app.js` is active in current build.
-- **Tier 2 failing across groups A/B/C/E with "diagnostics command failed":**
-  - expected on v3 until those legacy hosts-era tests are rewritten against `get_system_diagnostics` — use Group H and the manual checklist for website blocking instead.
+- **Tier 2 failing with "current_blocking missing from system diagnostics":**
+  - confirm the `get_system_diagnostics` command is registered and `tauriAPI.getSystemDiagnostics` exists in `src/app.js`.
 - **Tier 2 failing at setup/teardown:**
   - confirm `window.__REDDBLOCK_INTERNALS__` exports are present from `src/app.js`.
