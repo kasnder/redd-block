@@ -7652,15 +7652,25 @@ body.ios .eula-onboarding-desktop-footer {
     display: none;
 }
 
+/* Mirror the Screen Time grant screen: icon centered above everything,
+   then the same 24px/700 centered title and a centered subtitle. */
 body.ios .eula-onboarding-ios-hero {
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
     margin-bottom: 12px;
 }
 
 body.ios .eula-onboarding-ios-hero .onboarding-app-icon {
-    width: 52px;
-    height: 52px;
-    margin: 0;
+    width: 72px;
+    height: 72px;
+    margin: 0 auto 20px;
     flex-shrink: 0;
+}
+
+body.ios .eula-onboarding-ios-hero .welcome-onboarding-title-text {
+    max-width: none;
+    text-align: center;
 }
 
 body.ios .eula-welcome-title-ios {
@@ -7670,8 +7680,9 @@ body.ios .eula-welcome-title-ios {
     font-size: 24px;
     font-weight: 700;
     line-height: 1.2;
+    letter-spacing: -0.01em;
     color: var(--text-secondary);
-    text-align: left;
+    text-align: center;
 }
 
 body.ios .eula-mobile-subtitle {
@@ -7679,12 +7690,12 @@ body.ios .eula-mobile-subtitle {
     margin: 6px 0 0;
     max-width: none;
     width: auto;
-    font-size: 14px;
-    line-height: 1.45;
+    font-size: 15px;
+    line-height: 1.5;
     color: var(--text-muted);
-    white-space: pre-line;
+    white-space: normal;
     text-wrap: wrap;
-    text-align: left;
+    text-align: center;
 }
 
 #eula-onboarding .rebrand-definition-card {
@@ -7848,9 +7859,11 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     margin: 0;
 }
 
+/* The iOS EULA title (#eula-welcome-title-ios) is deliberately NOT in this
+   group — it mirrors the Screen Time grant screen instead (see body.ios
+   .eula-welcome-title-ios). */
 #welcome-onboarding-title,
-#eula-welcome-title,
-#eula-welcome-title-ios {
+#eula-welcome-title {
     margin: 0;
     font-family: var(--font-heading);
     font-size: 28px;
@@ -8330,7 +8343,6 @@ body.dark-mode .welcome-demo-toggle:hover{
 
     #welcome-onboarding-title,
 #eula-welcome-title,
-#eula-welcome-title-ios,
 #fda-onboarding-title,
 #migration-post-header-title{
         font-size: 24px;
