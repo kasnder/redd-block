@@ -8945,14 +8945,35 @@ function setupModalListeners() {
     const emojiPicker = emojiPickerPopover?.querySelector('emoji-picker');
 
     if (customEmojiSwatch && emojiPickerPopover && emojiPicker) {
+        function readSafeAreaInsetTop() {
+            const probe = document.createElement('div');
+            probe.style.cssText = 'position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;padding-top:env(safe-area-inset-top,0px);';
+            document.body.appendChild(probe);
+            const inset = parseFloat(getComputedStyle(probe).paddingTop) || 0;
+            probe.remove();
+            return inset;
+        }
+
+        /** Lowest Y (viewport coords) the picker top may use without overlapping safe area / chrome. */
+        function getEmojiPickerMinTop(padding) {
+            const safeTop = readSafeAreaInsetTop();
+            const blocklistModal = document.getElementById('blocklist-modal');
+            if (blocklistModal && !blocklistModal.classList.contains('hidden')) {
+                const modalHeader = blocklistModal.querySelector('.mobile-modal-header');
+                if (modalHeader) {
+                    return modalHeader.getBoundingClientRect().bottom + padding;
+                }
+            }
+            const titleBar = document.querySelector('.title-bar');
+            const titleBarBottom = titleBar?.classList.contains('hidden')
+                ? 0
+                : (titleBar?.getBoundingClientRect().bottom ?? 0);
+            return Math.max(safeTop + padding, titleBarBottom + padding);
+        }
+
         function positionEmojiPickerPopover() {
             const gap = 8;
             const padding = 8;
-            const titleBarHeight = parseFloat(
-                getComputedStyle(document.documentElement).getPropertyValue('--title-bar-height')
-            ) || 44;
-            const titleBarHidden = document.querySelector('.title-bar')?.classList.contains('hidden');
-            const minTop = titleBarHidden ? padding : titleBarHeight + padding;
 
             emojiPickerPopover.style.top = '';
             emojiPickerPopover.style.bottom = '';
@@ -8971,10 +8992,11 @@ function setupModalListeners() {
             const popoverHeight = popoverRect.height;
             const popoverWidth = popoverRect.width;
 
-            const spaceAbove = rect.top - minTop;
-            let top = spaceAbove >= popoverHeight + gap
-                ? rect.top - popoverHeight - gap
-                : rect.bottom + gap;
+            const minTop = getEmojiPickerMinTop(padding);
+            const aboveTop = rect.top - popoverHeight - gap;
+            const belowTop = rect.bottom + gap;
+            // Place above only when the picker's top edge stays below the safe/chrome line.
+            let top = aboveTop >= minTop ? aboveTop : belowTop;
             top = Math.max(minTop, Math.min(top, window.innerHeight - popoverHeight - padding));
 
             let left = rect.right - popoverWidth;
