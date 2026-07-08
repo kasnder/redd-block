@@ -1,6 +1,6 @@
 [package]
 name = "redd-block"
-version = "4.0.0"
+version = "3.5.0"
 description = "ReDD Blocker: Space for Focus"
 authors = ["The Reduce Digital Distraction Project <team@reddfocus.org>"]
 license = "CC-BY-NC-ND-3.0"
