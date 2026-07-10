@@ -22,7 +22,6 @@ import screenshotFirefoxStep2 from './images/toggle-firefox-private-windows-2.pn
 import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
 import screenshotSafariStep2 from './images/mac-extension-settings-2.png';
 import screenshotAutomationSettings from './images/automation-settings.png';
-import screenshotEnableFda from './images/enable-fda.png';
 import snoozeIconUrl from './images/snooze.png';
 import welcomeDemoVideoUrl from './reddblock-video.mp4';
 import {
@@ -81,7 +80,7 @@ import {
     setupEnforcerUiAlerts,
     setupSettingsEnforcementSection,
     setupWebAutomationUiAlerts,
-    syncSafariFdaOnboardingGrantButton,
+    applySafariFdaOnboardingLanguage,
     syncBlockingMethodLabelIcons,
     startWebAutomationWatcher,
     syncMigrationMacHowto,
@@ -2681,28 +2680,6 @@ export function applyEulaOnboardingLanguage() {
         backBtn.textContent = tSettings('eulaBackBtn');
         backBtn.classList.toggle('hidden', state.isIOS);
     }
-}
-
-/** Safari FDA onboarding — same layout/copy pattern as the EULA screen. */
-export function applySafariFdaOnboardingLanguage() {
-    const shield = document.getElementById('fda-onboarding-shield-logo');
-    if (shield) {
-        shield.src = logoReddShieldUrl;
-        shield.alt = '';
-    }
-    const screenshot = document.getElementById('fda-onboarding-screenshot');
-    if (screenshot) screenshot.src = screenshotEnableFda;
-
-    const title = document.getElementById('fda-onboarding-title');
-    if (title) title.textContent = tSettings('safariFdaOnboardingTitle');
-
-    const howto = document.getElementById('fda-onboarding-howto');
-    if (howto) howto.textContent = tSettings('safariFdaOnboardingHowto');
-
-    const backBtn = document.getElementById('fda-onboarding-back-btn');
-    if (backBtn) backBtn.textContent = tSettings('eulaBackBtn');
-
-    void syncSafariFdaOnboardingGrantButton();
 }
 
 /** Welcome onboarding screen — localized in the same way as the EULA screen. */

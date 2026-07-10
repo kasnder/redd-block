@@ -21,13 +21,14 @@ import screenshotFirefoxStep2 from './images/toggle-firefox-private-windows-2.pn
 import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
 import screenshotSafariStep2 from './images/mac-extension-settings-2.png';
 import screenshotAutomationSettings from './images/automation-settings.png';
+import screenshotEnableFda from './images/enable-fda.png';
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { SETTINGS_TRANSLATIONS, getSettingsLanguage, tSettings, tSettingsFmt } from './i18n.js';
 import { hasAnyEnforcedBlocks } from './schedule-engine.js';
 import { isModalVisible } from './modal-manager.js';
 import { kickClockNow } from './render.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
-import { applySafariFdaOnboardingLanguage, setLanguagePickerOpen } from './app.js';
+import { setLanguagePickerOpen } from './app.js';
 import { reconcileBlockingWarningShell, showExclusiveOnboardingScreen, updateOnboardingVisibility } from './blocking-platform.js';
 import {
     EXT_ONBOARDING_DISMISSED_KEY, MIGRATION_POLL_MS, applyEnforcementDescCopy,
@@ -260,6 +261,28 @@ export function hideSafariFdaOnboardingUi() {
         clearInterval(session.pollHandle);
         session.pollHandle = null;
     }
+}
+
+/** Safari FDA onboarding — same layout/copy pattern as the EULA screen. */
+export function applySafariFdaOnboardingLanguage() {
+    const shield = document.getElementById('fda-onboarding-shield-logo');
+    if (shield) {
+        shield.src = logoReddShieldUrl;
+        shield.alt = '';
+    }
+    const screenshot = document.getElementById('fda-onboarding-screenshot');
+    if (screenshot) screenshot.src = screenshotEnableFda;
+
+    const title = document.getElementById('fda-onboarding-title');
+    if (title) title.textContent = tSettings('safariFdaOnboardingTitle');
+
+    const howto = document.getElementById('fda-onboarding-howto');
+    if (howto) howto.textContent = tSettings('safariFdaOnboardingHowto');
+
+    const backBtn = document.getElementById('fda-onboarding-back-btn');
+    if (backBtn) backBtn.textContent = tSettings('eulaBackBtn');
+
+    void syncSafariFdaOnboardingGrantButton();
 }
 
 export async function syncSafariFdaOnboardingGrantButton() {
