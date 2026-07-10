@@ -9,6 +9,7 @@ import {
     formatIOSScreenTimeSelectionLabel,
 } from './blocklist-utils.js';
 import { displayNameForBlockedApp } from './blocking-platform.js';
+import { isBlocklistAllowlistMode } from './list-mode.js';
 
 /**
  * Mode-aware item count an iOS Screen Time selection contributes to
@@ -82,7 +83,7 @@ export function collectBlocklistCardSummaryLabels(blocklist) {
 
 /** Room card line, e.g. "Blocks 5 · instagram, youtube, Firefox". */
 export function buildBlocklistCardMetaHtml(blocklist) {
-    const isAllow = blocklist?.mode === 'allowlist';
+    const isAllow = isBlocklistAllowlistMode(blocklist);
     const showDetails = blocklist?.showItemDetails !== false;
     const labels = collectBlocklistCardSummaryLabels(blocklist);
     const screenTimeSelection = getBlocklistIOSScreenTimeSelection(blocklist);

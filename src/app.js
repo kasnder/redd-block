@@ -94,6 +94,13 @@ import {
 } from './schedule-overlay.js';
 import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, openPauseModal, openResumeConfirmation, proceedWithBlock, proceedWithPause, proceedWithSchedule, proceedWithScheduleEdit, renderScheduleConfirmSegments, setBtnActionLabel, setOverrideCountMaxMode, setStartBlockBtnLeadingIcon, setStartConfirmPrimaryLabel, startBlock, syncAllStopBtnLabelFits, syncOverrideCountUi, syncPauseDurationRowLayout, updateOverridePreview, updatePauseRestartTime, openOverrideModal, updatePauseButtonAppearance, openScheduleOverrideModal, showScheduleConfirmModal, showScheduleEditConfirmModal, syncStopBtnLabelFit, setStartBtnBlocklistInfo } from './confirm-modals.js';
 import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, undoDelete, deleteBlocklist, clearPendingScheduleDraft, pendingDelete, saveBlocklistOrderFromDOM, getBlocklistScheduleDraft, saveBlocklistScheduleDraft, isBlocklistCurrentlyActive } from './blocklists.js';
+import {
+    getSelectedBlocklistModalMode,
+    isBlocklistAllowlistMode,
+    setBlocklistModalMode,
+    syncModalAppPlaceholder,
+    updateBlocklistModalModeLabels,
+} from './list-mode.js';
 import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderNowBlockingRow, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
 import { formatTitleBarScheduleStartWhen, hasAnyEnforcedBlocks, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, pickEarliestUpcomingScheduledBlock, refreshDesktopHelperStatus, resolveOneShotOccurrences, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
@@ -136,55 +143,6 @@ export const IOS_STOP_BTN_META_COLLAPSE_SLACK_PX = 24;
 
 // Schedule mode state
 state.scheduleSegments = getDefaultScheduleSegments(); // Array of time segments with per-segment days
-
-function isBlocklistAllowlistMode(blocklist) {
-    return blocklist?.mode === 'allowlist';
-}
-
-function getSelectedBlocklistModalMode() {
-    const selected = document.querySelector('#blocklist-mode-toggle .mode-btn.active');
-    return selected?.dataset?.mode === 'allowlist' ? 'allowlist' : 'blocklist';
-}
-
-function setBlocklistModalMode(mode) {
-    const normalized = mode === 'allowlist' ? 'allowlist' : 'blocklist';
-    document.querySelectorAll('#blocklist-mode-toggle .mode-btn').forEach((btn) => {
-        btn.classList.toggle('active', btn.dataset.mode === normalized);
-    });
-    updateBlocklistModalModeLabels(normalized);
-}
-
-function updateBlocklistModalModeLabels(mode) {
-    const isAllow = mode === 'allowlist';
-    const assignText = (id, text) => {
-        const el = document.getElementById(id);
-        if (el) el.textContent = text;
-    };
-    assignText('blocklist-websites-label', tSettings(isAllow ? 'websitesAllow' : 'websites'));
-    assignText('blocklist-apps-label', tSettings(isAllow ? 'appsAllow' : 'apps'));
-    assignText(
-        'blocklist-websites-tooltip',
-        tSettings(isAllow ? 'websitesAllowTooltip' : 'websitesTooltip'),
-    );
-    assignText(
-        'blocklist-apps-tooltip',
-        tSettings(isAllow ? 'appsAllowTooltip' : 'appsTooltip'),
-    );
-    assignText('blocklist-mode-hint', tSettings(isAllow ? 'allowlistModeHint' : 'blocklistModeHint'));
-    assignText(
-        'show-item-details-label',
-        tSettings(isAllow ? 'listAllowedOnCard' : 'listBlockedOnCard'),
-    );
-    const websiteInput = document.getElementById('modal-website-input');
-    if (websiteInput) {
-        websiteInput.placeholder = tSettings(isAllow ? 'placeholderWebsiteAllow' : 'placeholderWebsiteBlock');
-    }
-    const appInput = document.getElementById('modal-app-input');
-    if (appInput) {
-        syncModalAppPlaceholder();
-    }
-}
-
 
 async function ensureIOSAllowlistStartable(blocklist) {
     if (!state.isIOS || !isBlocklistAllowlistMode(blocklist)) return true;
@@ -3169,13 +3127,6 @@ function syncModalWebsitePlaceholder() {
     const el = document.getElementById('modal-website-input');
     if (!el || el.classList.contains('input-error')) return;
     el.placeholder = tSettings('placeholderWebsiteExample');
-}
-
-/** Blocklist modal: always show the example placeholder in the apps input row. */
-function syncModalAppPlaceholder() {
-    const el = document.getElementById('modal-app-input');
-    if (!el || el.classList.contains('input-error')) return;
-    el.placeholder = tSettings('placeholderAppExample');
 }
 
 export function applySettingsLanguage() {
