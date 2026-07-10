@@ -3,6 +3,7 @@
 import { state } from './state.js';
 import { tSettings, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { isBlockAlwaysOn, ensureIOSBlocklistSelectionReady } from './blocklist-utils.js';
+import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import { isNonRepeatingSchedule, isSchedulePausedNow, resolveOneShotOccurrences } from './schedule-engine.js';
 import { saveData } from './persistence.js';
 import { clearPendingScheduleDraft } from './blocklists.js';
@@ -1300,6 +1301,7 @@ export async function startSchedule() {
     }
 
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
+    if (!await ensureIOSAllowlistStartable(blocklist)) return;
 
     // Normal start mode - check that at least one segment has days
     const hasAnyDays = state.scheduleSegments.some(seg => seg.days && seg.days.length > 0);

@@ -16,6 +16,7 @@ import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndT
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { bindUiZoomLayoutObserver, scheduleSelectionPromptLayout, scheduleUiZoomResponsiveLayout } from './theme.js';
+import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import {
     IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
     buildWordChallengeState, clampSameDayMinutes, formatConfirmModalOverrideTypingLine,
@@ -593,6 +594,7 @@ export async function proceedWithSchedule() {
     const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
     if (!blocklist) return;
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
+    if (!await ensureIOSAllowlistStartable(blocklist)) return;
 
     // v2: no helper to install. The app itself is the engine; if it
     // launched, blocking works. The legacy helper-install-modal
@@ -1850,6 +1852,11 @@ export async function proceedWithBlock() {
         startBtn.innerHTML = getStartBlockButtonHTML();
         return;
     }
+    if (!await ensureIOSAllowlistStartable(blocklist)) {
+        startBtn.disabled = false;
+        startBtn.innerHTML = getStartBlockButtonHTML();
+        return;
+    }
 
     const block = {
         id: generateId(),
@@ -2174,6 +2181,7 @@ export function openBlocklistModal(blocklist = null) {
     }
 
     document.getElementById('modal-title').textContent = blocklist ? tSettings('editBlocklist') : tSettings('createBlocklist');
+    setBlocklistModalMode(blocklist?.mode || 'blocklist');
 
     const modalName = truncateBlocklistName(blocklist?.name || '');
     document.getElementById('blocklist-name').value = modalName;
@@ -2458,7 +2466,11 @@ export function formatBlocklistModalSummary(blocklist) {
     const websiteCount = blocklist.websites?.length || 0;
     const displayApps = getBlocklistDisplayApps(blocklist);
     const appCount = displayApps.length;
-    const mode = blocklist.mode === 'allowlist' ? 'Allows' : 'Blocks';
+    const mode = tSettings(
+        blocklist.mode === 'allowlist'
+            ? 'blocklistModalSummaryAllows'
+            : 'blocklistModalSummaryBlocks'
+    );
     const metaParts = [];
 
     if (websiteCount > 0) {
