@@ -58,6 +58,9 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 #[cfg(target_os = "ios")]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
+#[cfg(target_os = "android")]
+use tauri::{WebviewUrl, WebviewWindowBuilder};
+
 pub mod commands;
 #[cfg(target_os = "macos")]
 pub mod cross_app_consent;
@@ -94,28 +97,28 @@ tauri_nspanel::tauri_panel! {
     })
 }
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod app_watcher;
 #[cfg(target_os = "macos")]
 pub mod app_group;
 #[cfg(target_os = "macos")]
 pub mod window_inventory;
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod enforcer;
 // JOMO-style website blocking via macOS Automation (Apple Events) — the
 // macOS replacement for the Safari/Chromium extension. Firefox stays on
 // the extension + enforcer path.
 #[cfg(target_os = "macos")]
 pub mod web_automation;
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod native_host;
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod native_host_install;
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod extension_install;
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod blocking_method;
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod profile_scan;
 #[cfg(target_os = "macos")]
 pub mod safari_services;
@@ -209,7 +212,7 @@ pub fn run() {
     // Windows, this also means clicking the app icon while it's
     // already running focuses the existing window instead of
     // spawning a duplicate.
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         use tauri::Manager;
         if let Some(w) = app.get_webview_window("main") {
@@ -243,7 +246,7 @@ pub fn run() {
     // hidden in the tray rather than popping the window on every
     // login. Plain double-click from Finder / Start menu doesn't
     // pass the flag, so the window shows normally there.
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let builder = builder.plugin(tauri_plugin_autostart::init(
         tauri_plugin_autostart::MacosLauncher::LaunchAgent,
         Some(vec!["--autostart"]),
@@ -254,6 +257,12 @@ pub fn run() {
     // same Rust native host the Windows target uses).
     #[cfg(target_os = "ios")]
     let builder = builder.plugin(tauri_plugin_screentime::init());
+
+    // Android blocking runs entirely in Kotlin (AccessibilityService +
+    // WorkManager) — this plugin is a thin marshaling bridge only, no
+    // background work on the Rust side.
+    #[cfg(target_os = "android")]
+    let builder = builder.plugin(tauri_plugin_android_blocker::init());
 
     builder.setup(|app| {
             // Initialise tauri-plugin-log on EVERY build, not just
@@ -595,6 +604,13 @@ pub fn run() {
                     .build()?;
             }
 
+            // Create main window on Android — full screen webview
+            #[cfg(target_os = "android")]
+            {
+                let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+                    .build()?;
+            }
+
             // Tray icon (desktop only) — no right-click menu by design:
             // exiting the app would tear down the enforcer/watcher and
             // silently drop active blocks. Left-click reveals/focuses
@@ -632,7 +648,7 @@ pub fn run() {
             // browser if the user doesn't fix it within the grace
             // window — that's the whole point of the migration, so
             // there's no reason to gate it behind a frontend opt-in.
-            #[cfg(not(target_os = "ios"))]
+            #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
                 commands::app_blocking::register(app);
                 commands::enforcement::register(app);
@@ -685,12 +701,12 @@ pub fn run() {
             // On macOS, Safari/Chromium use Automation; Firefox extension
             // is installed manually — Firefox native-host manifest sync
             // runs above (EULA-gated) and during onboarding scans.
-            #[cfg(all(not(target_os = "ios"), not(target_os = "macos")))]
+            #[cfg(all(not(any(target_os = "ios", target_os = "android")), not(target_os = "macos")))]
             if let Err(e) = native_host_install::install() {
                 log::warn!("native-host install on startup failed: {e}");
             }
 
-            #[cfg(all(not(target_os = "ios"), not(target_os = "macos")))]
+            #[cfg(all(not(any(target_os = "ios", target_os = "android")), not(target_os = "macos")))]
             if !extension_install::startup_install_already_done() {
                 if let Err(e) = extension_install::install() {
                     log::warn!("extension-install hint on startup failed: {e}");
@@ -744,7 +760,7 @@ pub fn run() {
             // user gets a blank window pointing at
             // http://localhost:5173. Release builds — the .pkg / .dmg
             // path users actually install — keep self-healing.
-            #[cfg(all(not(target_os = "ios"), not(debug_assertions)))]
+            #[cfg(all(not(any(target_os = "ios", target_os = "android")), not(debug_assertions)))]
             {
                 use tauri_plugin_autostart::ManagerExt;
                 #[cfg(target_os = "macos")]
@@ -784,7 +800,7 @@ pub fn run() {
                 // "--autostart" arg above. Without this, every login
                 // would briefly pop the window in the user's face.
                 // The user can re-open the window via the tray icon.
-                #[cfg(not(target_os = "ios"))]
+                #[cfg(not(any(target_os = "ios", target_os = "android")))]
                 if std::env::args().any(|a| a == "--autostart") {
                     let _ = main.hide();
                     log::info!("startup: launched by autostart, window hidden");
@@ -904,7 +920,7 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
 }
 
 /// All commands for Windows / Linux desktop.
-#[cfg(all(not(target_os = "ios"), not(target_os = "macos")))]
+#[cfg(not(any(target_os = "ios", target_os = "android", target_os = "macos")))]
 fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
     tauri::generate_handler![
         commands::get_app_version,
@@ -980,6 +996,18 @@ fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
         // Data commands (all platforms)
         commands::get_app_version,
         commands::is_microsoft_store_package,
+        commands::load_data,
+        commands::save_data,
+        commands::set_window_size,
+    ]
+}
+
+/// Commands for Android (only shared commands for now; android-blocker plugin adds the rest)
+#[cfg(target_os = "android")]
+fn all_commands() -> impl Fn(tauri::ipc::Invoke) -> bool {
+    tauri::generate_handler![
+        // Data commands (all platforms)
+        commands::get_app_version,
         commands::load_data,
         commands::save_data,
         commands::set_window_size,

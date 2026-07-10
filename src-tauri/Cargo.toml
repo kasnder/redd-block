@@ -31,7 +31,6 @@ log = "0.4"
 dirs = "5"
 lazy_static = "1.5"
 tauri-plugin-opener = "2.5.0"
-tauri-plugin-autostart = "2"
 dotenvy = "0.15"
 
 [dev-dependencies]
@@ -57,6 +56,9 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2.
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri-plugin-screentime = { path = "../tauri-plugin-screentime" }
 
+[target.'cfg(target_os = "android")'.dependencies]
+tauri-plugin-android-blocker = { path = "../tauri-plugin-android-blocker" }
+
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = [
   "Win32_UI_Shell",
@@ -78,7 +80,7 @@ windows = { version = "0.61", features = [
 sysinfo = "0.33"
 tauri-plugin-notification = "2"
 
-[target.'cfg(not(target_os = "ios"))'.dependencies]
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
 futures-util = "0.3"
 tokio = { version = "1", features = ["fs", "io-util"] }
@@ -89,3 +91,4 @@ sha2 = "0.10"
 # clicking the app icon while already running focuses the existing
 # window instead of launching a duplicate.
 tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"

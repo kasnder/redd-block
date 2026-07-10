@@ -54,4 +54,7 @@ tauri-plugin-screentime/permissions/schemas/
 
 # Distribution builds
 for-distribution/
-for-distribution/ 
+for-distribution/
+
+# Unrelated nested repo checked out in the working tree
+redd-focus-web/
