@@ -29,7 +29,7 @@ npm run build:ios           # IPA for App Store
 npm run build:android       # requires ANDROID_HOME/NDK_HOME/JAVA_HOME exported (see docs/android-build.md)
 ```
 
-Version bumps touch several files at once — always use `./scripts/bump-version.sh <version>` (updates `package.json`, the `tauri.*.conf.json` files, and `Cargo.toml`).
+Version bumps span several files — always use `./scripts/bump-version.sh <version>` (updates `package.json`, `tauri.*.conf.json`, `Cargo.toml`).
 
 ### Testing
 
@@ -42,7 +42,7 @@ There is no CLI test runner. Tests run **inside the app** in dev mode via the de
 ## Architecture essentials
 
 ### Single source of truth
-Desktop website/app rules derive from one JSON file, `redd-block-data.json` (canonical path `/var/lib/redd-block/...` on macOS, `%PROGRAMDATA%\ReDD Blocker\...` on Windows; per-user fallback until the shared dir is writable — selection logic in `src-tauri/src/commands/data.rs`). The frontend writes it via `save_data`; every backend re-reads it. `native_host::derive_payload()` is the shared function that computes effective website rules (blocklist domains always block; when any allowlist source is active, the effective policy is `allowed-union − blocked-union`, blocklist wins on overlap). iOS has its own store (App Group), not this file.
+Desktop website/app rules derive from one JSON file, `redd-block-data.json` (canonical `/var/lib/redd-block/...` on macOS, `%PROGRAMDATA%\ReDD Blocker\...` on Windows; per-user fallback until the shared dir is writable — path logic in `src-tauri/src/commands/data.rs`). The frontend writes it via `save_data`; every backend re-reads it. `native_host::derive_payload()` computes effective website rules: blocklist domains always block; when any allowlist source is active, policy is `allowed-union − blocked-union` (blocklist wins on overlap). iOS uses its own App Group store, not this file.
 
 ### Enforcement per platform
 - **macOS websites:** Automation (Apple Events) in `src-tauri/src/web_automation.rs` — 1 s tick, redirects blocked tabs in Safari/Chrome/Brave/Edge to a bundled block page (`src-tauri/blocked/`). Firefox is the exception: it uses the extension + native-messaging host.
@@ -53,10 +53,10 @@ Desktop website/app rules derive from one JSON file, `redd-block-data.json` (can
 - **Android:** `tauri-plugin-android-blocker/` — Kotlin AccessibilityService applies the block/friction gate, WorkManager handles schedule transitions; Rust only bridges Tauri commands.
 
 ### Allow-mode / allowlists
-"Focus spaces" (allow only these, block everything else) exist on all platforms and are subtle. The desktop rule (blocklist wins over allowlist on overlap; concurrent allowlists union) is mirrored on iOS by **two deliberately-duplicated resolvers**: JS (`deriveIOSEffectiveWebsitePolicy` / `deriveIOSEffectiveAppPolicy` in `src/app.js`) for pre-validation, and Swift (`IOSPolicyResolver` in the shared `ScheduleData.swift`) for enforcement. Keep them in sync. See architecture.md §9.4 and §12.3.
+"Focus spaces" (allow only these, block everything else) exist on all platforms. The desktop rule (blocklist wins on overlap; concurrent allowlists union) is mirrored on iOS by **two deliberately-duplicated resolvers** that must stay in sync: JS (`deriveIOSEffectiveWebsitePolicy` / `deriveIOSEffectiveAppPolicy` in `src/app.js`) for pre-validation, Swift (`IOSPolicyResolver` in the shared `ScheduleData.swift`) for enforcement. See architecture.md §9.4 and §12.3.
 
 ### Frontend module conventions (important, non-obvious)
-`src/` is plain ES modules, no framework. Mutable state shared across modules lives on the single `state` object in `src/state.js` — plain module-level `let`s can't be reassigned across ES imports, so don't try. Module top level contains **declarations only**; it never calls into other app modules — this is what makes the hub↔feature import cycles safe (all cross-module calls are hoisted function declarations invoked at runtime). The order-sensitive startup sequence lives in the `DOMContentLoaded` handler in `src/app.js`. The `window.__REDDBLOCK_INTERNALS__` keys in `src/dev-internals.js` are a contract with the in-app tests — never rename them.
+`src/` is plain ES modules, no framework. Cross-module mutable state lives on the single `state` object in `src/state.js` — module-level `let`s can't be reassigned across ES imports. Module top level holds **declarations only**, never calls into other app modules — this keeps the hub↔feature import cycles safe (all cross-module calls are hoisted functions invoked at runtime). The order-sensitive startup sequence is the `DOMContentLoaded` handler in `src/app.js`. The `window.__REDDBLOCK_INTERNALS__` keys in `src/dev-internals.js` are a contract with the in-app tests — never rename them.
 
 `src/tauri-api.js` is a compat layer. The frontend still calls legacy `*_via_helper` command names that route through `src-tauri/src/commands/helper_shim.rs` (mostly no-ops for website blocking; app blocking forwards to `app_watcher`). This is known tech debt, not a live daemon — there is no `helper-daemon/` in the repo.
 
