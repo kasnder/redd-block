@@ -13,22 +13,7 @@ import iconBraveUrl from './images/icon-brave.svg';
 import iconEdgeUrl from './images/icon-edge.svg';
 import iconFirefoxUrl from './images/icon-firefox.svg';
 import iconSafariUrl from './images/icon-safari.svg';
-import screenshotChromeStep1 from './images/toggle-chrome-incognito-windows-1.png';
-import screenshotChromeStep2 from './images/toggle-chrome-incognito-windows-2.png';
-import screenshotEdgeStep1 from './images/toggle-edge-incognito-windows-1.png';
-import screenshotEdgeStep2 from './images/toggle-edge-incognito-windows-2.png';
-import screenshotFirefoxStep1 from './images/toggle-firefox-private-windows-1.png';
-import screenshotFirefoxStep2 from './images/toggle-firefox-private-windows-2.png';
-import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
-import screenshotSafariStep2 from './images/mac-extension-settings-2.png';
-import screenshotAutomationSettings from './images/automation-settings.png';
 import snoozeIconUrl from './images/snooze.png';
-import {
-    resolveReleaseNotesForVersion,
-    renderReleaseNotesHtml,
-    releaseNotesHasContent,
-    filterReleaseNotesForPlatform,
-} from './changelog.js';
 // Compatibility layer wrapping Tauri APIs — extracted to tauri-api.js
 import { tauriAPI, openUrl } from './tauri-api.js';
 import { state, appState } from './state.js';
