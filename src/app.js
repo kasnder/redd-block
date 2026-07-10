@@ -23,7 +23,6 @@ import screenshotSafariStep1 from './images/mac-extension-settings-1.png';
 import screenshotSafariStep2 from './images/mac-extension-settings-2.png';
 import screenshotAutomationSettings from './images/automation-settings.png';
 import snoozeIconUrl from './images/snooze.png';
-import welcomeDemoVideoUrl from './reddblock-video.mp4';
 import {
     resolveReleaseNotesForVersion,
     renderReleaseNotesHtml,
@@ -2839,9 +2838,15 @@ export function applyWelcomeOnboardingLanguage() {
 
     syncWelcomeDemoFullscreenLabel();
 
+    // The demo video is desktop/iOS only — it can't play in the Android
+    // WebView (see initWelcomeDemoControls). Guarding the mp4 import behind
+    // the compile-time __ANDROID_BUILD__ flag lets Rollup drop this branch
+    // and tree-shake the ~1.7 MB asset out of the Android bundle entirely.
     const demoVideo = document.getElementById('welcome-demo-video');
-    if (demoVideo && !demoVideo.src) {
-        demoVideo.src = welcomeDemoVideoUrl;
+    if (!__ANDROID_BUILD__ && demoVideo && !demoVideo.src) {
+        import('./reddblock-video.mp4').then(({ default: welcomeDemoVideoUrl }) => {
+            if (!demoVideo.src) demoVideo.src = welcomeDemoVideoUrl;
+        });
     }
 
     const continueBtn = document.getElementById('welcome-onboarding-continue-btn');
