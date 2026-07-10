@@ -1011,7 +1011,7 @@ export function migrationExtHeaderCopy(state) {
     if (!appState.isMacOSDesktop) return null;
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
-    const browsers = state?.browsers || state.lastMigrationBrowserState?.browsers || {};
+    const browsers = state?.browsers || appState.lastMigrationBrowserState?.browsers || {};
     const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
     return {
         titleHtml: tSettings('migrationExtTitleMac'),
@@ -1022,7 +1022,7 @@ export function migrationExtHeaderCopy(state) {
 }
 
 export function migrationMacCopyKey(state) {
-    const browsers = state?.browsers || state.lastMigrationBrowserState?.browsers || {};
+    const browsers = state?.browsers || appState.lastMigrationBrowserState?.browsers || {};
     const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
     return `${getSettingsLanguage()}:${firefoxInstalled ? 1 : 0}`;
 }
@@ -1036,18 +1036,18 @@ export function syncMigrationMacHowto(state) {
     if (!appState.isMacOSDesktop) return;
     const focusLogoHtml =
         `<img src="${logoReddFocusUrl}" alt="" class="welcome-reddfocus-inline-logo" aria-hidden="true"> `;
-    const browsers = state?.browsers || state.lastMigrationBrowserState?.browsers || {};
+    const browsers = state?.browsers || appState.lastMigrationBrowserState?.browsers || {};
     const firefoxInstalled = !!(browsers.firefox && browsers.firefox.installed);
     const li1 = document.getElementById('migration-howto-li1');
     const li2 = document.getElementById('migration-howto-li2');
     const li3 = document.getElementById('migration-howto-li3');
     const copyKey = migrationMacCopyKey(state);
-    if (copyKey !== state.lastMigrationHowtoCopyKey) {
+    if (copyKey !== appState.lastMigrationHowtoCopyKey) {
         if (li1) li1.innerHTML = tSettings('migrationExtStep1Mac');
         if (li2) {
             li2.innerHTML = tSettings('migrationExtStep2MacFirefox').replace('{FOCUS}', focusLogoHtml);
         }
-        state.lastMigrationHowtoCopyKey = copyKey;
+        appState.lastMigrationHowtoCopyKey = copyKey;
     }
     if (li2) li2.classList.toggle('hidden', !firefoxInstalled);
     if (li3) li3.classList.add('hidden');
@@ -1102,11 +1102,11 @@ export function syncMigrationPostHeader(state) {
         const titleEl = document.getElementById('migration-post-header-title');
         const subEl = document.getElementById('migration-post-header-subtitle');
         const copyKey = migrationMacCopyKey(state);
-        if (copyKey !== state.lastMigrationHeaderCopyKey) {
+        if (copyKey !== appState.lastMigrationHeaderCopyKey) {
             if (shieldLogo) shieldLogo.src = logoReddShieldUrl;
             if (titleEl) titleEl.textContent = copy.titleHtml;
             if (subEl) subEl.innerHTML = copy.subtitleHtml;
-            state.lastMigrationHeaderCopyKey = copyKey;
+            appState.lastMigrationHeaderCopyKey = copyKey;
         }
     }
     checklist?.classList.add('hidden');
@@ -1383,7 +1383,7 @@ export function updateMigrationBrowserChecklist(state) {
 }
 
 export function renderBrowserInstallButtons(state, { force = false } = {}) {
-    state.lastMigrationBrowserState = state;
+    appState.lastMigrationBrowserState = state;
     void applyEnforcementDescCopy(state);
     // Keep the header subtitle in sync with the live scan (the macOS
     // copy depends on whether Firefox is installed).
@@ -1392,11 +1392,11 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
     const extLines = document.getElementById('migration-checklist-ext-lines');
     if (extLines) extLines.innerHTML = migrationExtLinesHtml(state);
     const sig = migrationBrowserRenderSignature(state);
-    if (!force && sig === state.lastMigrationBrowserRenderSignature) {
+    if (!force && sig === appState.lastMigrationBrowserRenderSignature) {
         updateMigrationBrowserChecklist(state);
         return;
     }
-    state.lastMigrationBrowserRenderSignature = sig;
+    appState.lastMigrationBrowserRenderSignature = sig;
 
     const container = document.getElementById('migration-browser-buttons');
     if (!container) return;
