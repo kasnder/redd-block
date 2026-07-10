@@ -114,6 +114,7 @@ import {
     getSelectedBlocklistModalMode,
     setBlocklistModalMode,
     syncModalAppPlaceholder,
+    syncModalWebsitePlaceholder,
     updateBlocklistModalModeLabels,
 } from './list-mode.js';
 import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderNowBlockingRow, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
@@ -2989,13 +2990,6 @@ function refreshSettingsVersionLabels() {
     if (latestVersionEl?.dataset.appVersion) {
         latestVersionEl.textContent = formatLatestVersionText(latestVersionEl.dataset.appVersion);
     }
-}
-
-/** Blocklist modal: always show the example placeholder in the websites input row. */
-function syncModalWebsitePlaceholder() {
-    const el = document.getElementById('modal-website-input');
-    if (!el || el.classList.contains('input-error')) return;
-    el.placeholder = tSettings('placeholderWebsiteExample');
 }
 
 export function applySettingsLanguage() {
