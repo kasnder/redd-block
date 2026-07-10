@@ -41,6 +41,36 @@ function toggleBlocklistCardExpanded(card, id) {
     setBlocklistCardExpanded(card, id, !expandedBlocklistCardIds.has(id));
 }
 
+const BLOCKLIST_RUNNING_DOT = '<span class="badge-running-dot" aria-hidden="true"></span>';
+
+function blocklistStatusIcon(innerHtml) {
+    return `<span class="blocklist-status-icon" aria-hidden="true">${innerHtml}</span>`;
+}
+
+const BLOCKLIST_STATUS_ICON_PAUSE = blocklistStatusIcon(
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>',
+);
+const BLOCKLIST_STATUS_ICON_POWER = blocklistStatusIcon(
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>',
+);
+const BLOCKLIST_STATUS_ICON_HOURGLASS = blocklistStatusIcon(
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>',
+);
+const BLOCKLIST_STATUS_ICON_CALENDAR = blocklistStatusIcon(
+    '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>',
+);
+const BLOCKLIST_STATUS_ICON_SNOOZE = blocklistStatusIcon(APP_BLOCKING_SNOOZE_ICON_IMG_12);
+
+function buildBlocklistStatusSegment(text, { showDot = false, iconHtml = '', textClass = 'blocklist-status-text' } = {}) {
+    const trimmed = String(text ?? '').trim();
+    if (!trimmed) return '';
+    const parts = [];
+    if (showDot) parts.push(BLOCKLIST_RUNNING_DOT);
+    if (iconHtml) parts.push(iconHtml);
+    parts.push(`<span class="${textClass}">${escapeHtml(trimmed)}</span>`);
+    return `<span class="blocklist-name-status-segment">${parts.join('')}</span>`;
+}
+
 export function truncateBlocklistName(raw) {
     const s = String(raw ?? '');
     return s.length <= BLOCKLIST_NAME_MAX_LENGTH ? s : s.slice(0, BLOCKLIST_NAME_MAX_LENGTH);
@@ -657,24 +687,31 @@ export function renderBlocklists() {
         // Green "live" dot prefixed onto badges for blocks that are
         // currently running (one-off active or active schedule segment).
         // Same colour treatment as the BLOCKING NOW row dot.
-        const runningDot = '<span class="badge-running-dot" aria-hidden="true"></span>';
 
-        // One-off block badge (green with hourglass, or power icon for always-on)
+        // One-off block badge
         if (isActive && activeBlock) {
             if (activeBlock.isPaused) {
-                // Paused badge — show pause icon and resume countdown
                 const pauseRemaining = activeBlock.pauseEndTime - now;
                 const pauseMins = Math.max(1, Math.ceil(pauseRemaining / 60000));
                 const pauseTimeText = pauseMins >= 60 ? `${Math.floor(pauseMins / 60)}h ${pauseMins % 60}m` : `${pauseMins}m`;
-                oneOffBadge = `<span class="active-badge paused-badge"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg> Paused ${pauseTimeText}</span>`;
+                oneOffBadge = buildBlocklistStatusSegment(`Paused ${pauseTimeText}`, {
+                    iconHtml: BLOCKLIST_STATUS_ICON_PAUSE,
+                    textClass: 'blocklist-status-text paused-badge',
+                });
             } else if (isBlockAlwaysOn(activeBlock)) {
-                // Power icon for always-on blocks
-                oneOffBadge = `<span class="active-badge">${runningDot}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg> Always</span>`;
+                oneOffBadge = buildBlocklistStatusSegment('Always', {
+                    showDot: true,
+                    iconHtml: BLOCKLIST_STATUS_ICON_POWER,
+                    textClass: 'blocklist-status-text active-badge',
+                });
             } else {
                 const remaining = activeBlock.endTime - now;
                 const mins = Math.ceil(remaining / 60000);
-                // Hourglass icon
-                oneOffBadge = `<span class="active-badge">${runningDot}<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg> ${formatBlockTimeRemainingShort(mins)}</span>`;
+                oneOffBadge = buildBlocklistStatusSegment(formatBlockTimeRemainingShort(mins), {
+                    showDot: true,
+                    iconHtml: BLOCKLIST_STATUS_ICON_HOURGLASS,
+                    textClass: 'blocklist-status-text active-badge',
+                });
             }
         }
 
@@ -787,19 +824,25 @@ export function renderBlocklists() {
                     }
                 }
             }
-            // Calendar icon for scheduled blocklists (calendar, then live dot when segment is running)
-            const calendarIcon =
-                '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>';
             const isSnoozedCard = getActiveAppBlockingSnoozeBlocklistId(now) === bl.id;
             if (isSnoozedCard) {
-                scheduleBadge = `<span class="schedule-badge schedule-badge-snoozed">${APP_BLOCKING_SNOOZE_ICON_IMG_12} ${scheduleTimeText}</span>`;
+                scheduleBadge = buildBlocklistStatusSegment(scheduleTimeText, {
+                    iconHtml: BLOCKLIST_STATUS_ICON_SNOOZE,
+                    textClass: 'blocklist-status-text schedule-badge schedule-badge-snoozed',
+                });
             } else {
-                const scheduleDot = scheduleSegmentRunning ? runningDot : '';
-                scheduleBadge = `<span class="schedule-badge">${calendarIcon}${scheduleDot} ${scheduleTimeText}</span>`;
+                scheduleBadge = buildBlocklistStatusSegment(scheduleTimeText, {
+                    showDot: scheduleSegmentRunning,
+                    iconHtml: BLOCKLIST_STATUS_ICON_CALENDAR,
+                    textClass: 'blocklist-status-text schedule-badge',
+                });
             }
         }
 
         const activeBadge = oneOffBadge + scheduleBadge;
+        const badgesHtml = activeBadge
+            ? `<span class="blocklist-name-badges">${activeBadge}</span>`
+            : '';
 
         // Check if this blocklist is selected
         const isSelected = bl.id === state.selectedBlocklistId;
@@ -824,15 +867,15 @@ export function renderBlocklists() {
               <div class="blocklist-name">
                 <span class="blocklist-emoji">${bl.emoji || '🚫'}</span>
                 <span class="blocklist-title-text">${escapeHtml(bl.name)}</span>
-                <span class="blocklist-name-badges">${activeBadge}</span>
+                ${badgesHtml}
               </div>
               <div class="blocklist-actions">
                 <div class="blocklist-menu-wrapper">
                   <button class="blocklist-action-btn blocklist-menu-btn" title="${tSettings('blocklistCardMenuTitle')}" aria-label="${tSettings('blocklistCardMenuTitle')}">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <circle cx="12" cy="5" r="1"></circle>
                       <circle cx="12" cy="12" r="1"></circle>
-                      <circle cx="5" cy="12" r="1"></circle>
-                      <circle cx="19" cy="12" r="1"></circle>
+                      <circle cx="12" cy="19" r="1"></circle>
                     </svg>
                   </button>
                   <div class="blocklist-menu hidden">
@@ -1033,8 +1076,12 @@ function positionBlocklistMenu(menuBtn, menu, wrapper) {
     const padding = 8;
     const menuRect = menu.getBoundingClientRect();
     const anchorRect = wrapper.getBoundingClientRect();
+    const card = menuBtn.closest('.blocklist-card');
+    const menuAnchorOffset = card
+        ? (parseFloat(getComputedStyle(card).getPropertyValue('--blocklist-menu-anchor-offset')) || 30)
+        : 30;
 
-    let left = anchorRect.right - 42 - menuRect.width;
+    let left = anchorRect.right - menuAnchorOffset - menuRect.width;
     let top = anchorRect.top + (anchorRect.height / 2) - (menuRect.height / 2);
 
     left = Math.max(padding, Math.min(left, window.innerWidth - menuRect.width - padding));

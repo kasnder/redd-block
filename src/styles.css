@@ -2379,10 +2379,20 @@ body.ios:not(.ios-phone) .main-content .schedule-pending-save{
         font-size: 19px;
     }
 
+    body.ios:not(.ios-phone) .main-content .blocklist-status-text.active-badge,
+    body.ios:not(.ios-phone) .main-content .blocklist-status-text.schedule-badge,
     body.ios:not(.ios-phone) .main-content .active-badge,
-body.ios:not(.ios-phone) .main-content .schedule-badge{
-        gap: 6px;
+    body.ios:not(.ios-phone) .main-content .schedule-badge{
         padding: 3px 0;
+    }
+
+    body.ios:not(.ios-phone) .main-content .blocklist-name-status-segment{
+        gap: calc(var(--blocklist-status-tight-gap) * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .main-content .blocklist-name-badges{
+        margin-left: calc(var(--blocklist-title-status-gap) * var(--ipad-s));
+        gap: calc(var(--blocklist-status-segment-gap) * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .main-content .badge-running-dot{
@@ -2399,10 +2409,14 @@ body.ios:not(.ios-phone) .main-content .schedule-badge{
         font-size: 14px;
     }
 
+    body.ios:not(.ios-phone) .main-content .blocklist-card{
+        --blocklist-action-btn-size: 40px;
+        --blocklist-actions-slot: calc(var(--blocklist-action-btn-size) * 2);
+        --blocklist-menu-anchor-offset: var(--blocklist-action-btn-size);
+    }
+
     body.ios:not(.ios-phone) .main-content .blocklist-action-btn{
-        width: 48px;
-        height: 48px;
-        border-radius: 12px;
+        border-radius: calc(10px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .main-content .blocklist-action-btn svg{
@@ -3198,7 +3212,7 @@ body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-foote
 
     /* Blocklist card ellipsis menu (duplicate / delete) */
     body.ios:not(.ios-phone) .main-content .blocklist-menu{
-        right: calc(42px * var(--ipad-s));
+        right: var(--blocklist-menu-anchor-offset);
         min-width: calc(120px * var(--ipad-s));
         padding: calc(4px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
@@ -6925,7 +6939,14 @@ body.android .blocklists-container {
     --blocklist-details-pill-bg: var(--container-bg);
     --blocklist-details-pill-border: var(--border-color);
     --blocklist-details-pill-color: var(--text-primary);
-    --blocklist-actions-slot: 76px;
+    /* Title-row status rhythm: 9px between title/timer/schedule, 4px within dot→icon→text. */
+    --blocklist-title-status-gap: 9px;
+    --blocklist-status-segment-gap: 9px;
+    --blocklist-status-tight-gap: 4px;
+    --blocklist-action-btn-size: 28px;
+    --blocklist-actions-gap: 2px;
+    --blocklist-actions-slot: calc(var(--blocklist-action-btn-size) * 2 + var(--blocklist-actions-gap));
+    --blocklist-menu-anchor-offset: calc(var(--blocklist-action-btn-size) + var(--blocklist-actions-gap));
     display: flex;
     align-items: stretch;
     padding: var(--blocklist-card-padding-y) 10px var(--blocklist-card-padding-y) 0;
@@ -7078,17 +7099,14 @@ body.android .selection-prompt {
     border-bottom-left-radius: 10px;
 }
 
-/* Status pill on blocklist cards — "14H 49M LEFT", "IN 13H", "Always", etc.
-   Borderless / typographic: just muted small-caps text with the icon, set
-   alongside the title. No fill or border so it doesn't compete with the
-   card's other UI; the meaning lives in the words and (if running) the
-   leading green dot. */
+/* Status text on blocklist cards — "14H 49M LEFT", "IN 13H", "Always", etc.
+   Borderless / typographic: muted small-caps alongside the title. */
+.blocklist-status-text.active-badge,
+.blocklist-status-text.schedule-badge,
 .active-badge,
 .schedule-badge{
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    margin-left: 8px;
     padding: 2px 0;
     font-size: var(--blocklist-meta-prefix-size);
     font-weight: var(--blocklist-meta-prefix-weight);
@@ -7102,13 +7120,21 @@ body.android .selection-prompt {
 }
 
 .active-badge svg,
-.schedule-badge svg{
+.schedule-badge svg,
+.blocklist-status-icon svg,
+.blocklist-status-icon .app-blocking-snooze-icon{
     flex-shrink: 0;
     opacity: 0.7;
 }
 
-/* Green "live" dot: after the calendar on schedule badges; before the icon
-   text on one-off active badges — rhymes with BLOCKING NOW row styling. */
+.blocklist-status-icon{
+    display: inline-flex;
+    align-items: center;
+    flex-shrink: 0;
+    line-height: 0;
+}
+
+/* Green "live" dot before the status icon when a block/segment is running. */
 .badge-running-dot{
     width: 7px;
     height: 7px;
@@ -7118,7 +7144,7 @@ body.android .selection-prompt {
     flex-shrink: 0;
 }
 
-.schedule-badge-snoozed .app-blocking-snooze-icon{
+.blocklist-name-status-segment:has(.schedule-badge-snoozed) .app-blocking-snooze-icon{
     opacity: 0.85;
 }
 
@@ -7166,7 +7192,7 @@ body.android .selection-prompt {
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 5px;
+    gap: 0;
     width: 100%;
     min-width: 0;
     padding-right: var(--blocklist-actions-slot);
@@ -7179,6 +7205,7 @@ body.android .selection-prompt {
 .blocklist-name .blocklist-emoji{
     flex-shrink: 0;
     line-height: 1;
+    margin-right: 5px;
 }
 
 /* flex-grow must stay off so short titles don't swallow the row and shove badges to the edge. */
@@ -7196,15 +7223,21 @@ body.android .selection-prompt {
     align-items: center;
     flex-wrap: nowrap;
     flex-shrink: 0;
+    margin-left: var(--blocklist-title-status-gap);
+    gap: var(--blocklist-status-segment-gap);
+}
+
+.blocklist-name-status-segment{
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    flex-shrink: 0;
+    gap: var(--blocklist-status-tight-gap);
 }
 
 .blocklist-name-badges > .active-badge,
 .blocklist-name-badges > .schedule-badge{
     margin-left: 0;
-}
-
-.blocklist-name-badges > * + *{
-    margin-left: 8px;
 }
 
 .blocklist-meta{
@@ -7337,26 +7370,29 @@ body.android .selection-prompt {
     top: 50%;
     transform: translateY(-50%);
     display: flex;
-    gap: 4px;
+    gap: var(--blocklist-actions-gap);
     align-items: center;
     flex-shrink: 0;
 }
 
 body.ios .blocklist-card,
 body.android .blocklist-card{
-    --blocklist-actions-slot: 88px;
+    --blocklist-action-btn-size: 38px;
+    --blocklist-actions-gap: 0px;
+    --blocklist-actions-slot: calc(var(--blocklist-action-btn-size) * 2);
+    --blocklist-menu-anchor-offset: var(--blocklist-action-btn-size);
 }
 
 body.ios .blocklist-actions,
 body.android .blocklist-actions {
-    gap: 0px;
+    gap: var(--blocklist-actions-gap);
 }
 
 .blocklist-action-btn{
-    width: 36px;
-    height: 36px;
+    width: var(--blocklist-action-btn-size);
+    height: var(--blocklist-action-btn-size);
     border: none;
-    border-radius: 10px;
+    border-radius: 8px;
     background: transparent;
     color: var(--text-muted);
     cursor: pointer;
@@ -7364,12 +7400,6 @@ body.android .blocklist-actions {
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
-}
-
-body.ios .blocklist-action-btn,
-body.android .blocklist-action-btn {
-    width: 44px;
-    height: 44px;
 }
 
 .blocklist-action-btn svg{
@@ -7399,7 +7429,7 @@ body.android .blocklist-action-btn svg {
 
 .blocklist-menu{
     position: absolute;
-    right: 42px;
+    right: var(--blocklist-menu-anchor-offset);
     top: 50%;
     transform: translateY(-50%);
     background: var(--popover-bg);
@@ -16189,7 +16219,7 @@ body.dark-mode .app-blocking-snooze-icon {
     opacity: 0.72;
 }
 
-body.dark-mode .schedule-badge-snoozed .app-blocking-snooze-icon {
+body.dark-mode .blocklist-name-status-segment:has(.schedule-badge-snoozed) .app-blocking-snooze-icon {
     opacity: 0.88;
 }
 
