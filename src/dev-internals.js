@@ -11,6 +11,12 @@ import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
 import { duplicateBlocklist, getNextCopyName } from './blocklists.js';
 import { getMaxOverrideCharsForType } from './override-challenge.js';
+import {
+    deriveIOSEffectiveWebsitePolicy,
+    deriveIOSEffectiveAppPolicy,
+    validateIOSAllowlistLimits,
+    IOS_ALLOWLIST_EXCEPTION_LIMIT,
+} from './allowlist-ios.js';
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
@@ -26,7 +32,11 @@ window.__REDDBLOCK_INTERNALS__ = {
     PROTECTED_DOMAINS,
     duplicateBlocklist,
     getNextCopyName,
-    getMaxOverrideCharsForType
+    getMaxOverrideCharsForType,
+    deriveIOSEffectiveWebsitePolicy,
+    deriveIOSEffectiveAppPolicy,
+    validateIOSAllowlistLimits,
+    IOS_ALLOWLIST_EXCEPTION_LIMIT,
 };
 
 // ========================================
