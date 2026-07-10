@@ -6,11 +6,11 @@ import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipCo
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isBlockAlwaysOn } from './blocklist-utils.js';
 import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxOverrideCharsForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, usesMobileWordCountForOverrideType } from './override-challenge.js';
-import { resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
+import { isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
 import { clearPendingScheduleDraft, renderBlocklists, truncateBlocklistName } from './blocklists.js';
-import { getCommittedScheduleSegmentCount, getInitialExpandedScheduleSegmentIndex, rebuildScheduleSegments, setAlwaysOnMode, setScheduleMode, updateScheduleButtonState } from './schedule-editor.js';
+import { getCommittedScheduleSegmentCount, getInitialExpandedScheduleSegmentIndex, isScheduleSegmentActiveNow, rebuildScheduleSegments, setAlwaysOnMode, setScheduleMode, updateScheduleButtonState } from './schedule-editor.js';
 import { getEffectiveScheduleStartOverlayId, rememberLastScheduleStartOverlayId, syncScheduleConfirmOverlaySummary } from './schedule-overlay.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, initializeTimeInputs, pad, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
@@ -1624,49 +1624,28 @@ export function handleBlocklistSelect(e) {
                     delete startBlockBtn.dataset.activeBlockId;
                     startBlockBtn.classList.remove('stop-block');
 
-                    const pauseBtn = document.getElementById('pause-block-btn');
-
                     if (activeBlock) {
-                        // Active block - show Stop focus space button (ghost) with square icon
                         startBlockBtn.classList.add('stop-block');
                         setBtnActionLabel(btnLabel, tSettings('stopBlock'));
                         setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                         startBlockBtn.disabled = false;
                         startBlockBtn.dataset.activeBlockId = activeBlock.id;
-
-                        // Show pause button with correct appearance
-                        if (pauseBtn) {
-                            pauseBtn.classList.remove('hidden');
-                            updatePauseButtonAppearance(!!activeBlock.isPaused);
-                        }
-
                         setStartBlockBtnLeadingIcon(startBlockBtn, 'stop');
-
-                        // Disable time controls
                         disableTimeControls(true);
 
-                        // Keep the info message visible for active always-on blocks.
                         const alwaysOnMsg = document.getElementById('always-on-message');
                         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !isBlockAlwaysOn(activeBlock));
                     } else {
-                        // No active block - show Start focus space button with play icon
-                        // Ensure we've already cleared the activeBlockId above
-                setBtnActionLabel(btnLabel, tSettings('startBlockButton'), { simple: true });
-                setStartBtnBlocklistInfo(startBlockBtn, blocklist);
-
+                        setBtnActionLabel(btnLabel, tSettings('startBlockButton'), { simple: true });
+                        setStartBtnBlocklistInfo(startBlockBtn, blocklist);
                         setStartBlockBtnLeadingIcon(startBlockBtn, 'enter');
-
-                        // Enable time controls
                         disableTimeControls(false);
 
-                        // Re-show always-on message based on current mode
                         const alwaysOnMsg = document.getElementById('always-on-message');
                         if (alwaysOnMsg) alwaysOnMsg.classList.toggle('hidden', !state.isAlwaysOnMode);
-
-                        // Hide pause button
-                        if (pauseBtn) pauseBtn.classList.add('hidden');
                     }
                 }
+                syncPauseButtonForSelectedBlocklist();
             }
         }
         initializeTimeInputs();
@@ -2587,6 +2566,67 @@ export function initializeOverrideModalChallenge(difficulty, progressColor = nul
 
 // ── Pause/Resume Block ──
 
+/** Which timer or schedule row the pause button should act on for the current mode. */
+export function getPauseTargetForSelectedBlocklist(now = Date.now()) {
+    if (!state.selectedBlocklistId) return null;
+    const blocklistId = state.selectedBlocklistId;
+
+    if (state.isScheduleMode) {
+        const schedule = state.appData.schedules?.find(s => s.blocklistId === blocklistId);
+        if (!schedule?.segments?.length) return null;
+        return { type: 'schedule', schedule, blocklistId };
+    }
+
+    const block = state.appData.activeBlocks.find(b =>
+        b.blocklistId === blocklistId && b.startTime <= now && b.endTime > now
+    );
+    if (!block) return null;
+    return { type: 'block', block, blockId: block.id, blocklistId };
+}
+
+export function syncPauseButtonForSelectedBlocklist(now = Date.now()) {
+    const pauseBtn = document.getElementById('pause-block-btn');
+    if (!pauseBtn) return;
+
+    const target = getPauseTargetForSelectedBlocklist(now);
+    if (!target) {
+        pauseBtn.classList.add('hidden');
+        return;
+    }
+
+    pauseBtn.classList.remove('hidden');
+    const isPaused = target.type === 'block'
+        ? !!target.block.isPaused
+        : isSchedulePausedNow(target.schedule, now);
+    updatePauseButtonAppearance(isPaused);
+}
+
+export function handlePauseBlockButtonClick() {
+    const target = getPauseTargetForSelectedBlocklist();
+    if (!target) return;
+
+    if (target.type === 'block') {
+        if (target.block.isPaused) {
+            openResumeConfirmation(target.blocklistId, 'block', target.blockId);
+        } else {
+            state.pauseScheduleData = null;
+            openPauseModal(target.blockId);
+        }
+        return;
+    }
+
+    if (isSchedulePausedNow(target.schedule)) {
+        openResumeConfirmation(target.blocklistId, 'schedule', null);
+        return;
+    }
+
+    state.pauseScheduleData = {
+        blocklistId: target.blocklistId,
+        isActiveNow: isScheduleSegmentActiveNow(target.schedule),
+    };
+    openPauseModal(null);
+}
+
 // Update the pause button's icon and text based on whether the block/schedule is paused
 export function updatePauseButtonAppearance(isPaused) {
     const pauseBtn = document.getElementById('pause-block-btn');
@@ -2721,9 +2761,7 @@ export async function proceedWithResume() {
     await updateHostsFile();
     await updateBlockedApps();
     render();
-
-    // Update pause button back to Pause appearance
-    updatePauseButtonAppearance(false);
+    syncPauseButtonForSelectedBlocklist();
 }
 
 // ── Pause Block Modal ──
@@ -3159,12 +3197,8 @@ export async function proceedWithPause() {
         }
     }
 
-    // Re-render UI
     render();
-
-    // Update pause button to show Resume
-    updatePauseButtonAppearance(true);
-
+    syncPauseButtonForSelectedBlocklist();
     closePauseModal();
 }
 export function updateOverridePreview() {

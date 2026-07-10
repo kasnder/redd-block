@@ -106,7 +106,7 @@ import {
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, deselectBlocklist, handleBlocklistSelect, openBlocklistModal, openPauseModal, openResumeConfirmation, proceedWithBlock, proceedWithPause, proceedWithSchedule, proceedWithScheduleEdit, renderScheduleConfirmSegments, setBtnActionLabel, setOverrideCountMaxMode, setStartBlockBtnLeadingIcon, setStartConfirmPrimaryLabel, startBlock, syncAllStopBtnLabelFits, syncOverrideCountUi, syncPauseDurationRowLayout, updateOverridePreview, updatePauseRestartTime, openOverrideModal, updatePauseButtonAppearance, openScheduleOverrideModal, showScheduleConfirmModal, showScheduleEditConfirmModal, syncStopBtnLabelFit, setStartBtnBlocklistInfo } from './confirm-modals.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, deselectBlocklist, handleBlocklistSelect, handlePauseBlockButtonClick, openBlocklistModal, openPauseModal, openResumeConfirmation, proceedWithBlock, proceedWithPause, proceedWithSchedule, proceedWithScheduleEdit, renderScheduleConfirmSegments, setBtnActionLabel, setOverrideCountMaxMode, setStartBlockBtnLeadingIcon, setStartConfirmPrimaryLabel, startBlock, syncAllStopBtnLabelFits, syncOverrideCountUi, syncPauseDurationRowLayout, updateOverridePreview, updatePauseRestartTime, openOverrideModal, openScheduleOverrideModal, showScheduleConfirmModal, showScheduleEditConfirmModal, syncStopBtnLabelFit, setStartBtnBlocklistInfo } from './confirm-modals.js';
 import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, undoDelete, deleteBlocklist, clearPendingScheduleDraft, pendingDelete, saveBlocklistOrderFromDOM, getBlocklistScheduleDraft, saveBlocklistScheduleDraft, isBlocklistCurrentlyActive } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
@@ -1953,39 +1953,7 @@ function setupOverrideModalListeners() {
 
     // Pause block button
     document.getElementById('pause-block-btn').addEventListener('click', () => {
-        if (!state.selectedBlocklistId) return;
-        const now = Date.now();
-
-        // Try one-off block first
-        const activeBlock = state.appData.activeBlocks.find(b =>
-            b.blocklistId === state.selectedBlocklistId && b.startTime <= now && b.endTime > now
-        );
-        if (activeBlock) {
-            if (activeBlock.isPaused) {
-                // Resume — show confirmation dialog
-                openResumeConfirmation(state.selectedBlocklistId, 'block', activeBlock.id);
-            } else {
-                // Pause
-                state.pauseScheduleData = null;
-                openPauseModal(activeBlock.id);
-            }
-            return;
-        }
-
-        // Try schedule — find the currently active segment
-        const schedule = state.appData.schedules?.find(s => s.blocklistId === state.selectedBlocklistId);
-        if (schedule) {
-            if (isSchedulePausedNow(schedule, now)) {
-                // Resume — show confirmation dialog
-                openResumeConfirmation(state.selectedBlocklistId, 'schedule', null);
-                return;
-            }
-            state.pauseScheduleData = {
-                blocklistId: state.selectedBlocklistId,
-                isActiveNow: isScheduleSegmentActiveNow(schedule)
-            };
-            openPauseModal(null); // null blockId signals schedule pause
-        }
+        handlePauseBlockButtonClick();
     });
 
     // Pause modal event listeners
@@ -2332,6 +2300,16 @@ export function formatDuration(minutes) {
         return `${hours} hour${hours !== 1 ? 's' : ''}`;
     }
     return `${hours}h ${mins}m`;
+}
+
+/** Remaining pause time chip, e.g. "Paused 15m" or "Paused 1h 30m". */
+export function formatPauseRemainingShort(pauseEndTime, now = Date.now()) {
+    if (!pauseEndTime) return 'Paused';
+    const pauseMins = Math.max(1, Math.ceil((pauseEndTime - now) / 60000));
+    const timePart = pauseMins >= 60
+        ? `${Math.floor(pauseMins / 60)}h ${pauseMins % 60}m`
+        : `${pauseMins}m`;
+    return `Paused ${timePart}`;
 }
 
 /** Remaining time chip, e.g. EN "1h 39m left", DA "1t 39m endnu" (`totalMins` = full minutes). */
