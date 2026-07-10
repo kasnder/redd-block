@@ -78,7 +78,6 @@ import {
     setupEnforcerUiAlerts,
     setupSettingsEnforcementSection,
     setupWebAutomationUiAlerts,
-    applySafariFdaOnboardingLanguage,
     startWebAutomationWatcher,
     syncBlockingMethodLabelIcons,
     syncMigrationMacHowto,

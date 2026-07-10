@@ -14,7 +14,7 @@ import {
     shouldUseCompactMobileScheduleDayLabels,
 } from './app.js';
 import { updateWindowHeight } from './blocking-platform.js';
-import { openScheduleOverrideModal, setBtnActionLabel, setStartBlockBtnLeadingIcon, setStartBtnBlocklistInfo, showScheduleConfirmModal, showScheduleEditConfirmModal, syncPauseButtonForSelectedBlocklist, syncStopBtnLabelFit, updateScheduleButtonState } from './confirm-modals.js';
+import { openScheduleOverrideModal, setBtnActionLabel, setStartBlockBtnLeadingIcon, setStartBtnBlocklistInfo, showScheduleConfirmModal, showScheduleEditConfirmModal, syncPauseButtonForSelectedBlocklist, syncStopBtnLabelFit } from './confirm-modals.js';
 
 export const TIME_SEPARATOR_ARROW_HTML = '<span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>';
 export const SEGMENT_SUMMARY_CLOCK_ICON = '<svg class="segment-summary-clock" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
