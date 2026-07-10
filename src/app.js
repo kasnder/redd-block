@@ -605,7 +605,7 @@ function setupEventListeners() {
 
     // Close blocklist card menus when clicking outside
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('.blocklist-menu-wrapper')) {
+        if (!e.target.closest('.blocklist-menu-wrapper') && !e.target.closest('.blocklist-menu')) {
             closeAllBlocklistMenus();
         }
     });
