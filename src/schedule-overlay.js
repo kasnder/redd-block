@@ -7,7 +7,7 @@ import { message, open as openDialog } from '@tauri-apps/plugin-dialog';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
-import { getBlocklistDisplayApps } from './app.js';
+import { getBlocklistDisplayApps } from './list-presentation.js';
 import { isMobileOverrideChallengePlatform } from './override-challenge.js';
 import { saveData } from './persistence.js';
 import { disableScheduleControls } from './time-inputs.js';

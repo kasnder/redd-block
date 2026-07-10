@@ -185,27 +185,6 @@ function updateBlocklistModalModeLabels(mode) {
     }
 }
 
-/**
- * Mode-aware item count an iOS Screen Time selection contributes to
- * "Blocks {n}" / "Allows {n}". Every app token counts individually;
- * allow-mode selections store category picks already expanded into app tokens.
- */
-function countIOSScreenTimeSelectionItems(selection, allowMode) {
-    const normalized = normalizeIOSScreenTimeSelection(selection);
-    if (!normalized) return 0;
-    const appCount = normalized.applicationCount || 0;
-    return allowMode ? appCount : appCount + (normalized.categoryCount || 0);
-}
-
-export function getBlocklistDisplayApps(blocklist) {
-    const apps = getBlocklistRegularApps(blocklist).map(displayNameForBlockedApp);
-    const screenTimeLabel = formatIOSScreenTimeSelectionLabel(getBlocklistIOSScreenTimeSelection(blocklist));
-    if (screenTimeLabel) {
-        apps.push(screenTimeLabel);
-    }
-    return apps;
-}
-
 
 async function ensureIOSAllowlistStartable(blocklist) {
     if (!state.isIOS || !isBlocklistAllowlistMode(blocklist)) return true;
@@ -3152,84 +3131,6 @@ function initWelcomeDemoControls() {
         syncWelcomeDemoPlayLabel();
         syncWelcomeDemoVideoCaption();
     });
-}
-
-export function websiteWord(count) {
-    if (getSettingsLanguage() === 'da') {
-        return count === 1 ? 'hjemmeside' : 'hjemmesider';
-    }
-    return count === 1 ? 'website' : 'websites';
-}
-
-function siteWord(count) {
-    if (getSettingsLanguage() === 'da') {
-        return count === 1 ? 'websted' : 'websteder';
-    }
-    return count === 1 ? 'site' : 'sites';
-}
-
-/** Short label from a blocked domain, e.g. instagram.com → instagram. */
-// Second-level public-suffix labels: for hosts like bbc.co.uk / abc.com.au
-// the registrable name sits one label further left than usual. Small curated
-// set (no full Public Suffix List) covering the common ccTLD second levels.
-const SECOND_LEVEL_PUBLIC_SUFFIXES = new Set([
-    'co', 'com', 'org', 'net', 'gov', 'edu', 'ac', 'or', 'ne', 'go', 'gob',
-]);
-
-function siteNameForDisplay(url) {
-    const host = cleanUrlForDisplay(url).split('/')[0].split(':')[0];
-    const parts = host.split('.').filter(Boolean);
-    if (parts.length <= 1) return parts[0] || host;
-    // e.g. bbc.co.uk -> "bbc" (skip the co.uk two-level suffix), but
-    // theguardian.com -> "theguardian".
-    const suffixDepth = (parts.length >= 3 && SECOND_LEVEL_PUBLIC_SUFFIXES.has(parts[parts.length - 2]))
-        ? 3 : 2;
-    return parts[parts.length - suffixDepth];
-}
-
-/** Flat comma-separated labels for a focus-space card (websites first, then apps). */
-function collectBlocklistCardSummaryLabels(blocklist) {
-    const labels = [];
-    for (const url of blocklist?.websites || []) {
-        labels.push(siteNameForDisplay(url).toLowerCase());
-    }
-    for (const app of getBlocklistRegularApps(blocklist)) {
-        labels.push(displayNameForBlockedApp(app));
-    }
-    const screenTimeLabel = formatIOSScreenTimeSelectionLabel(
-        getBlocklistIOSScreenTimeSelection(blocklist),
-    );
-    if (screenTimeLabel) labels.push(screenTimeLabel);
-    return labels;
-}
-
-/** Room card line, e.g. "Blocks 5 · instagram, youtube, Firefox". */
-function buildBlocklistCardMetaHtml(blocklist) {
-    const isAllow = isBlocklistAllowlistMode(blocklist);
-    const showDetails = blocklist?.showItemDetails !== false;
-    const labels = collectBlocklistCardSummaryLabels(blocklist);
-    const screenTimeSelection = getBlocklistIOSScreenTimeSelection(blocklist);
-    const screenTimeCount = countIOSScreenTimeSelectionItems(screenTimeSelection, isAllow);
-    const hasScreenTimeLabel = !!formatIOSScreenTimeSelectionLabel(screenTimeSelection);
-    const count = labels.length - (hasScreenTimeLabel ? 1 : 0) + screenTimeCount;
-    const prefixKey = isAllow ? 'blocklistCardAllowsFmt' : 'blocklistCardBlocksFmt';
-    const prefixClass = isAllow ? 'blocklist-meta-prefix--allow' : 'blocklist-meta-prefix--block';
-    const prefix = escapeHtml(tSettingsFmt(prefixKey, { n: String(count) }));
-
-    if (!showDetails || count === 0) {
-        return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix ${prefixClass}">${prefix}</span></span>`;
-    }
-
-    const items = escapeHtml(labels.join(', '));
-    return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix ${prefixClass}">${prefix}</span><span class="blocklist-meta-sep">·</span><span class="blocklist-meta-items">${items}</span></span>`;
-}
-
-/** Room card line, e.g. "3 sites · instagram, youtube, reddit". */
-export function formatBlocklistCardSitesSummary(websiteCount, websites, showDetails) {
-    const countLabel = `${websiteCount} ${siteWord(websiteCount)}`;
-    if (!showDetails || websiteCount === 0) return countLabel;
-    const names = (websites || []).map(siteNameForDisplay);
-    return names.length > 0 ? `${countLabel} · ${names.join(', ')}` : countLabel;
 }
 
 function formatCurrentVersionText(version) {

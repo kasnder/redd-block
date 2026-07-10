@@ -14,8 +14,9 @@ import {
     BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS,
     BLOCKLIST_NAME_MAX_LENGTH,
     formatBlockTimeRemainingShort,
-    formatBlocklistCardSitesSummary, generateId,
+    generateId,
 } from './app.js';
+import { formatBlocklistCardSitesSummary } from './list-presentation.js';
 import { cloneOverrideDifficulty, handleBlocklistSelect, openBlocklistModal } from './confirm-modals.js';
 import { APP_BLOCKING_SNOOZE_ICON_IMG_12, appBlockingWarningSnoozedUntilMs, displayNameForBlockedApp, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistId } from './blocking-platform.js';
 
