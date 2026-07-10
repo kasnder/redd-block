@@ -27,9 +27,7 @@ import { hasAnyEnforcedBlocks } from './schedule-engine.js';
 import { isModalVisible } from './modal-manager.js';
 import { kickClockNow } from './render.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
-import {
-    applySafariFdaOnboardingLanguage, setLanguagePickerOpen,
-} from './app.js';
+import { applySafariFdaOnboardingLanguage, setLanguagePickerOpen } from './app.js';
 import { reconcileBlockingWarningShell, showExclusiveOnboardingScreen, updateOnboardingVisibility } from './blocking-platform.js';
 import {
     EXT_ONBOARDING_DISMISSED_KEY, MIGRATION_POLL_MS, applyEnforcementDescCopy,

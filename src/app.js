@@ -72,6 +72,26 @@ import { cleanDomainInput, isValidDomain, processWebsiteInput, setupWebsitesImpo
 import { updateBlockedApps, acceptEula, appBlockingWarningSnoozedUntilMs, checkAndroidPermissions, checkHelperStatus, checkScreentimeAuth, collectManualBlockedApps, collectScheduleBlockedApps, detectPlatform, displayNameForBlockedApp, ensureInstalledAppsCache, initializeAndroidBlockingState, initializeIOSBlockingState, listenForAndroidFrictionGate, onAndroidResumed, renderAppBlockingClosedownBanner, renderAppBlockingWarningOverlay, requestScreentimeAuth, runExpiryOnce, setupAndroidBackButtonHandling, setupAppBlockingWarningOverlay, setupHandsetModalScreens, setupMaximizeButtonSync, setupMobileExternalLinkOpens, syncMaximizeButtonFromWindow, updateOnboardingVisibility, openExternal, updateWindowHeight, isHelperInstallCancelled, isHelperConnectionError, joinAppListWithLimit, findResponsibleBlocklistForWarningApps, getActiveAppBlockingSnoozeBlocklistId, formatAppBlockingSnoozeStartsIn, APP_BLOCKING_SNOOZE_ICON_IMG_12 } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION, applyEnforcementDescCopy, applyMacAutomationIntroCopy, ensureExtensionSetupOnboardingShown, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress, resetDevOnlyEulaAcceptance, returnToWelcomeFromEula, runDesktopOnboarding, runInitialOnboardingSequence, setupMacAutomationIntroModal, syncMigrationPostBackButtonVisibility, syncSetupBannerHeadline, welcomeFirefoxInstalled } from './onboarding.js';
 import {
+    MAC_BLOCKING_METHOD_KEYS,
+    browserBlockingMethod,
+    invalidateMigrationMacCopyCache,
+    migrationExtLinesHtml,
+    renderBrowserInstallButtons,
+    setupAppForegroundRefresh,
+    setupEnforcerUiAlerts,
+    setupSettingsEnforcementSection,
+    setupWebAutomationUiAlerts,
+    syncSafariFdaOnboardingGrantButton,
+    syncBlockingMethodLabelIcons,
+    startWebAutomationWatcher,
+    syncMigrationMacHowto,
+    syncMigrationPostHeader,
+    refreshBehaviourBannerIfStale,
+    updateAllEnforcementToggleLocks,
+    updateGraceSettingLock,
+    wireEnforcementToggle,
+} from './enforcement.js';
+import {
     addScheduleSegment, discardSchedulePendingChanges, getCommittedScheduleSegmentCount,
     getDefaultScheduleSegments, getInitialExpandedScheduleSegmentIndex, handleRepeatDateChange,
     handleRepeatOptionClick, handleSegmentDayToggle, rebuildScheduleSegments,
