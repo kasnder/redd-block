@@ -2013,18 +2013,33 @@ function setupOverrideModalListeners() {
         updatePauseRestartTime();
     });
 
-    // Pause challenge input — track progress
+    // Pause challenge input — mirror stop/override challenge UX
     const pauseChallengeInput = document.getElementById('pause-challenge-input');
     const pauseChallengeWordInput = document.getElementById('pause-challenge-word-input');
+    const pauseProgressBar = document.getElementById('pause-challenge-progress-bar');
     const pauseCurrentWordEl = document.getElementById('pause-current-word');
+
+    pauseChallengeInput.addEventListener('paste', (e) => {
+        e.preventDefault();
+    });
     pauseChallengeInput.addEventListener('input', () => {
         const typed = pauseChallengeInput.value;
         const target = state.pauseChallengeText;
-        const progress = target.length > 0 ? Math.min(100, (typed.length / target.length) * 100) : 0;
-        document.getElementById('pause-challenge-progress-bar').style.width = `${progress}%`;
 
-        // Enable/disable confirm button
-        document.getElementById('confirm-pause-btn').disabled = (typed !== target);
+        let correctChars = 0;
+        let firstErrorIndex = -1;
+        for (let i = 0; i < typed.length && i < target.length; i++) {
+            if (typed[i] === target[i]) {
+                correctChars++;
+            } else {
+                firstErrorIndex = i;
+                break;
+            }
+        }
+
+        const progress = target.length > 0 ? (correctChars / target.length) * 100 : 0;
+        pauseProgressBar.style.width = `${progress}%`;
+        renderPauseChallengeText(firstErrorIndex);
     });
     pauseChallengeWordInput.addEventListener('paste', (e) => {
         e.preventDefault();
@@ -2037,13 +2052,13 @@ function setupOverrideModalListeners() {
     pauseChallengeInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            document.getElementById('confirm-pause-btn').click();
+            proceedWithPause();
         }
     });
     pauseChallengeWordInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
-            document.getElementById('confirm-pause-btn').click();
+            proceedWithPause();
         }
     });
 
@@ -2389,6 +2404,20 @@ export function setPauseWordChallengeMode(enabled) {
     document.getElementById('pause-current-word')?.classList.toggle('hidden', !enabled);
     document.getElementById('pause-challenge-word-input')?.classList.toggle('hidden', !enabled);
     document.getElementById('pause-challenge-input')?.classList.toggle('hidden', enabled);
+}
+
+export function renderPauseChallengeText(errorIndex = -1) {
+    const challengeTextEl = document.getElementById('pause-challenge-text');
+    if (!challengeTextEl) return;
+    const target = state.pauseChallengeText;
+    if (errorIndex < 0 || errorIndex >= target.length) {
+        challengeTextEl.textContent = target;
+    } else {
+        const before = escapeHtml(target.slice(0, errorIndex));
+        const errorChar = escapeHtml(target[errorIndex]);
+        const after = escapeHtml(target.slice(errorIndex + 1));
+        challengeTextEl.innerHTML = `${before}<span class="error-char">${errorChar}</span>${after}`;
+    }
 }
 
 export function renderPauseWordChallengeState() {

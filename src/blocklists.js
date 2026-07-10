@@ -696,7 +696,7 @@ export function renderBlocklists() {
                 const pauseTimeText = pauseMins >= 60 ? `${Math.floor(pauseMins / 60)}h ${pauseMins % 60}m` : `${pauseMins}m`;
                 oneOffBadge = buildBlocklistStatusSegment(`Paused ${pauseTimeText}`, {
                     iconHtml: BLOCKLIST_STATUS_ICON_PAUSE,
-                    textClass: 'blocklist-status-text paused-badge',
+                    textClass: 'blocklist-status-text active-badge',
                 });
             } else if (isBlockAlwaysOn(activeBlock)) {
                 oneOffBadge = buildBlocklistStatusSegment('Always', {

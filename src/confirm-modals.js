@@ -23,7 +23,7 @@ import {
     formatMinutesAsHHMM, formatTime, generateId,
     getCompletedChallengeText, getCurrentChallengeWord,
     isMobileWordByWordChallenge, renderOverrideWordChallengeState,
-    renderPauseWordChallengeState,
+    renderPauseChallengeText, renderPauseWordChallengeState,
     setOverrideWordChallengeMode, setPauseWordChallengeMode,
     shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval,
 } from './app.js';
@@ -2811,7 +2811,6 @@ export function openPauseModal(blockId) {
     document.getElementById('pause-challenge-word-input').value = '';
     state.pauseWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(state.pauseChallengeText) : null;
     setPauseWordChallengeMode(!!state.pauseWordChallengeState);
-    document.getElementById('confirm-pause-btn').disabled = true;
 
     const progressBar = document.getElementById('pause-challenge-progress-bar');
     progressBar.style.width = '0%';
@@ -2831,6 +2830,7 @@ export function openPauseModal(blockId) {
             renderPauseWordChallengeState();
             document.getElementById('pause-challenge-word-input')?.focus();
         } else {
+            document.getElementById('confirm-pause-btn').disabled = false;
             document.getElementById('pause-challenge-input')?.focus();
         }
     });
@@ -3025,6 +3025,14 @@ export function selectPauseRestartTimeOption(e) {
     syncPauseDurationRowLayout();
 }
 
+function wigglePauseModal() {
+    const modal = document.querySelector('#pause-modal .modal-content');
+    if (!modal) return;
+    modal.classList.remove('wiggle');
+    void modal.offsetWidth;
+    modal.classList.add('wiggle');
+}
+
 export async function proceedWithPause() {
     if (!state.pauseBlockId && !state.pauseScheduleData) return;
 
@@ -3033,7 +3041,6 @@ export async function proceedWithPause() {
         const expectedWord = getCurrentChallengeWord(state.pauseWordChallengeState);
         if (typedWord === expectedWord) {
             state.pauseWordChallengeState.currentIndex++;
-            const completedText = getCompletedChallengeText(state.pauseWordChallengeState);
             if (state.pauseWordChallengeState.currentIndex < state.pauseWordChallengeState.words.length) {
                 renderPauseWordChallengeState();
                 document.getElementById('pause-challenge-word-input')?.focus();
@@ -3041,9 +3048,7 @@ export async function proceedWithPause() {
             }
             state.pauseWordChallengeState.typedText = state.pauseChallengeText;
         } else {
-            const modal = document.querySelector('#pause-modal .modal-content');
-            modal.classList.add('wiggle');
-            setTimeout(() => modal.classList.remove('wiggle'), 400);
+            wigglePauseModal();
             document.getElementById('pause-current-word').textContent = expectedWord;
             return;
         }
@@ -3052,11 +3057,25 @@ export async function proceedWithPause() {
     const typed = state.pauseWordChallengeState
         ? (state.pauseWordChallengeState.typedText || '')
         : document.getElementById('pause-challenge-input').value;
-    if (typed !== state.pauseChallengeText) {
-        // Wiggle on mismatch
-        const modal = document.querySelector('#pause-modal .modal-content');
-        modal.classList.add('wiggle');
-        setTimeout(() => modal.classList.remove('wiggle'), 400);
+    const target = state.pauseChallengeText;
+    if (typed !== target) {
+        let firstErrorIndex = -1;
+        for (let i = 0; i < Math.max(typed.length, target.length); i++) {
+            if (typed[i] !== target[i]) {
+                firstErrorIndex = i;
+                break;
+            }
+        }
+        if (firstErrorIndex === -1 && typed.length < target.length) {
+            firstErrorIndex = typed.length;
+        }
+        wigglePauseModal();
+        if (state.pauseWordChallengeState) {
+            document.getElementById('pause-current-word').textContent =
+                getCurrentChallengeWord(state.pauseWordChallengeState);
+        } else {
+            renderPauseChallengeText(firstErrorIndex);
+        }
         return;
     }
 
