@@ -189,10 +189,13 @@ export function normalizeBlocklist(blocklist) {
 
 export function collectActiveIOSManualBlockPayload(now = Date.now()) {
     const allDomains = new Set();
+    const allowedDomains = new Set();
+    const allowedAppTokenData = new Set();
     const appTokenData = new Set();
     const categoryTokenData = new Set();
 
     let displayWinner = null;
+    let allowlistDisplayWinner = null;
 
     for (const block of state.appData.activeBlocks || []) {
         if (block.startTime > now || block.endTime <= now || block.isPaused) continue;
@@ -209,6 +212,30 @@ export function collectActiveIOSManualBlockPayload(now = Date.now()) {
             displayWinner = { block, blocklist };
         }
 
+        if (
+            blocklist?.mode === 'allowlist'
+            && (
+                allowlistDisplayWinner == null
+                || block.startTime < allowlistDisplayWinner.block.startTime
+                || (block.startTime === allowlistDisplayWinner.block.startTime
+                    && bid < String(allowlistDisplayWinner.block.blocklistId ?? ''))
+            )
+        ) {
+            allowlistDisplayWinner = { block, blocklist };
+        }
+
+        if (blocklist?.mode === 'allowlist') {
+            // Allow-mode focus space: websites and app tokens are ALLOWED items.
+            // Category tokens cannot be allowlist exceptions on iOS and are ignored.
+            for (const domain of blocklist.websites || []) {
+                if (!isProtectedDomain(domain)) allowedDomains.add(domain);
+            }
+            for (const token of getBlocklistIOSPayload(blocklist).appTokenData) {
+                allowedAppTokenData.add(token);
+            }
+            continue;
+        }
+
         for (const domain of blocklist.websites || []) {
             if (!isProtectedDomain(domain)) allDomains.add(domain);
         }
@@ -218,8 +245,14 @@ export function collectActiveIOSManualBlockPayload(now = Date.now()) {
         for (const token of iosPayload.categoryTokenData) categoryTokenData.add(token);
     }
 
+    // Blocklist wins on overlap: an explicitly blocked item is never an exception.
+    for (const domain of allDomains) allowedDomains.delete(domain);
+    for (const token of appTokenData) allowedAppTokenData.delete(token);
+
     const out = {
         domains: Array.from(allDomains).sort(),
+        allowedDomains: Array.from(allowedDomains).sort(),
+        allowedAppTokenData: Array.from(allowedAppTokenData),
         appTokenData: Array.from(appTokenData),
         categoryTokenData: Array.from(categoryTokenData)
     };
@@ -231,6 +264,19 @@ export function collectActiveIOSManualBlockPayload(now = Date.now()) {
         out.blocklistColorHex = typeof c === 'string' && c.length > 0 ? c : null;
         out.blockStartMs = block.startTime;
         out.blockEndMs = block.endTime;
+        out.mode = blocklist?.mode === 'allowlist' ? 'allowlist' : null;
+    }
+    if (allowlistDisplayWinner) {
+        // Shield attribution for "blocked because not allowed" targets: the
+        // earliest-started active allow-mode block, independent of the overall
+        // display winner above (which may be a blocklist block).
+        const { block, blocklist } = allowlistDisplayWinner;
+        out.allowlistBlocklistEmoji = blocklist.emoji ?? null;
+        out.allowlistBlocklistName = blocklist.name ?? null;
+        const c = blocklist.color;
+        out.allowlistBlocklistColorHex = typeof c === 'string' && c.length > 0 ? c : null;
+        out.allowlistBlockStartMs = block.startTime;
+        out.allowlistBlockEndMs = block.endTime;
     }
     return out;
 }
