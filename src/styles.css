@@ -7304,9 +7304,30 @@ body.android .selection-prompt {
     -webkit-appearance: none;
 }
 
-.blocklist-meta-items-btn:hover{
-    color: color-mix(in srgb, var(--blocklist-meta-items-color) 80%, var(--text-muted));
-    text-decoration: none;
+@media (hover: hover) and (pointer: fine) {
+    .blocklist-meta-items-btn:hover{
+        color: color-mix(in srgb, var(--blocklist-meta-items-color) 80%, var(--text-muted));
+        text-decoration: none;
+    }
+}
+
+/* iOS iPhone: WebKit often drops button underlines; keep dashed underline for tap affordance. */
+body.ios-phone .blocklist-meta-items-btn{
+    text-decoration-line: underline;
+    text-decoration-style: dashed;
+    -webkit-text-decoration-line: underline;
+    -webkit-text-decoration-style: dashed;
+}
+
+@media (hover: none), (pointer: coarse) {
+    body.ios-phone .blocklist-meta-items-btn:hover,
+    body.ios-phone .blocklist-meta-items-btn:focus-visible{
+        color: var(--blocklist-meta-items-color);
+        text-decoration: underline dashed;
+        text-decoration-thickness: 1px;
+        -webkit-text-decoration-thickness: 1px;
+        text-underline-offset: 2px;
+    }
 }
 
 .blocklist-card-details.hidden{
