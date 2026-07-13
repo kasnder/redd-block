@@ -7330,6 +7330,53 @@ body.ios-phone .blocklist-meta-items-btn{
     }
 }
 
+/* iOS iPhone: chevron opens enter sheet; edit lives in the overflow menu. */
+body.ios-phone .blocklist-card{
+    --blocklist-action-btn-size: 32px;
+}
+
+body.ios-phone .blocklist-card-title-row{
+    position: static;
+}
+
+body.ios-phone .blocklist-card-header{
+    position: relative;
+    padding-right: var(--blocklist-actions-slot);
+}
+
+body.ios-phone .blocklist-name{
+    padding-right: 0;
+}
+
+body.ios-phone .blocklist-actions{
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+body.ios-phone .blocklist-menu-btn,
+body.ios-phone .blocklist-enter-btn{
+    -webkit-tap-highlight-color: transparent;
+}
+
+body.ios-phone .blocklist-menu-btn svg,
+body.ios-phone .blocklist-enter-btn svg{
+    width: 22px;
+    height: 22px;
+}
+
+@media (hover: none), (pointer: coarse) {
+    body.ios-phone .blocklist-menu-btn:hover,
+    body.ios-phone .blocklist-menu-btn:active,
+    body.ios-phone .blocklist-menu-btn:focus-visible,
+    body.ios-phone .blocklist-enter-btn:hover,
+    body.ios-phone .blocklist-enter-btn:active,
+    body.ios-phone .blocklist-enter-btn:focus-visible{
+        background: var(--element-hover-bg);
+        color: var(--text-secondary);
+    }
+}
+
 .blocklist-card-details.hidden{
     display: none;
 }

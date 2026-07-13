@@ -18,7 +18,7 @@ import {
     generateId,
 } from './app.js';
 import { buildBlocklistCardMetaHtml, buildBlocklistCardDetailsHtml, blocklistCardHasExpandableSummary } from './list-presentation.js';
-import { cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, isBlocklistCardVisuallySelected, isEnterSchedulerModalOpen, openBlocklistModal } from './confirm-modals.js';
+import { cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, isBlocklistCardVisuallySelected, isEnterSchedulerModalOpen, isIOSPhoneDevice, openBlocklistModal } from './confirm-modals.js';
 import { APP_BLOCKING_SNOOZE_ICON_IMG_12, appBlockingWarningSnoozedUntilMs, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistId } from './blocking-platform.js';
 
 /** Focus-space cards whose Sites/Apps summary is expanded (survives re-render). */
@@ -40,6 +40,32 @@ function setBlocklistCardExpanded(card, id, expanded) {
 
 function toggleBlocklistCardExpanded(card, id) {
     setBlocklistCardExpanded(card, id, !expandedBlocklistCardIds.has(id));
+}
+
+const BLOCKLIST_EDIT_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+                        <path d="m15 5 4 4"/>
+                      </svg>`;
+
+const BLOCKLIST_ENTER_CHEVRON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="m9 18 6-6-6-6"/>
+                      </svg>`;
+
+function openBlocklistEnterFromCard(blocklistId) {
+    if (state.selectedBlocklistId === blocklistId) {
+        if (isEnterSchedulerModalOpen()) {
+            deselectBlocklist();
+            return;
+        }
+        const dropdown = document.getElementById('blocklist-select');
+        dropdown.value = blocklistId;
+        handleBlocklistSelect({ target: dropdown }, { openEnterUi: true });
+        return;
+    }
+
+    const dropdown = document.getElementById('blocklist-select');
+    dropdown.value = blocklistId;
+    handleBlocklistSelect({ target: dropdown }, { openEnterUi: true });
 }
 
 const BLOCKLIST_RUNNING_DOT = '<span class="badge-running-dot" aria-hidden="true"></span>';
@@ -870,6 +896,14 @@ export function renderBlocklists() {
             ? `<span class="blocklist-entering-chip" style="background-color: ${enteringChipColor}">${tSettings('blocklistEnteringChip')}</span>`
             : '';
 
+        const isIosPhoneCard = isIOSPhoneDevice();
+        const editMenuItemHtml = isIosPhoneCard
+            ? `<button class="blocklist-menu-item edit-blocklist-item" title="${tSettings('blocklistCardEditTooltip')}" aria-label="${tSettings('blocklistCardEditTooltip')}">
+                      ${BLOCKLIST_EDIT_ICON_SVG}
+                      ${tSettings('blocklistCardEditTooltip')}
+                    </button>`
+            : '';
+
         const menuHtml = `
                 <div class="blocklist-menu-wrapper">
                   <button class="blocklist-action-btn blocklist-menu-btn" title="${tSettings('blocklistCardMenuTitle')}" aria-label="${tSettings('blocklistCardMenuTitle')}">
@@ -880,6 +914,7 @@ export function renderBlocklists() {
                     </svg>
                   </button>
                   <div class="blocklist-menu hidden">
+                    ${editMenuItemHtml}
                     <button class="blocklist-menu-item duplicate-blocklist-item" title="${tSettings('blocklistCardDuplicate')}" aria-label="${tSettings('blocklistCardDuplicate')}">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="15" x2="15" y1="12" y2="18"/>
@@ -900,6 +935,14 @@ export function renderBlocklists() {
                   </div>
                 </div>`;
 
+        const secondaryActionHtml = isIosPhoneCard
+            ? `<button class="blocklist-action-btn blocklist-enter-btn" title="${tSettings('mainStartBlockTitle')}" aria-label="${tSettings('mainStartBlockTitle')}">
+                ${BLOCKLIST_ENTER_CHEVRON_SVG}
+              </button>`
+            : `<button class="blocklist-action-btn edit-btn" title="${tSettings('blocklistCardEditTooltip')}" aria-label="${tSettings('blocklistCardEditTooltip')}">
+                ${BLOCKLIST_EDIT_ICON_SVG}
+              </button>`;
+
         return `
       <div class="blocklist-card${activeClass}${selectedClass}${expandedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle}>
         ${enteringChip}
@@ -914,12 +957,7 @@ export function renderBlocklists() {
               </div>
               <div class="blocklist-actions">
                 ${menuHtml}
-                <button class="blocklist-action-btn edit-btn" title="${tSettings('blocklistCardEditTooltip')}" aria-label="${tSettings('blocklistCardEditTooltip')}">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
-                    <path d="m15 5 4 4"/>
-                  </svg>
-                </button>
+                ${secondaryActionHtml}
               </div>
             </div>
             <div class="blocklist-meta">${metaHtml}</div>
@@ -935,29 +973,35 @@ export function renderBlocklists() {
         const id = card.dataset.id;
         const isActive = card.dataset.active === 'true';
 
-        // Everywhere on the card except the summary button selects/deselects.
+        // Everywhere on the card except action controls selects/opens enter.
         card.addEventListener('click', (e) => {
             if (e.target.closest('.blocklist-meta-items-btn')) return;
-            if (e.target.closest('.blocklist-actions') || e.target.closest('.blocklist-menu')) return;
-
-            if (state.selectedBlocklistId === id) {
-                // Phantom selection (state set, sheet closed): reopen enter instead of deselecting.
-                if (isEnterSchedulerModalOpen()) {
-                    deselectBlocklist();
-                    return;
-                }
-                const dropdown = document.getElementById('blocklist-select');
-                dropdown.value = id;
-                handleBlocklistSelect({ target: dropdown }, { openEnterUi: true });
+            if (isIOSPhoneDevice()) {
+                if (e.target.closest('.blocklist-menu-btn') || e.target.closest('.blocklist-menu')) return;
+            } else if (e.target.closest('.blocklist-actions') || e.target.closest('.blocklist-menu')) {
                 return;
             }
 
-            const dropdown = document.getElementById('blocklist-select');
-            dropdown.value = id;
-            handleBlocklistSelect({ target: dropdown }, { openEnterUi: true });
+            openBlocklistEnterFromCard(id);
         });
 
-        card.querySelector('.edit-btn').addEventListener('click', (e) => {
+        card.querySelector('.blocklist-enter-btn')?.addEventListener('touchstart', (e) => {
+            e.stopPropagation();
+        }, { passive: true });
+
+        card.querySelector('.blocklist-enter-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openBlocklistEnterFromCard(id);
+        });
+
+        card.querySelector('.edit-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeAllBlocklistMenus();
+            const blocklist = state.appData.blocklists.find(bl => bl.id === id);
+            openBlocklistModal(blocklist);
+        });
+
+        card.querySelector('.edit-blocklist-item')?.addEventListener('click', (e) => {
             e.stopPropagation();
             closeAllBlocklistMenus();
             const blocklist = state.appData.blocklists.find(bl => bl.id === id);
@@ -1000,7 +1044,7 @@ export function renderBlocklists() {
         // Drag and drop using mouse events on document
         card.addEventListener('mousedown', (e) => {
             // Don't start drag if clicking on buttons
-            if (e.target.closest('.edit-btn') || e.target.closest('.blocklist-menu-btn') || e.target.closest('.blocklist-menu')) return;
+            if (e.target.closest('.blocklist-enter-btn') || e.target.closest('.edit-btn') || e.target.closest('.blocklist-menu-btn') || e.target.closest('.blocklist-menu')) return;
             if (e.target.closest('.blocklist-meta-items-btn')) return;
             if (e.target.closest('.blocklist-actions')) return;
             if (e.button !== 0) return; // Only left click
