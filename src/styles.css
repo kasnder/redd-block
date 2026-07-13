@@ -11085,7 +11085,8 @@ body.handset-device #override-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #override-all-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #pause-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #start-block-confirm-modal.mobile-fullscreen-modal .modal-content,
-body.handset-device #start-schedule-confirm-modal.mobile-fullscreen-modal .modal-content{
+body.handset-device #start-schedule-confirm-modal.mobile-fullscreen-modal .modal-content,
+body.handset-device #enter-scheduler-modal.mobile-fullscreen-modal .modal-content{
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -11113,6 +11114,23 @@ body.handset-device .mobile-fullscreen-modal .mobile-modal-scroll-body{
         max(18px, env(safe-area-inset-right, 0px))
         calc(env(safe-area-inset-bottom, 0px) + 20px)
         max(18px, env(safe-area-inset-left, 0px));
+}
+
+/* iOS iPhone: keep focus spaces full-height on home; enter tab lives in a sheet. */
+body.ios-phone .grid-top-row.grid-top-row--blocklist-selected .scheduler-section{
+    display: none;
+}
+
+body.ios-phone #enter-scheduler-modal.mobile-fullscreen-modal .time-picker-container{
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+    padding: 0;
+    margin-bottom: 0;
+}
+
+body.ios-phone #enter-scheduler-modal .scheduler-room-chip{
+    display: none;
 }
 
 body.handset-device .mobile-fullscreen-modal .mobile-modal-header{

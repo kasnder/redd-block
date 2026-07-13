@@ -91,7 +91,7 @@ import {
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
 import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, deselectBlocklist, handleBlocklistSelect, handlePauseBlockButtonClick, openBlocklistModal, openPauseModal, openResumeConfirmation, proceedWithBlock, proceedWithPause, proceedWithSchedule, proceedWithScheduleEdit, renderScheduleConfirmSegments, setBtnActionLabel, setOverrideCountMaxMode, setStartBlockBtnLeadingIcon, setStartConfirmPrimaryLabel, startBlock, syncAllStopBtnLabelFits, syncOverrideCountUi, syncPauseDurationRowLayout, updateOverridePreview, updatePauseRestartTime, openOverrideModal, openScheduleOverrideModal, showScheduleConfirmModal, showScheduleEditConfirmModal, syncStopBtnLabelFit, setStartBtnBlocklistInfo } from './confirm-modals.js';
-import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, undoDelete, deleteBlocklist, clearPendingScheduleDraft, pendingDelete, saveBlocklistOrderFromDOM, getBlocklistScheduleDraft, saveBlocklistScheduleDraft, isBlocklistCurrentlyActive } from './blocklists.js';
+import { renderBlocklists, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, undoDelete, deleteBlocklist, clearPendingScheduleDraft, pendingDelete, saveBlocklistOrderFromDOM, getBlocklistScheduleDraft, saveBlocklistScheduleDraft, isBlocklistCurrentlyActive } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
     setBlocklistModalMode,
@@ -1718,6 +1718,7 @@ function setupModalListeners() {
 
         // Keep live preview while editing, but don't revert after a confirmed save.
         state.blocklistModalPreviewSnapshot = null;
+        const wasNewBlocklist = !state.editingBlocklistId;
         closeBlocklistModal();
 
         // Only update blocklist display without resetting schedule segments
@@ -1727,14 +1728,16 @@ function setupModalListeners() {
         renderNowBlockingRow(); // Title-bar chips read emoji/name from freshly saved blocklist
         renderScheduleAlwaysOnRow();
 
-        // If this was the first blocklist created from the empty state,
-        // auto-select it so the user doesn't have to click it. `force`
-        // clears the deselect flag — creating a new blocklist is a
-        // strong "I want to use this" signal.
-        if (!state.editingBlocklistId) autoSelectSoleBlocklist({ force: true });
-
-        // Re-trigger blocklist selection to update button text (name may have changed)
-        if (state.selectedBlocklistId) {
+        if (wasNewBlocklist) {
+            // New focus space: land on enter (sheet on iOS iPhone, inline elsewhere).
+            state.userExplicitlyDeselected = false;
+            const dropdown = document.getElementById('blocklist-select');
+            if (dropdown) {
+                dropdown.value = blocklist.id;
+                handleBlocklistSelect({ target: dropdown }, { openEnterUi: true });
+            }
+        } else if (state.selectedBlocklistId) {
+            // Edit existing: refresh controls only, never auto-open enter.
             const dropdown = document.getElementById('blocklist-select');
             if (dropdown) {
                 dropdown.value = state.selectedBlocklistId;
@@ -1939,6 +1942,8 @@ function setupOverrideModalListeners() {
     document.getElementById('pause-block-btn').addEventListener('click', () => {
         handlePauseBlockButtonClick();
     });
+
+    document.getElementById('cancel-enter-scheduler-btn')?.addEventListener('click', deselectBlocklist);
 
     // Pause modal event listeners
     document.getElementById('cancel-pause-btn').addEventListener('click', closePauseModal);

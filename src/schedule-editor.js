@@ -7,7 +7,7 @@ import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import { isNonRepeatingSchedule, isSchedulePausedNow, resolveOneShotOccurrences } from './schedule-engine.js';
 import { saveData } from './persistence.js';
 import { clearPendingScheduleDraft } from './blocklists.js';
-import { handleTimeChange } from './confirm-modals.js';
+import { getLiveTimePickerContainer, handleTimeChange } from './confirm-modals.js';
 import { disableScheduleControls, disableTimeControls, pad, parseEndTimeBoundedInt, scrollPopoverOptionIntoView, updateDurationQuickBtns } from './time-inputs.js';
 import { syncSchedulePanelOverlayControls } from './schedule-overlay.js';
 import {
@@ -78,21 +78,25 @@ export function setScheduleMode(isSchedule) {
         }
     }
 
+    const timePicker = getLiveTimePickerContainer();
+
     // Update tab active states
-    document.getElementById('instant-mode-tab').classList.toggle('active', !isSchedule);
-    document.getElementById('schedule-mode-tab').classList.toggle('active', isSchedule);
+    timePicker?.querySelector('#instant-mode-tab')?.classList.toggle('active', !isSchedule);
+    timePicker?.querySelector('#schedule-mode-tab')?.classList.toggle('active', isSchedule);
 
     // Update section heading
-    const heading = document.getElementById('main-start-block-title');
+    const heading = timePicker?.querySelector('#main-start-block-title');
     if (heading) {
         heading.textContent = tSettings('mainStartBlockTitle');
     }
 
     // Toggle panels
-    const instantPanel = document.getElementById('instant-block-panel');
-    const schedulePanel = document.getElementById('schedule-block-panel');
-    const startBlockBtn = document.getElementById('start-block-btn');
-    const startScheduleBtn = document.getElementById('start-schedule-btn');
+    const instantPanel = timePicker?.querySelector('#instant-block-panel');
+    const schedulePanel = timePicker?.querySelector('#schedule-block-panel');
+    const startBlockBtn = timePicker?.querySelector('#start-block-btn');
+    const startScheduleBtn = timePicker?.querySelector('#start-schedule-btn');
+
+    if (!instantPanel || !schedulePanel || !startBlockBtn || !startScheduleBtn) return;
 
     if (isSchedule) {
         // Check if selected blocklist has an existing schedule

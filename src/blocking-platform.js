@@ -1455,8 +1455,11 @@ export function setupHandsetModalScreens() {
         'start-block-confirm-modal',
         'start-schedule-confirm-modal',
         'settings-modal',
-        'override-all-modal'
+        'override-all-modal',
     ];
+    if (document.body.classList.contains('ios-phone')) {
+        modalIds.push('enter-scheduler-modal');
+    }
 
     for (const modalId of modalIds) {
         const overlay = document.getElementById(modalId);

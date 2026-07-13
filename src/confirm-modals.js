@@ -13,7 +13,7 @@ import { clearPendingScheduleDraft, renderBlocklists, truncateBlocklistName } fr
 import { getCommittedScheduleSegmentCount, getInitialExpandedScheduleSegmentIndex, isScheduleSegmentActiveNow, rebuildScheduleSegments, setAlwaysOnMode, setScheduleMode, updateScheduleButtonState } from './schedule-editor.js';
 import { getEffectiveScheduleStartOverlayId, rememberLastScheduleStartOverlayId, syncScheduleConfirmOverlaySummary } from './schedule-overlay.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, initializeTimeInputs, pad, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
-import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
+import { resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
 import { bindUiZoomLayoutObserver, scheduleSelectionPromptLayout, scheduleUiZoomResponsiveLayout } from './theme.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
@@ -1494,6 +1494,97 @@ export function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     }
 }
 
+function usesIOSPhoneEnterSchedulerModal() {
+    return document.body.classList.contains('ios-phone');
+}
+
+export function isIOSPhoneDevice() {
+    return usesIOSPhoneEnterSchedulerModal();
+}
+
+/** Selected border + entering chip on the card; never on iOS iPhone (enter lives in full-screen sheet). */
+export function isBlocklistCardVisuallySelected(blocklistId) {
+    if (usesIOSPhoneEnterSchedulerModal()) return false;
+    return blocklistId === state.selectedBlocklistId;
+}
+
+export function isEnterSchedulerModalOpen() {
+    return usesIOSPhoneEnterSchedulerModal()
+        && document.body.classList.contains('enter-scheduler-modal-open');
+}
+
+/** Live enter-tab root — modal sheet on iOS iPhone, inline scheduler elsewhere. */
+export function getLiveTimePickerContainer() {
+    const inModal = document.querySelector('#enter-scheduler-modal .mobile-modal-scroll-body #time-picker-container');
+    if (inModal) return inModal;
+    return document.querySelector('#scheduler-section .scheduler-content #time-picker-container');
+}
+
+function clearSchedulerPlaceholderMeasurer() {
+    const measurer = document.getElementById('scheduler-placeholder-measurer');
+    if (measurer) measurer.innerHTML = '';
+}
+
+function getEnterSchedulerModal() {
+    return document.getElementById('enter-scheduler-modal');
+}
+
+function getTimePickerHome() {
+    return document.querySelector('#scheduler-section .scheduler-content');
+}
+
+function getEnterSchedulerScrollBody() {
+    return getEnterSchedulerModal()?.querySelector('.mobile-modal-scroll-body');
+}
+
+function syncEnterSchedulerModalTitle(blocklist) {
+    const titleEl = document.getElementById('enter-scheduler-modal-title');
+    if (!titleEl || !blocklist) return;
+    const emoji = blocklist.emoji || '🎯';
+    const name = blocklist.name || '';
+    titleEl.textContent = name ? `${emoji} ${name}` : emoji;
+}
+
+function openEnterSchedulerModal() {
+    const modal = getEnterSchedulerModal();
+    const timePicker = getLiveTimePickerContainer();
+    const scrollBody = getEnterSchedulerScrollBody();
+    const home = getTimePickerHome();
+    if (!modal || !timePicker || !scrollBody || !home) return;
+
+    clearSchedulerPlaceholderMeasurer();
+
+    if (timePicker.parentElement !== scrollBody) {
+        scrollBody.appendChild(timePicker);
+    }
+    modal.classList.remove('hidden');
+    document.body.classList.add('enter-scheduler-modal-open');
+    resetModalScrollPosition(modal);
+}
+
+function closeEnterSchedulerModal() {
+    const modal = getEnterSchedulerModal();
+    const timePicker = getLiveTimePickerContainer();
+    const home = getTimePickerHome();
+    if (!modal || !timePicker || !home) return;
+
+    if (timePicker.parentElement !== home) {
+        home.appendChild(timePicker);
+    }
+    modal.classList.add('hidden');
+    document.body.classList.remove('enter-scheduler-modal-open');
+}
+
+function syncIOSPhoneEnterSchedulerModal(blocklist, { openEnterUi = false } = {}) {
+    if (!usesIOSPhoneEnterSchedulerModal()) return;
+    if (state.selectedBlocklistId && blocklist && openEnterUi) {
+        syncEnterSchedulerModalTitle(blocklist);
+        openEnterSchedulerModal();
+    } else {
+        closeEnterSchedulerModal();
+    }
+}
+
 /** Start-a-block heading + Now/Schedule tabs — only meaningful once a blocklist is chosen. */
 export function syncSchedulerChromeVisibility() {
     const gridTopRow = document.querySelector('.grid-top-row');
@@ -1509,8 +1600,9 @@ export function syncSchedulerChromeVisibility() {
     scheduleSelectionPromptLayout();
 }
 
-// Handle blocklist selection
-export function handleBlocklistSelect(e) {
+// Handle blocklist selection.
+// On iOS iPhone the enter sheet only opens when openEnterUi is true (card tap or sole-blocklist auto-select).
+export function handleBlocklistSelect(e, { openEnterUi = false } = {}) {
     const newBlocklistId = e.target.value || null;
 
     // Before switching, save pending changes for the current blocklist
@@ -1666,6 +1758,11 @@ export function handleBlocklistSelect(e) {
     renderBlocklists();
 
     handleTimeChange(); // Update button state and preview
+
+    const selectedBlocklist = state.selectedBlocklistId
+        ? state.appData.blocklists.find((bl) => bl.id === state.selectedBlocklistId)
+        : null;
+    syncIOSPhoneEnterSchedulerModal(selectedBlocklist, { openEnterUi });
 
     // Wait for DOM reflow to capture the correct height after showing/hiding elements
     setTimeout(() => {
