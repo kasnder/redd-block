@@ -11149,7 +11149,7 @@ body.ios-phone .selection-prompt{
 }
 
 body.ios-phone .blocklists-section{
-    display: flex;
+    display: flex !important;
     flex-direction: column;
     flex: 1 1 auto;
     width: 100%;
@@ -11157,9 +11157,18 @@ body.ios-phone .blocklists-section{
     min-height: 0;
 }
 
+body.ios-phone .grid-top-row .blocklists-section{
+    display: flex !important;
+    flex-direction: column;
+}
+
 body.ios-phone .blocklists-section > .section-header.blocklists-section-header{
     width: 100%;
     flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    background: var(--container-bg);
 }
 
 body.ios-phone .blocklists-container{
@@ -11210,12 +11219,24 @@ body.ios-phone .blocklists-container{
         display: flex !important;
         flex-direction: column !important;
         align-items: stretch;
+        flex: 0 0 auto;
+        min-height: auto;
     }
 
-    body.ios-phone .blocklists-section{
-        flex: 1 1 auto !important;
+    body.ios-phone .grid-top-row .blocklists-section,
+    body.ios-phone .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section,
+    body.ios-phone .grid-top-row.grid-top-row--blocklist-selected .blocklists-section,
+    body.ios-phone.ui-zoom-tier-cramped .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section{
+        flex: 0 0 auto !important;
         max-width: 100% !important;
         width: 100% !important;
+        min-height: auto;
+    }
+
+    body.ios-phone .blocklists-container{
+        flex: 0 0 auto;
+        overflow: visible !important;
+        max-height: none !important;
     }
 
     body.ios-phone .scheduler-section,
