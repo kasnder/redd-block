@@ -3365,34 +3365,35 @@ body.ios.ui-zoom-tier-stack .main-content{
 }
 
 /* Handset landscape: keep two columns, but let the scheduler claim the width it
-   needs before blocklists, and keep the whole app inset from the screen edges. */
+   needs before blocklists, and keep the whole app inset from the screen edges.
+   iOS iPhone is excluded — home is focus spaces only (enter lives in a sheet). */
 @media (orientation: landscape) {
-    body.handset-device .app-container{
+    body.handset-device:not(.ios-phone) .app-container{
         width: auto;
         margin-left: 12px;
         margin-right: 12px;
     }
 
-    body.handset-device .main-content{
+    body.handset-device:not(.ios-phone) .main-content{
         padding-left: 18px;
         padding-right: 18px;
         --app-settings-right: 18px;
     }
 
-    body.handset-device .grid-top-row{
+    body.handset-device:not(.ios-phone) .grid-top-row{
         display: flex;
         gap: 12px;
         align-items: flex-start;
         min-width: 0;
     }
 
-    body.handset-device .blocklists-section{
+    body.handset-device:not(.ios-phone) .blocklists-section{
         flex: 45 1 0;
         max-width: 45%;
         min-width: 0;
     }
 
-    body.handset-device .scheduler-section{
+    body.handset-device:not(.ios-phone) .scheduler-section{
         flex: 55 1 0;
         min-width: 0;
         max-width: 55%;
@@ -11116,9 +11117,101 @@ body.handset-device .mobile-fullscreen-modal .mobile-modal-scroll-body{
         max(18px, env(safe-area-inset-left, 0px));
 }
 
-/* iOS iPhone: keep focus spaces full-height on home; enter tab lives in a sheet. */
-body.ios-phone .grid-top-row.grid-top-row--blocklist-selected .scheduler-section{
-    display: none;
+/* iOS iPhone home: focus spaces only — enter lives in a full-screen sheet. */
+body.ios-phone .main-content,
+body.ios-phone.ui-zoom-tier-stack .main-content{
+    padding-left: max(18px, env(safe-area-inset-left, 0px));
+    padding-right: max(18px, env(safe-area-inset-right, 0px));
+    --app-settings-right: max(18px, env(safe-area-inset-right, 0px));
+}
+
+body.ios-phone .grid-top-row{
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    flex: 1;
+    min-height: 0;
+}
+
+body.ios-phone .scheduler-section,
+body.ios-phone .selection-prompt{
+    display: none !important;
+}
+
+body.ios-phone .blocklists-section{
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: 100%;
+    min-height: 0;
+}
+
+body.ios-phone .blocklists-section > .section-header.blocklists-section-header{
+    width: 100%;
+    flex-shrink: 0;
+}
+
+body.ios-phone .blocklists-container{
+    --blocklists-scroll-max-height: none;
+    max-height: none;
+    overflow: visible;
+    -webkit-overflow-scrolling: auto;
+    width: 100%;
+    flex: 1 1 auto;
+}
+
+/* Landscape is often ≥769px wide — block the desktop grid hoisting and width caps that reserve a timer column. */
+@media (min-width: 769px) {
+    body.ios-phone .grid-top-row{
+        display: flex !important;
+        flex-direction: column !important;
+        grid-template-columns: none !important;
+        grid-template-rows: none;
+    }
+
+    body.ios-phone .grid-top-row .blocklists-section,
+    body.ios-phone .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section,
+    body.ios-phone .grid-top-row.grid-top-row--blocklist-selected .blocklists-section,
+    body.ios-phone.ui-zoom-tier-cramped .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section{
+        display: flex !important;
+        flex-direction: column;
+        flex: 1 1 auto !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0;
+    }
+
+    body.ios-phone .grid-top-row .scheduler-section,
+    body.ios-phone .grid-top-row .scheduler-content{
+        display: none !important;
+    }
+
+    body.ios-phone .grid-top-row .blocklists-section > .section-header.blocklists-section-header,
+    body.ios-phone .grid-top-row .blocklists-container{
+        grid-column: auto;
+        grid-row: auto;
+        width: 100%;
+    }
+}
+
+@media (orientation: landscape) {
+    body.ios-phone .grid-top-row{
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch;
+    }
+
+    body.ios-phone .blocklists-section{
+        flex: 1 1 auto !important;
+        max-width: 100% !important;
+        width: 100% !important;
+    }
+
+    body.ios-phone .scheduler-section,
+    body.ios-phone .scheduler-content{
+        display: none !important;
+    }
 }
 
 body.ios-phone #enter-scheduler-modal.mobile-fullscreen-modal .time-picker-container{
@@ -11155,6 +11248,20 @@ body.handset-device .mobile-fullscreen-modal .mobile-modal-header{
     background: color-mix(in srgb, var(--app-bg) 92%, transparent);
     backdrop-filter: blur(14px);
     border-bottom: 1px solid rgba(225, 220, 214, 0.88);
+}
+
+/* Landscape: drop header bleed margins so back/title align with scroll-body horizontal safe padding. */
+@media (orientation: landscape) {
+    body.ios-phone .mobile-fullscreen-modal .mobile-modal-header{
+        margin-left: 0;
+        margin-right: 0;
+        padding-left: max(18px, env(safe-area-inset-left, 0px));
+        padding-right: max(18px, env(safe-area-inset-right, 0px));
+    }
+
+    body.ios-phone #settings-modal.mobile-fullscreen-modal .mobile-modal-header .settings-header-version{
+        margin-right: 0;
+    }
 }
 
 body.handset-device .mobile-fullscreen-modal .mobile-modal-back-btn{

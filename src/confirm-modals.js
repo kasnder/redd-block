@@ -1743,7 +1743,8 @@ export function handleBlocklistSelect(e, { openEnterUi = false } = {}) {
         initializeTimeInputs();
     } else {
         // Show selection prompt, hide time picker, hint, and both buttons
-        if (selectionPrompt) selectionPrompt.classList.remove('hidden');
+        if (selectionPrompt && !isIOSPhoneDevice()) selectionPrompt.classList.remove('hidden');
+        else if (selectionPrompt) selectionPrompt.classList.add('hidden');
         timePicker.classList.add('hidden');
         if (passwordHint) passwordHint.classList.add('hidden');
         if (startBlockBtn) startBlockBtn.classList.add('hidden');

@@ -1087,6 +1087,13 @@ function restoreBlocklistMenu(menu) {
     delete menu._blocklistMenuScrollParent;
 }
 
+function getBlocklistMenuScrollParent() {
+    if (document.body.classList.contains('ios-phone')) {
+        return document.querySelector('.main-content');
+    }
+    return document.getElementById('blocklists-container');
+}
+
 function positionBlocklistMenu(menuBtn, menu, wrapper) {
     if (menu.parentElement !== document.body) {
         document.body.appendChild(menu);
@@ -1117,7 +1124,7 @@ function positionBlocklistMenu(menuBtn, menu, wrapper) {
     menu.style.transform = 'none';
     menu.style.zIndex = String(BLOCKLIST_MENU_Z_INDEX);
 
-    const scrollParent = document.getElementById('blocklists-container');
+    const scrollParent = getBlocklistMenuScrollParent();
     if (scrollParent) {
         menu._blocklistMenuScrollParent = scrollParent;
         scrollParent.addEventListener('scroll', closeAllBlocklistMenus, { once: true });

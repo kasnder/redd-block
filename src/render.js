@@ -10,7 +10,7 @@ import { disableTimeControls, updateTimeDisplay } from './time-inputs.js';
 import { isScheduleSegmentActiveNow, updateScheduleButtonState } from './schedule-editor.js';
 import { autoSelectSoleBlocklist, renderBlocklists } from './blocklists.js';
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight } from './blocking-platform.js';
-import { handleBlocklistSelect, openBlocklistModal, openOverrideModal, openPauseModal, openScheduleOverrideModal, setBtnActionLabel, setStartBlockBtnLeadingIcon, setStartBtnBlocklistInfo, syncPauseButtonForSelectedBlocklist, syncSchedulerChromeVisibility, syncStopBtnLabelFit, openScheduledBlockEdit, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
+import { handleBlocklistSelect, isIOSPhoneDevice, openBlocklistModal, openOverrideModal, openPauseModal, openScheduleOverrideModal, setBtnActionLabel, setStartBlockBtnLeadingIcon, setStartBtnBlocklistInfo, syncPauseButtonForSelectedBlocklist, syncSchedulerChromeVisibility, syncStopBtnLabelFit, openScheduledBlockEdit, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
 import { scheduleSelectionPromptLayout } from './theme.js';
 import { updateCleanHostsBtnState, updateOverrideAllButtonVisibility } from './settings.js';
 import {
@@ -49,7 +49,7 @@ export function render() {
     // Hide "Select a blocklist" prompt if there are no blocklists
     const selectionPrompt = document.getElementById('selection-prompt');
     if (selectionPrompt) {
-        if (state.appData.blocklists.length === 0) {
+        if (state.appData.blocklists.length === 0 || isIOSPhoneDevice()) {
             selectionPrompt.classList.add('hidden');
         } else if (!state.selectedBlocklistId) {
             // Only show prompt if there are blocklists but none selected

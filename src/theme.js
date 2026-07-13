@@ -423,6 +423,11 @@ export function measureTimePickerPlaceholderHeight(section) {
 
 /** Pin the empty-state hint to the first blocklist card (two-column) or reserve time-picker space (stack). */
 export function syncSelectionPromptLayout() {
+    if (document.body.classList.contains('ios-phone')) {
+        clearSelectionPromptLayout();
+        return;
+    }
+
     const prompt = document.getElementById('selection-prompt');
     const gridTopRow = document.querySelector('.grid-top-row');
     const schedulerSection = document.getElementById('scheduler-section');
