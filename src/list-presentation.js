@@ -33,6 +33,9 @@ export function getBlocklistDisplayApps(blocklist) {
 }
 
 export function websiteWord(count) {
+    if (getSettingsLanguage() === 'zh-CN') {
+        return '网站';
+    }
     if (getSettingsLanguage() === 'da') {
         return count === 1 ? 'hjemmeside' : 'hjemmesider';
     }
@@ -40,6 +43,9 @@ export function websiteWord(count) {
 }
 
 function siteWord(count) {
+    if (getSettingsLanguage() === 'zh-CN') {
+        return '网站';
+    }
     if (getSettingsLanguage() === 'da') {
         return count === 1 ? 'websted' : 'websteder';
     }

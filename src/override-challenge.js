@@ -258,7 +258,7 @@ export function getOverrideEstimatedMinutes(type, count, customText) {
 export function formatOverrideMaxDifficultyHint(type) {
     const count = getMaxOverrideCharsForType(type);
     const usesWords = usesMobileWordCountForOverrideType(type);
-    const locale = getSettingsLanguage() === 'da' ? 'da-DK' : 'en-US';
+    const locale = tSettings('locale');
     const countStr = count.toLocaleString(locale);
     return tSettingsFmt(
         usesWords ? 'overrideMaxDifficultyHintWords' : 'overrideMaxDifficultyHintChars',

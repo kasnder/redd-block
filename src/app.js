@@ -114,7 +114,7 @@ import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolv
 import { updateDownloadInProgress } from './update-banner.js';
 import { getWordList5, getIOSRandomWordsCharCount, generateRandomWordsByCount, generateRandomWords, generateOverrideChallengeText, generateGibberish, normalizeOverrideCount, normalizeCustomOverrideText, getTypingCharsPerMinuteForType, getMaxOverrideCharsForType, getOverrideGeneratedCharCount, getDifficultyTypingCharCount, getOverridePreviewText, getOverrideEstimatedMinutes, formatOverrideMaxDifficultyHint, usesMobileWordCountForOverrideType, isMobileOverrideChallengePlatform, formatIOSGibberishChallenge, MIN_OVERRIDE_CHARS, DEFAULT_OVERRIDE_COUNT, TARGET_MAX_OVERRIDE_MINUTES, MAX_IOS_OVERRIDE_WORD_COUNT, IOS_OVERRIDE_WORDS_PER_MINUTE, OVERRIDE_PREVIEW_TRUNCATE_AT } from './override-challenge.js';
 import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
-import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, LANGUAGE_NATIVE_LABELS, languageNativeLabel } from './i18n.js';
+import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, LANGUAGE_NATIVE_LABELS, languageNativeLabel, SUPPORTED_LANGUAGE_CODES } from './i18n.js';
 /** Windows Settings → Apps → Installed apps (Apps & features). */
 export const WINDOWS_APPS_SETTINGS_URI = 'ms-settings:appsfeatures';
 
@@ -2304,6 +2304,11 @@ export function formatBlockTimeRemainingShort(totalMins) {
     const n = Math.max(0, Math.floor(totalMins));
     const hrs = Math.floor(n / 60);
     const mins = n % 60;
+    if (getSettingsLanguage() === 'zh-CN') {
+        if (hrs > 0 && mins > 0) return `剩余 ${hrs}小时${mins}分钟`;
+        if (hrs > 0) return `剩余 ${hrs}小时`;
+        return `剩余 ${mins}分钟`;
+    }
     if (getSettingsLanguage() === 'da') {
         if (hrs > 0 && mins > 0) return `${hrs}t ${mins}m endnu`;
         if (hrs > 0) return `${hrs}t endnu`;
@@ -2474,11 +2479,9 @@ function languagePickerElements(rootId) {
         triggerCode: document.getElementById(`${rootId}-trigger-code`),
         currentName: document.getElementById(`${rootId}-current-name`),
         currentFlag: document.getElementById(`${rootId}-current-flag`),
-        switchName: document.getElementById(`${rootId}-switch-name`),
-        switchFlag: document.getElementById(`${rootId}-switch-flag`),
+        options: document.getElementById(`${rootId}-options`),
         curLabel: document.getElementById(`${rootId}-current-label`),
         swLabel: document.getElementById(`${rootId}-switch-label`),
-        switchBtn: document.getElementById(`${rootId}-switch-btn`),
     };
 }
 
@@ -2521,7 +2524,6 @@ export function setLanguagePickerOpen(open, rootId) {
 
 function syncLanguagePickerUIForRoot(rootId) {
     const lang = getSettingsLanguage();
-    const other = lang === 'da' ? 'en' : 'da';
     const {
         picker,
         trigger,
@@ -2529,8 +2531,7 @@ function syncLanguagePickerUIForRoot(rootId) {
         triggerCode,
         currentName,
         currentFlag,
-        switchName,
-        switchFlag,
+        options,
         curLabel,
         swLabel,
     } = languagePickerElements(rootId);
@@ -2541,15 +2542,28 @@ function syncLanguagePickerUIForRoot(rootId) {
     }
     if (triggerFlag) triggerFlag.innerHTML = LANGUAGE_FLAG_SVG[lang] || '';
     if (currentFlag) currentFlag.innerHTML = LANGUAGE_FLAG_SVG[lang] || '';
-    if (switchFlag) switchFlag.innerHTML = LANGUAGE_FLAG_SVG[other] || '';
 
     const curLabelText = languageNativeLabel(lang);
-    const othLabelText = languageNativeLabel(other);
     if (currentName) currentName.textContent = curLabelText;
-    if (switchName) switchName.textContent = othLabelText;
     if (curLabel) curLabel.textContent = tSettings('languagePickerCurrent');
     if (swLabel) swLabel.textContent = tSettings('languagePickerSwitch');
     if (trigger) trigger.setAttribute('aria-label', tSettings('language'));
+    if (options) {
+        options.innerHTML = '';
+        for (const code of SUPPORTED_LANGUAGE_CODES) {
+            if (code === lang) continue;
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'language-picker-option language-picker-option--switch';
+            button.setAttribute('role', 'option');
+            button.dataset.languageCode = code;
+            button.innerHTML = `
+                <span class="language-picker-flag-wrap" aria-hidden="true">${LANGUAGE_FLAG_SVG[code] || ''}</span>
+                <span class="language-picker-name">${languageNativeLabel(code)}</span>
+            `;
+            options.appendChild(button);
+        }
+    }
 }
 
 function syncLanguagePickerUI() {
@@ -2558,9 +2572,8 @@ function syncLanguagePickerUI() {
     }
 }
 
-function switchLanguageSetting() {
-    const cur = getSettingsLanguage();
-    const next = cur === 'da' ? 'en' : 'da';
+function switchLanguageSetting(next) {
+    if (!SUPPORTED_LANGUAGE_CODES.includes(next)) return;
     if (!state.appData.settings) state.appData.settings = {};
     state.appData.settings.language = next;
     applySettingsLanguage();
@@ -2572,8 +2585,8 @@ function switchLanguageSetting() {
 let languagePickerDocClickBound = false;
 
 function setupLanguagePickerForRoot(rootId) {
-    const { picker, trigger, dropdown, switchBtn } = languagePickerElements(rootId);
-    if (!picker || !trigger || !dropdown || !switchBtn) return;
+    const { picker, trigger, dropdown, options } = languagePickerElements(rootId);
+    if (!picker || !trigger || !dropdown || !options) return;
     if (picker.dataset.bound === '1') return;
     picker.dataset.bound = '1';
 
@@ -2586,10 +2599,12 @@ function setupLanguagePickerForRoot(rootId) {
 
     dropdown.addEventListener('click', (e) => e.stopPropagation());
 
-    switchBtn.addEventListener('click', (e) => {
+    options.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-language-code]');
+        if (!btn) return;
         e.preventDefault();
         e.stopPropagation();
-        switchLanguageSetting();
+        switchLanguageSetting(btn.dataset.languageCode);
     });
 }
 
@@ -2613,12 +2628,15 @@ export function setupLanguagePicker() {
 /** Confirmation modals — describe typing challenge count + time estimate */
 export function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, resumeShortGibberish = false }) {
     const minutes = estimatedMinutes;
+    const lang = getSettingsLanguage();
     const charUnitDa = 'tegn';
     const charUnitEn = count === 1 ? 'character' : 'characters';
-    const charUnit = getSettingsLanguage() === 'da' ? charUnitDa : charUnitEn;
+    const charUnitZh = '字符';
+    const charUnit = lang === 'zh-CN' ? charUnitZh : (lang === 'da' ? charUnitDa : charUnitEn);
     const wordUnitDa = count === 1 ? 'ord' : 'ord';
     const wordUnitEn = count === 1 ? 'word' : 'words';
-    const wordUnit = getSettingsLanguage() === 'da' ? wordUnitDa : wordUnitEn;
+    const wordUnitZh = '词';
+    const wordUnit = lang === 'zh-CN' ? wordUnitZh : (lang === 'da' ? wordUnitDa : wordUnitEn);
 
     if (type === 'custom') {
         return tSettingsFmt('confirmOverrideCustomPhraseFmt', { count, minutes });

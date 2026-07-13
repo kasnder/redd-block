@@ -3230,13 +3230,13 @@ export function updateOverridePreview() {
     const previewText = getOverridePreviewText(type, count, customText);
 
     const lang = getSettingsLanguage();
-    const timeVars = lang === 'da'
-        ? { minutes: estimatedMins, unit: estimatedMins === 1 ? 'minut' : 'minutter' }
-        : { minutes: estimatedMins, minuteSuffix: estimatedMins === 1 ? '' : 's' };
     if (timeEstimateEl && type !== 'custom') {
-        timeEstimateEl.textContent = lang === 'da'
-            ? tSettingsFmt('overrideCountTimeEstimateDa', timeVars)
-            : tSettingsFmt('overrideCountTimeEstimate', { minutes: estimatedMins });
+        if (lang === 'da') {
+            const unit = estimatedMins === 1 ? 'minut' : 'minutter';
+            timeEstimateEl.textContent = tSettingsFmt('overrideCountTimeEstimateDa', { minutes: estimatedMins, unit });
+        } else {
+            timeEstimateEl.textContent = tSettingsFmt('overrideCountTimeEstimate', { minutes: estimatedMins });
+        }
     }
 
     previewEl.textContent = previewText;
