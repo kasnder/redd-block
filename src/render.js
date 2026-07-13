@@ -1094,7 +1094,10 @@ export function renderScheduleSegmentOnWeekday(schedule, segment, segmentIdx, da
 // Render blocklist selector dropdown
 export function renderBlocklistSelector() {
     const select = document.getElementById('blocklist-select');
-    const currentValue = select.value;
+    if (!select) return;
+
+    // Prefer app state over the DOM — the hidden <select> can drift after rebuilds.
+    const selectedId = state.selectedBlocklistId || select.value || '';
     const activeIds = state.appData.activeBlocks.map(b => b.blocklistId);
 
     const newHTML = `
@@ -1106,11 +1109,21 @@ export function renderBlocklistSelector() {
     }).join('')}
   `;
 
+    const validSelectedId = selectedId && state.appData.blocklists.some((bl) => bl.id === selectedId)
+        ? selectedId
+        : '';
+
     // Only update if changed to prevent closing dropdown
     // Normalize logic to ignore potential minor diffs if logic is sound, but direct string compare is fine
     if (select.innerHTML !== newHTML) {
+        state.suppressBlocklistSelectChange = true;
         select.innerHTML = newHTML;
-        select.value = currentValue;
+        select.value = validSelectedId;
+        state.suppressBlocklistSelectChange = false;
+    } else if (validSelectedId && select.value !== validSelectedId) {
+        state.suppressBlocklistSelectChange = true;
+        select.value = validSelectedId;
+        state.suppressBlocklistSelectChange = false;
     }
 }
 

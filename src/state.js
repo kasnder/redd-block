@@ -19,6 +19,8 @@ export const state = {
      *  intentional deselect — cleared again when the user picks anything via
      *  the dropdown or creates a new blocklist. */
     userExplicitlyDeselected: false,
+    /** True while the hidden blocklist <select> is being rebuilt programmatically. */
+    suppressBlocklistSelectChange: false,
     helperAvailable: false, // Track if the privileged helper daemon is running
     isIOS: false, // Track if running on iOS
     isAndroid: false, // Track if running on Android

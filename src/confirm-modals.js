@@ -1509,8 +1509,21 @@ export function syncSchedulerChromeVisibility() {
     scheduleSelectionPromptLayout();
 }
 
+/** Re-sync the hidden dropdown and scheduler chrome from a focus-space id.
+ *  Use after render() when pause/stop/start may have rebuilt the <select>. */
+export function refreshSelectedBlocklistUi(blocklistId = state.selectedBlocklistId) {
+    if (!blocklistId) return;
+    if (!state.appData.blocklists.some((bl) => bl.id === blocklistId)) return;
+    state.selectedBlocklistId = blocklistId;
+    const blocklistSelect = document.getElementById('blocklist-select');
+    if (!blocklistSelect) return;
+    blocklistSelect.value = blocklistId;
+    handleBlocklistSelect({ target: blocklistSelect });
+}
+
 // Handle blocklist selection
 export function handleBlocklistSelect(e) {
+    if (state.suppressBlocklistSelectChange) return;
     const newBlocklistId = e.target.value || null;
 
     // Before switching, save pending changes for the current blocklist
@@ -2019,10 +2032,7 @@ export async function proceedWithBlock() {
     startBtn2.innerHTML = getStartBlockButtonHTML();
     startBtn2.disabled = false;
 
-    // Ensure the blocklist stays selected in dropdown and update UI to show Stop Block button
-    const blocklistSelect = document.getElementById('blocklist-select');
-    blocklistSelect.value = state.selectedBlocklistId; // Make sure it's still set
-    handleBlocklistSelect({ target: blocklistSelect });
+    refreshSelectedBlocklistUi();
 }
 
 // Helper function for start block button HTML (includes .btn-label and .btn-blocklist-meta wrapper)
@@ -3197,7 +3207,9 @@ export async function proceedWithPause() {
         }
     }
 
+    const keepSelectedId = state.selectedBlocklistId;
     render();
+    refreshSelectedBlocklistUi(keepSelectedId);
     syncPauseButtonForSelectedBlocklist();
     closePauseModal();
 }
