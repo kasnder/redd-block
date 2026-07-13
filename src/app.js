@@ -2034,6 +2034,7 @@ function setupOverrideModalListeners() {
     window.addEventListener('resize', () => syncAllStopBtnLabelFits());
     window.addEventListener('resize', () => syncMobileScheduleDayLabelsViewportMode());
     window.visualViewport?.addEventListener('resize', syncMobileScheduleDayLabelsViewportMode);
+    window.addEventListener('orientationchange', () => syncMobileScheduleDayLabelsViewportMode());
 
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
         if (state.overrideWordChallengeState) {
@@ -2443,6 +2444,10 @@ function shouldUseCompactIosScheduleDayLabels() {
 
 export function shouldUseCompactMobileScheduleDayLabels() {
     if (!state.isIOS && !state.isAndroid) return false;
+    // iPhone landscape has plenty of width for Mon/Tue/Wed pills; portrait stays compact.
+    if (document.body.classList.contains('ios-phone')) {
+        return window.matchMedia('(orientation: portrait)').matches;
+    }
     const effVp = Math.round(getEffectiveViewportWidth());
     return effVp > 0 && effVp <= MOBILE_COMPACT_SCHEDULE_DAY_LABELS_MAX_VIEWPORT_WIDTH;
 }

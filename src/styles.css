@@ -10875,6 +10875,16 @@ body.handset-device #blocklist-modal .tags-input-stacked .browse-btn{
     gap: 6px;
 }
 
+/* iOS iPhone: app input is hidden — picker button should span the full input row width. */
+body.ios-phone #blocklist-modal .tags-input-stacked .apps-input-with-button .browse-btn{
+    width: 100%;
+    max-width: 100%;
+    flex: 1 1 auto;
+    box-sizing: border-box;
+    justify-content: center;
+    padding: 10px 12px;
+}
+
 body.ios #blocklist-modal .tags-input-stacked .apps-picker-only .browse-btn{
     width: 100%;
 }
@@ -11224,6 +11234,57 @@ body.ios-phone #enter-scheduler-modal.mobile-fullscreen-modal .time-picker-conta
 
 body.ios-phone #enter-scheduler-modal .scheduler-room-chip{
     display: none;
+}
+
+/* Enter sheet schedule segments: two rows (time, then days); touch-sized natural-width day pills. */
+body.ios-phone #enter-scheduler-modal .schedule-block-panel .segment-row > .time-pickers-row,
+body.ios-phone #enter-scheduler-modal .schedule-block-panel .segment-row > .segment-days-group{
+    width: 100%;
+}
+
+body.ios-phone #enter-scheduler-modal .segment-day-toggle{
+    height: 34px;
+    min-height: 34px;
+    max-height: 34px;
+    padding: 0 8px;
+    font-size: 15px;
+    border-radius: 7px;
+    flex: 0 0 auto;
+    width: auto;
+}
+
+body.ios-phone #enter-scheduler-modal .segment-days{
+    gap: 4px;
+    align-items: center;
+    width: auto;
+    max-width: 100%;
+    flex-wrap: nowrap;
+}
+
+/* iOS iPhone: weekday pills use natural width everywhere (like desktop), never stretch to fill. */
+body.ios-phone .segment-days,
+body.ios-phone .segment-days.compact-day-labels,
+body.ios-phone .start-confirm-segment-days,
+body.ios-phone .start-confirm-segment-days.compact-day-labels{
+    width: auto;
+    max-width: 100%;
+}
+
+body.ios-phone .segment-days.compact-day-labels .segment-day-toggle,
+body.ios-phone .start-confirm-segment-days.compact-day-labels .segment-day-toggle{
+    flex: 0 0 auto;
+    width: auto;
+}
+
+body.ios-phone .segment-row > .segment-days-group,
+body.ios-phone .schedule-block-panel .segment-row > .segment-days-group{
+    width: 100%;
+    max-width: 100%;
+}
+
+body.ios-phone #start-schedule-confirm-modal .start-confirm-segment-days{
+    width: auto;
+    justify-content: flex-start;
 }
 
 body.handset-device .mobile-fullscreen-modal .mobile-modal-header{
@@ -14871,8 +14932,8 @@ body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-web
     background: var(--scrollbar-thumb-hover);
 }
 
-/* Handset: larger schedule/time controls for touch (iPad upsizes via :not(.ios-phone) rules). */
-body.handset-device .main-content .segment-row > .segment-days-group{
+/* Handset Android: larger schedule/time controls; compact day pills fill row when stacked below time. */
+body.handset-device:not(.ios-phone) .main-content .segment-row > .segment-days-group{
     flex: 1 1 100%;
     width: 100%;
     min-width: 100%;
@@ -14893,12 +14954,12 @@ body.handset-device .main-content .segment-days{
     align-items: center;
 }
 
-body.handset-device .main-content .segment-days.compact-day-labels{
+body.handset-device:not(.ios-phone) .main-content .segment-days.compact-day-labels{
     flex-wrap: nowrap;
     width: 100%;
 }
 
-body.handset-device .main-content .segment-days.compact-day-labels .segment-day-toggle{
+body.handset-device:not(.ios-phone) .main-content .segment-days.compact-day-labels .segment-day-toggle{
     flex: 1 1 0;
     min-width: 0;
     width: auto;
@@ -15280,6 +15341,29 @@ body.handset-device #blocklist-modal .color-swatches .color-swatch.selected::aft
 
 body.handset-device #blocklist-modal .custom-swatch .custom-icon{
     font-size: clamp(14px, 3.8vw, 20px);
+}
+
+/* iOS iPhone — cap swatch size so landscape matches portrait */
+body.ios-phone #blocklist-modal .emoji-swatches,
+body.ios-phone #blocklist-modal .color-swatches{
+    grid-template-columns: repeat(9, minmax(0, 36px));
+    justify-content: start;
+}
+
+body.ios-phone #blocklist-modal .emoji-swatch{
+    font-size: 20px;
+}
+
+body.ios-phone #blocklist-modal .custom-emoji-swatch .custom-icon{
+    font-size: 18px;
+}
+
+body.ios-phone #blocklist-modal .color-swatches .color-swatch.selected::after{
+    font-size: 13px;
+}
+
+body.ios-phone #blocklist-modal .custom-swatch .custom-icon{
+    font-size: 16px;
 }
 
 /* Blocklist entry emoji */
