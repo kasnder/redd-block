@@ -1743,8 +1743,11 @@ function setupModalListeners() {
         }
     });
 
-    // Store references for modal functions
+    // Store references for modal functions. Keep both the refactor-era getter
+    // and the original direct array bridge so extracted modules like the app
+    // picker still share the same mutable selection state.
     window.getModalApps = () => modalApps;
+    window.modalApps = modalApps;
     window.lockedWebsites = [];
     window.lockedApps = [];
     window.clearModalTagSelections = () => {

@@ -7,9 +7,9 @@ import { pushModalUndo } from './app.js';
 import { ensureInstalledAppsCache, displayNameForBlockedApp } from './blocking-platform.js';
 
 // The blocklist modal's selected-apps array lives inside setupModalListeners
-// (app.js) and is shared with this picker via `window.modalApps` — the same
-// bridge already used for `window.lockedApps`. The array is mutated in place
-// (push/splice), never reassigned, so both sides always see the same instance.
+// (app.js) and is shared with this picker via `window.modalApps`. Keep a
+// fallback to `window.getModalApps()` so the picker still works if only the
+// getter bridge exists during a refactor.
 export async function openInstalledAppsPicker() {
     const modal = document.getElementById('app-picker-modal');
     const listEl = document.getElementById('app-picker-list');
@@ -39,6 +39,14 @@ export async function openInstalledAppsPicker() {
     }
 
     const apps = state.installedAppsCache || [];
+    const getModalApps = () => {
+        if (Array.isArray(window.modalApps)) return window.modalApps;
+        if (typeof window.getModalApps === 'function') {
+            const sharedApps = window.getModalApps();
+            if (Array.isArray(sharedApps)) return sharedApps;
+        }
+        return [];
+    };
     const selectedProcessNames = new Set();
 
     function sameAppPickerName(displayName, processName) {
@@ -62,7 +70,7 @@ export async function openInstalledAppsPicker() {
         }
 
         listEl.innerHTML = filtered.map(app => {
-            const alreadyAdded = window.modalApps.some(a => a.toLowerCase() === app.process_name.toLowerCase());
+            const alreadyAdded = getModalApps().some(a => a.toLowerCase() === app.process_name.toLowerCase());
             const isChecked = selectedProcessNames.has(app.process_name) || alreadyAdded;
             const checkedClass = isChecked ? ' checked' : '';
             const checkedAttr = isChecked ? ' checked' : '';
@@ -99,7 +107,7 @@ export async function openInstalledAppsPicker() {
 
     function updateAddButton() {
         const newCount = [...selectedProcessNames].filter(
-            p => !window.modalApps.some(a => a.toLowerCase() === p.toLowerCase())
+            p => !getModalApps().some(a => a.toLowerCase() === p.toLowerCase())
         ).length;
         addBtn.textContent = newCount > 0 ? `Add Selected (${newCount})` : 'Add Selected';
         addBtn.disabled = newCount === 0;
@@ -116,6 +124,7 @@ export async function openInstalledAppsPicker() {
     function closePickerModal() {
         modal.classList.add('hidden');
         searchInput.removeEventListener('input', onSearch);
+        modal.removeEventListener('click', onOverlayClick);
     }
 
     // Cancel
@@ -131,19 +140,20 @@ export async function openInstalledAppsPicker() {
     // Add Selected
     addBtn.onclick = () => {
         const toAdd = [...selectedProcessNames].filter(
-            p => !window.modalApps.some(a => a.toLowerCase() === p.toLowerCase())
+            p => !getModalApps().some(a => a.toLowerCase() === p.toLowerCase())
         );
         if (toAdd.length > 0) {
+            const modalApps = getModalApps();
             const toAddCopy = [...toAdd];
             pushModalUndo('app', () => {
                 toAddCopy.forEach(a => {
-                    const i = window.modalApps.indexOf(a);
-                    if (i !== -1) window.modalApps.splice(i, 1);
+                    const i = modalApps.indexOf(a);
+                    if (i !== -1) modalApps.splice(i, 1);
                 });
                 window.renderModalTags();
             });
             for (const appName of toAdd) {
-                window.modalApps.push(appName);
+                modalApps.push(appName);
             }
             window.renderModalTags();
         }
@@ -154,28 +164,29 @@ export async function openInstalledAppsPicker() {
     if (browseBtn && !state.isAndroid) {
         browseBtn.classList.remove('hidden');
         browseBtn.onclick = async () => {
-        closePickerModal();
-        const appNames = await tauriAPI.openAppPicker();
-        if (appNames && appNames.length > 0) {
-            const toAdd = appNames.filter(n => !window.modalApps.includes(n));
-            if (toAdd.length > 0) {
-                const toAddCopy = [...toAdd];
-                pushModalUndo('app', () => {
-                    toAddCopy.forEach(a => {
-                        const i = window.modalApps.indexOf(a);
-                        if (i !== -1) window.modalApps.splice(i, 1);
+            closePickerModal();
+            const appNames = await tauriAPI.openAppPicker();
+            if (appNames && appNames.length > 0) {
+                const modalApps = getModalApps();
+                const toAdd = appNames.filter(n => !modalApps.includes(n));
+                if (toAdd.length > 0) {
+                    const toAddCopy = [...toAdd];
+                    pushModalUndo('app', () => {
+                        toAddCopy.forEach(a => {
+                            const i = modalApps.indexOf(a);
+                            if (i !== -1) modalApps.splice(i, 1);
+                        });
+                        window.renderModalTags();
                     });
-                    window.renderModalTags();
-                });
-            }
-            for (const appName of appNames) {
-                if (!window.modalApps.includes(appName)) {
-                    window.modalApps.push(appName);
                 }
+                for (const appName of appNames) {
+                    if (!modalApps.includes(appName)) {
+                        modalApps.push(appName);
+                    }
+                }
+                window.renderModalTags();
             }
-            window.renderModalTags();
-        }
-    };
+        };
     } else if (browseBtn) {
         browseBtn.classList.add('hidden');
     }
