@@ -126,6 +126,10 @@
     --scrollbar-thumb-hover: #bdb7af;
     --border-active: var(--redd-border);
     --toggle-bg: var(--redd-warm-grey);
+    /* Inset panel wells (settings General rows, blocklist websites/apps, stop
+       difficulty). Slightly warmer than --toggle-bg so white controls read
+       clearly on top — matches settings .settings-panel. */
+    --settings-panel-bg: #FAF8F5;
     /* Width of the schedule's day-label column (and matching header spacer). Sized to fit
        the day name / "Today" label plus a small right padding. */
     --day-label-width: 65px;
@@ -206,6 +210,7 @@ body.dark-mode{
     --scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
     --border-active: var(--redd-border);
     --toggle-bg: rgba(255, 255, 255, 0.06);
+    --settings-panel-bg: var(--redd-warm-grey);
     /* Same names as :root — re-declared so they track dark tokens. */
     --modal-bg: var(--popover-bg);
     --border-color-medium: var(--input-border);
@@ -10544,11 +10549,12 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
 }
 
-/* Inside the Edit Blocklist modal, keep websites/apps wells on the usual
-   input surface. Unlocked chips use the picked blocklist colour via
-   --blocklist-tint / --blocklist-tag-text (JS: applyModalBlocklistTint). */
+/* Inside the Edit Blocklist modal, websites/apps wells use the same inset
+   panel surface as settings (.settings-panel-bg); inner inputs stay white.
+   Unlocked chips use the picked blocklist colour via --blocklist-tint /
+   --blocklist-tag-text (JS: applyModalBlocklistTint). */
 #blocklist-modal .tags-input-container{
-    background: var(--input-bg);
+    background: var(--settings-panel-bg);
 }
 
 #blocklist-modal .tags-input-container .tag:not(.locked){
@@ -12955,12 +12961,12 @@ body.android #settings-modal .settings-help-section {
 .settings-panel{
     border: 1px solid var(--border-color-medium);
     border-radius: 12px;
-    background: #FAF8F5;
+    background: var(--settings-panel-bg);
     overflow: visible;
 }
 
 body.dark-mode .settings-panel{
-    background: var(--redd-warm-grey);
+    background: var(--settings-panel-bg);
 }
 
 .settings-panel-rows{
@@ -13578,7 +13584,6 @@ body.android #settings-latest-version-wrap {
     color: var(--text-muted);
     transition: color 0.2s ease;
     margin-top: 8px;
-    border-top: 1px solid var(--border-color-light);
 }
 
 .blocklist-advanced-toggle:hover{
@@ -13652,16 +13657,11 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
 
 #blocklist-modal .exit-difficulty-panel{
     margin-top: 8px;
-    background: #ffffff;
     overflow: hidden;
 }
 
-body.dark-mode #blocklist-modal .exit-difficulty-panel{
-    background: var(--redd-card);
-}
-
 #blocklist-modal .exit-difficulty-preview{
-    background: var(--redd-warm-grey);
+    background: var(--modal-bg);
     border-radius: 0 0 11px 11px;
 }
 
@@ -13674,6 +13674,27 @@ body.dark-mode #blocklist-modal .exit-difficulty-panel{
     width: auto;
     padding-top: 8px;
     padding-bottom: 8px;
+}
+
+/* Off-state track uses --toggle-bg globally; on the settings-panel surface
+   give the switch a white inset like the adjacent select/stepper. */
+#blocklist-modal .exit-difficulty-panel .toggle-slider{
+    background-color: var(--modal-bg);
+    border: 1px solid var(--input-border);
+    box-sizing: border-box;
+}
+
+#blocklist-modal .exit-difficulty-panel .toggle-slider:before{
+    background-color: var(--scrollbar-thumb-hover);
+}
+
+#blocklist-modal .exit-difficulty-panel .toggle-switch input:checked + .toggle-slider{
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+#blocklist-modal .exit-difficulty-panel .toggle-switch input:checked + .toggle-slider:before{
+    background-color: #ffffff;
 }
 
 .exit-difficulty-count-control{
