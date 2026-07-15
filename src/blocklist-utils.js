@@ -181,6 +181,51 @@ export function ensureIOSBlocklistSelectionReady(blocklist, actionLabel) {
     return false;
 }
 
+/** Soft palette matching the focus-space color swatches (sky → lilac). */
+export const FOCUS_SPACE_COLOR_PALETTE = [
+    '#B8D1DE',
+    '#B3D2C8',
+    '#BCD9B6',
+    '#EBDCB6',
+    '#EECAAD',
+    '#E7B3A8',
+    '#E1BAC3',
+    '#C8B9D6',
+];
+
+/**
+ * If saved colors collapsed to one shared value (or are missing), reassign
+ * non–Quick start spaces in palette order so the list reads as distinct again.
+ */
+export function healFocusSpaceColors(blocklists) {
+    const lists = (blocklists || []).filter((bl) => !isQuickStartBlocklist(bl));
+    if (lists.length === 0) return false;
+
+    const present = lists
+        .map((bl) => (typeof bl.color === 'string' && bl.color.trim() ? bl.color.trim() : null))
+        .filter(Boolean);
+    const collapsed = present.length >= 2 && new Set(present).size === 1;
+
+    if (collapsed) {
+        lists.forEach((bl, i) => {
+            bl.color = FOCUS_SPACE_COLOR_PALETTE[i % FOCUS_SPACE_COLOR_PALETTE.length];
+        });
+        return true;
+    }
+
+    let changed = false;
+    const used = new Set(present);
+    for (const bl of lists) {
+        if (typeof bl.color === 'string' && bl.color.trim()) continue;
+        const next = FOCUS_SPACE_COLOR_PALETTE.find((c) => !used.has(c))
+            || FOCUS_SPACE_COLOR_PALETTE[used.size % FOCUS_SPACE_COLOR_PALETTE.length];
+        bl.color = next;
+        used.add(next);
+        changed = true;
+    }
+    return changed;
+}
+
 /** Ephemeral Quick start spaces (id prefix `qs-` heals older saves that dropped the flag). */
 export function isQuickStartBlocklist(blocklist) {
     if (!blocklist) return false;

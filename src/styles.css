@@ -6972,6 +6972,18 @@ body.dark-mode .schedule-pending-discard:hover{
     padding: 10px 4px 4px;
 }
 
+/* Two-column selected layout: the list shares a grid row with the start-a-block
+   panel, so let it scroll at the panel's bottom edge instead of cutting off at a
+   fixed height (height: 0 keeps it from inflating the row; the max() keeps the
+   default height as a floor when the panel is short). */
+@media (min-width: 769px) {
+    body:not(.ios):not(.handset-device) .grid-top-row--blocklist-selected .blocklists-container{
+        height: 0;
+        min-height: max(var(--blocklists-scroll-max-height), 100%);
+        max-height: none;
+    }
+}
+
 /* iOS/touch: reliable swipe scroll and momentum */
 body.ios .blocklists-container,
 body.android .blocklists-container {
@@ -13907,12 +13919,12 @@ body.android #settings-latest-version-wrap {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 0 12px;
+    padding: 4px 0 12px;
     cursor: pointer;
     font-size: 15px;
     color: var(--text-muted);
     transition: color 0.2s ease;
-    margin-top: 8px;
+    margin-top: 0;
 }
 
 .blocklist-advanced-toggle:hover{
