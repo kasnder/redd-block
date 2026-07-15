@@ -933,7 +933,7 @@ export function renderBlocklists() {
         const accent = bl.color || '#667eea';
         const selectedStyle = isSelected
             ? (isQuickStart
-                ? `style="border-color: ${accent}; border-style: dashed; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);"`
+                ? `style="border-color: ${accent}; border-style: dashed; border-left-width: var(--blocklist-card-border); box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);"`
                 : `style="border-top-color: ${accent}; border-right-color: ${accent}; border-bottom-color: ${accent}; border-left-width: 0; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);"`)
             : '';
         const enteringChipColor = getEnteringChipColor(accent);

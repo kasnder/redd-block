@@ -7047,7 +7047,9 @@ body.android .blocklists-container {
 }
 
 .blocklist-card-quick-start.selected{
+    /* Keep full dashed outline — generic .selected removes left border for the colour stripe. */
     border-style: dashed;
+    border-left-width: var(--blocklist-card-border);
 }
 
 /* Don't dim Quick start the way other active cards are — dashed border is the cue. */
