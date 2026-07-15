@@ -108,8 +108,8 @@ export function parseTextFileDomains(content) {
     return out;
 }
 
-export function resetWebsitesImportMenuPosition() {
-    const menu = document.getElementById('websites-import-menu');
+export function resetWebsitesImportMenuPosition(menuId = 'websites-import-menu') {
+    const menu = document.getElementById(menuId);
     if (!menu) return;
     menu.classList.remove('websites-import-menu-fixed');
     menu.style.top = '';
@@ -121,17 +121,21 @@ export function resetWebsitesImportMenuPosition() {
     menu.style.maxHeight = '';
 }
 
-// Wire up the Edit Blocklist "Import" popover for the websites field. The
-// caller supplies a callback that receives an array of cleaned domain
-// strings; it's responsible for de-duplicating against current modal state
-// and pushing an undo entry.
-export function setupWebsitesImportMenu({ addDomainsToModal }) {
-    const importBtn = document.getElementById('modal-import-websites-btn');
-    const menu = document.getElementById('websites-import-menu');
+// Wire up a websites "Import" / Lists popover. The caller supplies a callback
+// that receives an array of cleaned domain strings; it's responsible for
+// de-duplicating against current modal state.
+export function setupWebsitesImportMenu({
+    addDomainsToModal,
+    importBtnId = 'modal-import-websites-btn',
+    menuId = 'websites-import-menu',
+    textFileBtnId = 'websites-import-menu-text-file',
+}) {
+    const importBtn = document.getElementById(importBtnId);
+    const menu = document.getElementById(menuId);
     if (!importBtn || !menu) return;
 
     const resetMenuPosition = () => {
-        resetWebsitesImportMenuPosition();
+        resetWebsitesImportMenuPosition(menuId);
     };
 
     const positionMenu = () => {
@@ -201,7 +205,7 @@ export function setupWebsitesImportMenu({ addDomainsToModal }) {
         if (!menu.classList.contains('hidden')) positionMenu();
     });
 
-    const textFileBtn = document.getElementById('websites-import-menu-text-file');
+    const textFileBtn = document.getElementById(textFileBtnId);
     if (textFileBtn) {
         textFileBtn.addEventListener('click', async () => {
             closeMenu();

@@ -99,6 +99,7 @@ import {
     syncModalWebsitePlaceholder,
     updateBlocklistModalModeLabels,
 } from './list-mode.js';
+import { setupQuickStart, applyQuickStartLanguage } from './quick-start.js';
 import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderNowBlockingRow, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
 import { formatTitleBarScheduleStartWhen, hasAnyEnforcedBlocks, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, pickEarliestUpcomingScheduledBlock, refreshDesktopHelperStatus, resolveOneShotOccurrences, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
@@ -667,8 +668,8 @@ function setupEventListeners() {
         });
     }
 
-    // Quick-select buttons: timed durations + until-I-stop option
-    document.querySelectorAll('.duration-quick-btn').forEach(btn => {
+    // Quick-select buttons: timed durations + until-I-stop option (scheduler only)
+    document.querySelectorAll('#instant-block-panel .duration-quick-btn').forEach(btn => {
         btn.addEventListener('click', handleDurationQuickBtn);
     });
 
@@ -684,6 +685,8 @@ function setupEventListeners() {
 
     // Add blocklist button
     document.getElementById('add-blocklist-btn').addEventListener('click', () => openBlocklistModal());
+
+    setupQuickStart();
 
     document.querySelectorAll('#blocklist-mode-toggle .mode-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -3110,6 +3113,7 @@ export function applySettingsLanguage() {
         blocklistSelect.options[0].textContent = tSettings('selectionPromptOption');
     }
     setText('main-blocklists-title', tSettings('yourBlocklists'));
+    applyQuickStartLanguage();
     setText('main-schedule-title', tSettings('scheduleTitle'));
     setText('no-active-blocks-label', tSettings('noActiveBlocks'));
     setText('always-on-row-label-lead', tSettings('alwaysOnRowLead'));

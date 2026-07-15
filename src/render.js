@@ -25,17 +25,18 @@ export function render() {
     updateWeekCalendar();
     renderBlocklistSelector();
 
+    const visibleBlocklists = state.appData.blocklists.filter((bl) => !bl.isQuickStart);
     // Auto-select when the choice is unambiguous, but respect a user
     // deselect so they can return to the empty "Select a blocklist"
     // state if they want.
     //   - Exactly one blocklist exists → default-select it.
     //   - Otherwise, if nothing is selected, fall back to selecting
     //     the lone non-active blocklist if there's exactly one.
-    if (state.appData.blocklists.length === 1) {
+    if (visibleBlocklists.length === 1) {
         autoSelectSoleBlocklist();
     } else if (!state.selectedBlocklistId && !state.userExplicitlyDeselected) {
         const activeIds = state.appData.activeBlocks.map(b => b.blocklistId);
-        const availableBlocklists = state.appData.blocklists.filter(bl => !activeIds.includes(bl.id));
+        const availableBlocklists = visibleBlocklists.filter(bl => !activeIds.includes(bl.id));
         if (availableBlocklists.length === 1) {
             const dropdown = document.getElementById('blocklist-select');
             dropdown.value = availableBlocklists[0].id;
@@ -49,7 +50,7 @@ export function render() {
     // Hide "Select a blocklist" prompt if there are no blocklists
     const selectionPrompt = document.getElementById('selection-prompt');
     if (selectionPrompt) {
-        if (state.appData.blocklists.length === 0) {
+        if (visibleBlocklists.length === 0) {
             selectionPrompt.classList.add('hidden');
         } else if (!state.selectedBlocklistId) {
             // Only show prompt if there are blocklists but none selected
@@ -1102,14 +1103,14 @@ export function renderBlocklistSelector() {
 
     const newHTML = `
     <option value="">${tSettings('selectionPromptOption')}</option>
-    ${state.appData.blocklists.map(bl => {
+    ${state.appData.blocklists.filter((bl) => !bl.isQuickStart).map(bl => {
         const isActive = activeIds.includes(bl.id);
         const activeLabel = isActive ? tSettings('runningSuffix') : '';
         return `<option value="${bl.id}">${escapeHtml(bl.name)}${activeLabel}</option>`;
     }).join('')}
   `;
 
-    const validSelectedId = selectedId && state.appData.blocklists.some((bl) => bl.id === selectedId)
+    const validSelectedId = selectedId && state.appData.blocklists.some((bl) => bl.id === selectedId && !bl.isQuickStart)
         ? selectedId
         : '';
 

@@ -21,6 +21,27 @@ import { buildBlocklistCardMetaHtml, buildBlocklistCardDetailsHtml, blocklistCar
 import { cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, openBlocklistModal } from './confirm-modals.js';
 import { APP_BLOCKING_SNOOZE_ICON_IMG_12, appBlockingWarningSnoozedUntilMs, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistId } from './blocking-platform.js';
 
+function getVisibleBlocklists() {
+    return (state.appData.blocklists || []).filter((bl) => !bl.isQuickStart);
+}
+
+function pruneOrphanQuickStartBlocklists() {
+    const now = Date.now();
+    const activeIds = new Set(
+        (state.appData.activeBlocks || [])
+            .filter((b) => b.endTime > now)
+            .map((b) => b.blocklistId),
+    );
+    const before = state.appData.blocklists.length;
+    state.appData.blocklists = state.appData.blocklists.filter((bl) => {
+        if (!bl.isQuickStart) return true;
+        return activeIds.has(bl.id);
+    });
+    if (state.appData.blocklists.length !== before) {
+        saveData();
+    }
+}
+
 /** Focus-space cards whose Sites/Apps summary is expanded (survives re-render). */
 const expandedBlocklistCardIds = new Set();
 
@@ -318,7 +339,9 @@ export function buildBlocklistsExportPayload() {
         format: BLOCKLIST_EXPORT_FORMAT,
         formatVersion: BLOCKLIST_EXPORT_FORMAT_VERSION,
         exportedAt: new Date().toISOString(),
-        blocklists: (state.appData.blocklists || []).map(serializeBlocklistForExport)
+        blocklists: (state.appData.blocklists || [])
+            .filter((bl) => !bl.isQuickStart)
+            .map(serializeBlocklistForExport)
     };
 }
 
@@ -654,10 +677,12 @@ export function undoDelete() {
 
 // Render blocklists
 export function renderBlocklists() {
+    pruneOrphanQuickStartBlocklists();
     closeAllBlocklistMenus();
     const container = document.getElementById('blocklists-container');
+    const visibleBlocklists = getVisibleBlocklists();
 
-    if (state.appData.blocklists.length === 0) {
+    if (visibleBlocklists.length === 0) {
         container.innerHTML = `
       <div class="no-active-blocks clickable" id="empty-blocklists-cta" style="cursor: pointer;">
         <p>${tSettings('noBlocklistsYet')}</p>
@@ -670,7 +695,7 @@ export function renderBlocklists() {
         return;
     }
 
-    container.innerHTML = state.appData.blocklists.map(bl => {
+    container.innerHTML = visibleBlocklists.map(bl => {
         const metaHtml = buildBlocklistCardMetaHtml(bl);
         const isExpanded = expandedBlocklistCardIds.has(bl.id);
         const showDetails = blocklistCardHasExpandableSummary(bl);
@@ -1048,13 +1073,14 @@ export function renderBlocklists() {
 /// user just *created* a new blocklist, which is a strong "I want to
 /// use this" signal.
 export function autoSelectSoleBlocklist({ force = false } = {}) {
-    if (state.appData.blocklists.length !== 1) return;
+    const visible = getVisibleBlocklists();
+    if (visible.length !== 1) return;
     if (state.selectedBlocklistId) return;
     if (force) state.userExplicitlyDeselected = false;
     if (state.userExplicitlyDeselected) return;
     const dropdown = document.getElementById('blocklist-select');
     if (!dropdown) return;
-    dropdown.value = state.appData.blocklists[0].id;
+    dropdown.value = visible[0].id;
     handleBlocklistSelect({ target: dropdown });
 }
 

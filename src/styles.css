@@ -3785,7 +3785,34 @@ body:not(.ios) #settings-toolbar-scheduler{
     border-radius: 8px;
 }
 
-.blocklists-section > .section-header #add-blocklist-btn svg{
+.blocklists-header-actions{
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.blocklists-section > .section-header #quick-start-btn{
+    margin-left: 0;
+    flex-shrink: 0;
+    width: 30px;
+    height: 30px;
+    background: var(--redd-navy);
+    border: 1px solid var(--redd-navy);
+    color: #f5c542;
+    box-shadow: var(--redd-shadow-card);
+    border-radius: 8px;
+}
+
+.blocklists-section > .section-header #quick-start-btn:hover{
+    background: var(--primary-btn-bg-hover);
+    border-color: var(--primary-btn-bg-hover);
+    color: #ffd666;
+    box-shadow: var(--redd-shadow-card-hover);
+}
+
+.blocklists-section > .section-header #add-blocklist-btn svg,
+.blocklists-section > .section-header #quick-start-btn svg{
     width: 18px;
     height: 18px;
 }
@@ -11191,6 +11218,272 @@ body.handset-device .mobile-fullscreen-modal .mobile-modal-title-source{
 body.handset-device .mobile-fullscreen-modal .modal-buttons{
     margin-top: 24px;
     padding-bottom: 0;
+}
+
+/* ——— Quick start modal ——— */
+body:not(.handset-device) #quick-start-modal .modal-content{
+    max-width: 500px;
+}
+
+#quick-start-modal .modal-content{
+    display: flex;
+    flex-direction: column;
+    max-height: 95vh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    padding: 20px 24px 22px;
+}
+
+.quick-start-header{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+#quick-start-modal #quick-start-title{
+    margin: 0;
+    font-family: var(--font-heading);
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.quick-start-mode-toggle{
+    flex: 0 0 auto;
+    min-width: 168px;
+}
+
+#quick-start-modal .tags-input-container{
+    background: var(--settings-panel-bg);
+}
+
+#quick-start-modal .tags-input-container .tag:not(.locked){
+    background: var(--blocklist-tint, var(--accent-color));
+    color: var(--blocklist-tag-text, white);
+}
+
+#quick-start-modal .tags-input-container .tag:not(.locked) .tag-remove{
+    color: inherit;
+    opacity: 0.55;
+}
+
+#quick-start-modal .tags-input-container.tags-input-stacked{
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 8px;
+    cursor: default;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: visible;
+}
+
+#quick-start-modal .tags-input-stacked:focus-within{
+    border-color: var(--input-border);
+    box-shadow: none;
+}
+
+#quick-start-modal .tags-input-stacked > .tags-container{
+    width: 100%;
+    flex: none;
+    cursor: text;
+}
+
+#quick-start-modal .tags-input-stacked > .tags-container:empty{
+    display: none;
+}
+
+#quick-start-modal .tags-input-stacked > .input-with-button{
+    width: 100%;
+    max-width: 100%;
+    flex: none;
+    min-width: 0;
+    box-sizing: border-box;
+    flex-direction: row;
+    align-items: stretch;
+    gap: 8px;
+}
+
+#quick-start-modal .tags-input-stacked .form-input{
+    flex: 1 1 0%;
+    min-width: 0;
+    width: auto;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--input-bg);
+    padding: 8px 12px;
+    box-sizing: border-box;
+    color: var(--text-primary);
+}
+
+#quick-start-modal .tags-input-stacked .form-input:focus{
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 3px rgba(42, 157, 143, 0.1);
+}
+
+#quick-start-modal .tags-input-stacked .browse-btn{
+    flex: 0 0 auto;
+    align-self: stretch;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    color: var(--text-primary);
+    border-radius: 8px;
+    padding: 8px 12px;
+    white-space: nowrap;
+    gap: 4px;
+}
+
+#quick-start-modal .tags-input-stacked .browse-btn-apps{
+    background: var(--button-bg);
+    border-color: transparent;
+    color: white;
+}
+
+body:not(.ios) #quick-start-modal .browse-btn-caption{
+    display: none;
+}
+
+body:not(.ios) #quick-start-modal .tags-input-stacked .browse-btn-caption{
+    display: inline;
+}
+
+.quick-start-duration-btns{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.quick-start-duration-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 7px 12px;
+    border: 1px solid var(--input-border);
+    border-radius: 999px;
+    background: var(--input-bg);
+    color: var(--text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.quick-start-duration-btn:hover{
+    border-color: var(--border-color-strong, var(--border-color-medium));
+    color: var(--text-primary);
+}
+
+.quick-start-duration-btn.active{
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: #ffffff;
+}
+
+.quick-start-effort-header{
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+}
+
+.quick-start-effort-header label{
+    margin: 0;
+}
+
+.quick-start-effort-summary{
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.quick-start-effort-slider-wrap{
+    padding: 4px 2px 0;
+}
+
+.quick-start-effort-slider{
+    width: 100%;
+    appearance: none;
+    height: 6px;
+    border-radius: 999px;
+    background: linear-gradient(
+        to right,
+        var(--accent-color) 0%,
+        var(--accent-color) var(--qs-effort-pct, 28%),
+        var(--redd-border) var(--qs-effort-pct, 28%),
+        var(--redd-border) 100%
+    );
+    outline: none;
+    cursor: pointer;
+}
+
+.quick-start-effort-slider::-webkit-slider-thumb{
+    appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid var(--accent-color);
+    box-shadow: 0 1px 3px rgba(30, 45, 62, 0.18);
+    cursor: pointer;
+}
+
+.quick-start-effort-slider::-moz-range-thumb{
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #ffffff;
+    border: 2px solid var(--accent-color);
+    box-shadow: 0 1px 3px rgba(30, 45, 62, 0.18);
+    cursor: pointer;
+}
+
+.quick-start-effort-ends{
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    font-size: 12px;
+    font-style: italic;
+    color: var(--text-muted);
+}
+
+.quick-start-start-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.quick-start-hint{
+    margin: 10px 0 0;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+.quick-start-save-link{
+    border: none;
+    background: none;
+    padding: 0;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.quick-start-save-link:hover{
+    text-decoration: none;
 }
 
 /* Add/edit blocklist modal — slightly wider than the default 400px so the

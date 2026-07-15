@@ -1,0 +1,560 @@
+// Quick start: one-off block/allow without naming or permanently saving a
+// focus space. Creates a hidden isQuickStart blocklist, starts it via the
+// same proceedWithBlock path, then restores the previous selection.
+import { state } from './state.js';
+import { tSettings, tSettingsFmt } from './i18n.js';
+import { tauriAPI } from './tauri-api.js';
+import { escapeHtml } from './utils.js';
+import {
+    isProtectedDomain,
+    cloneIOSScreenTimeSelection,
+    normalizeIOSScreenTimeSelection,
+    formatIOSScreenTimeSelectionLabel,
+} from './blocklist-utils.js';
+import {
+    cleanDomainInput,
+    isValidDomain,
+    processWebsiteInput,
+    setupWebsitesImportMenu,
+} from './website-input.js';
+import { openInstalledAppsPicker } from './apps-picker.js';
+import { displayNameForBlockedApp } from './blocking-platform.js';
+import {
+    MIN_OVERRIDE_CHARS,
+    getMaxOverrideCharsForType,
+    getOverrideEstimatedMinutes,
+    normalizeOverrideCount,
+} from './override-challenge.js';
+import { saveData } from './persistence.js';
+import {
+    cloneOverrideDifficulty,
+    deselectBlocklist,
+    handleBlocklistSelect,
+    openBlocklistModal,
+    proceedWithBlock,
+} from './confirm-modals.js';
+import { setBlocklistModalMode } from './list-mode.js';
+
+const QS_OVERRIDE_TYPE = 'random-words';
+const QS_DEFAULT_SLIDER = 28; // ~20 chars on the exponential curve
+const QS_DEFAULT_DURATION_MINS = 60;
+const QS_COLOR = '#B8D1DE';
+const QS_EMOJI = '⚡';
+
+let qsWebsites = [];
+let qsApps = [];
+let qsIOSScreenTimeSelection = null;
+let qsMode = 'blocklist';
+let qsDurationMins = QS_DEFAULT_DURATION_MINS;
+let qsAlwaysOn = false;
+let qsEffortSlider = QS_DEFAULT_SLIDER;
+let qsWired = false;
+let savedModalAppsBridge = null;
+let savedRenderModalTagsBridge = null;
+
+function generateQuickStartId() {
+    return `qs-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function isQuickStartBlocklist(blocklist) {
+    return blocklist?.isQuickStart === true;
+}
+
+function sliderToOverrideCount(sliderValue) {
+    const t = Math.max(0, Math.min(100, Number(sliderValue) || 0)) / 100;
+    const min = MIN_OVERRIDE_CHARS;
+    const max = getMaxOverrideCharsForType(QS_OVERRIDE_TYPE);
+    const count = Math.round(min * Math.pow(max / min, t));
+    return normalizeOverrideCount(count, QS_OVERRIDE_TYPE);
+}
+
+function getSelectedMode() {
+    const active = document.querySelector('#quick-start-mode-toggle .mode-btn.active');
+    return active?.dataset?.mode === 'allowlist' ? 'allowlist' : 'blocklist';
+}
+
+function applyQuickStartTint() {
+    const modal = document.getElementById('quick-start-modal');
+    if (!modal) return;
+    modal.style.setProperty('--blocklist-tint', QS_COLOR);
+    modal.style.setProperty('--blocklist-tag-text', '#1e2d3e');
+}
+
+function setQuickStartMode(mode) {
+    qsMode = mode === 'allowlist' ? 'allowlist' : 'blocklist';
+    document.querySelectorAll('#quick-start-mode-toggle .mode-btn').forEach((btn) => {
+        btn.classList.toggle('active', btn.dataset.mode === qsMode);
+    });
+    updateQuickStartModeLabels();
+    updateStartButtonLabel();
+}
+
+function updateQuickStartModeLabels() {
+    const isAllow = qsMode === 'allowlist';
+    const setText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    };
+    setText('quick-start-websites-label', tSettings(isAllow ? 'websitesAllow' : 'websites'));
+    setText('quick-start-apps-label', tSettings(isAllow ? 'appsAllow' : 'apps'));
+    setText(
+        'quick-start-websites-tooltip',
+        tSettings(isAllow ? 'websitesAllowTooltip' : 'websitesTooltip'),
+    );
+    setText(
+        'quick-start-apps-tooltip',
+        tSettings(isAllow ? 'appsAllowTooltip' : 'appsTooltip'),
+    );
+    const websiteInput = document.getElementById('quick-start-website-input');
+    if (websiteInput && !websiteInput.classList.contains('input-error')) {
+        websiteInput.placeholder = tSettings('placeholderWebsiteExample');
+    }
+    const appInput = document.getElementById('quick-start-app-input');
+    if (appInput) {
+        appInput.placeholder = tSettings('placeholderAppExample');
+    }
+}
+
+function updateStartButtonLabel() {
+    const label = document.getElementById('quick-start-start-btn-label');
+    if (!label) return;
+    label.textContent = tSettings(
+        qsMode === 'allowlist' ? 'quickStartStartAllowing' : 'quickStartStartBlocking',
+    );
+}
+
+function updateEffortSummary() {
+    const summary = document.getElementById('quick-start-effort-summary');
+    const slider = document.getElementById('quick-start-effort-slider');
+    if (slider) {
+        slider.style.setProperty('--qs-effort-pct', `${qsEffortSlider}%`);
+    }
+    if (!summary) return;
+    const count = sliderToOverrideCount(qsEffortSlider);
+    const minutes = getOverrideEstimatedMinutes(QS_OVERRIDE_TYPE, count, '');
+    const locale = tSettings('locale');
+    const countStr = count.toLocaleString(locale);
+    summary.textContent = tSettingsFmt('quickStartEffortSummary', {
+        count: countStr,
+        minutes: String(minutes),
+    });
+}
+
+function updateDurationButtons() {
+    document.querySelectorAll('.quick-start-duration-btn').forEach((btn) => {
+        if (btn.dataset.mode === 'always') {
+            btn.classList.toggle('active', qsAlwaysOn);
+        } else {
+            const mins = parseInt(btn.dataset.mins, 10);
+            btn.classList.toggle('active', !qsAlwaysOn && mins === qsDurationMins);
+        }
+    });
+}
+
+function renderQsTags() {
+    const websitesEl = document.getElementById('quick-start-websites-tags');
+    const appsEl = document.getElementById('quick-start-apps-tags');
+    if (!websitesEl || !appsEl) return;
+
+    websitesEl.innerHTML = qsWebsites
+        .map(
+            (item, idx) => `
+        <span class="tag" data-idx="${idx}">
+          ${escapeHtml(item)}
+          <button type="button" class="tag-remove" data-idx="${idx}">×</button>
+        </span>`,
+        )
+        .join('');
+
+    websitesEl.querySelectorAll('.tag-remove').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.idx, 10);
+            if (!Number.isFinite(idx)) return;
+            qsWebsites.splice(idx, 1);
+            renderQsTags();
+        });
+    });
+
+    const iosLabel = formatIOSScreenTimeSelectionLabel(qsIOSScreenTimeSelection);
+    const displayApps = qsApps.map(displayNameForBlockedApp);
+    if (iosLabel) displayApps.push(iosLabel);
+
+    appsEl.innerHTML = displayApps
+        .map(
+            (item, idx) => `
+        <span class="tag" data-idx="${idx}">
+          ${escapeHtml(item)}
+          <button type="button" class="tag-remove" data-idx="${idx}">×</button>
+        </span>`,
+        )
+        .join('');
+
+    appsEl.querySelectorAll('.tag-remove').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.idx, 10);
+            if (!Number.isFinite(idx)) return;
+            if (iosLabel && displayApps[idx] === iosLabel) {
+                qsIOSScreenTimeSelection = null;
+            } else {
+                qsApps.splice(idx, 1);
+            }
+            renderQsTags();
+        });
+    });
+}
+
+function confirmWebsiteInput() {
+    const input = document.getElementById('quick-start-website-input');
+    const errorMsg = document.getElementById('quick-start-website-input-error');
+    if (!input) return;
+    const raw = input.value.trim();
+    if (!raw) return;
+
+    const result = processWebsiteInput(raw);
+    if (result.websiteInvalid) {
+        errorMsg?.classList.remove('hidden');
+        setTimeout(() => errorMsg?.classList.add('hidden'), 3000);
+    } else {
+        errorMsg?.classList.add('hidden');
+    }
+
+    if (result.hadProtected) {
+        input.placeholder = tSettings('cannotBlockDomainPlaceholder');
+        input.classList.add('input-error');
+        setTimeout(() => {
+            input.classList.remove('input-error');
+            input.placeholder = tSettings('placeholderWebsiteExample');
+        }, 2500);
+    }
+
+    result.toAdd.forEach((domain) => {
+        if (!qsWebsites.includes(domain)) qsWebsites.push(domain);
+    });
+    input.value = result.inputValueToSet;
+    renderQsTags();
+}
+
+function confirmAppInput() {
+    const input = document.getElementById('quick-start-app-input');
+    if (!input) return;
+    const raw = input.value.trim();
+    if (!raw) return;
+    if (!qsApps.some((a) => a.toLowerCase() === raw.toLowerCase())) {
+        qsApps.push(raw);
+    }
+    input.value = '';
+    renderQsTags();
+}
+
+function installAppsPickerBridge() {
+    if (savedModalAppsBridge == null) {
+        savedModalAppsBridge = window.modalApps;
+        savedRenderModalTagsBridge = window.renderModalTags;
+    }
+    window.modalApps = qsApps;
+    window.renderModalTags = renderQsTags;
+}
+
+function restoreAppsPickerBridge() {
+    if (savedRenderModalTagsBridge) {
+        window.renderModalTags = savedRenderModalTagsBridge;
+    }
+    if (savedModalAppsBridge != null) {
+        window.modalApps = savedModalAppsBridge;
+    }
+    savedModalAppsBridge = null;
+    savedRenderModalTagsBridge = null;
+}
+
+function buildQuickStartBlocklist() {
+    const count = sliderToOverrideCount(qsEffortSlider);
+    return {
+        id: generateQuickStartId(),
+        name: tSettings('quickStartDefaultName'),
+        mode: qsMode,
+        color: QS_COLOR,
+        emoji: QS_EMOJI,
+        websites: [...qsWebsites],
+        apps: [...qsApps],
+        iosScreenTimeSelection: cloneIOSScreenTimeSelection(qsIOSScreenTimeSelection),
+        showItemDetails: true,
+        alwaysShowInSchedule: false,
+        isQuickStart: true,
+        overrideDifficulty: cloneOverrideDifficulty({
+            type: QS_OVERRIDE_TYPE,
+            count,
+            maxDifficulty: false,
+        }),
+    };
+}
+
+async function startQuickStart() {
+    confirmWebsiteInput();
+    confirmAppInput();
+
+    if (qsWebsites.length === 0 && qsApps.length === 0 && !qsIOSScreenTimeSelection) {
+        alert(tSettings('quickStartNeedItems'));
+        return;
+    }
+
+    const startBtn = document.getElementById('quick-start-start-btn');
+    if (startBtn) startBtn.disabled = true;
+
+    const blocklist = buildQuickStartBlocklist();
+    state.appData.blocklists.push(blocklist);
+    await saveData();
+
+    const previousId = state.selectedBlocklistId;
+    const previousAlwaysOn = state.isAlwaysOnMode;
+    const previousDuration = state.targetDurationMinutes;
+    const previousEndHour = state.selectedEndHour;
+    const previousEndMinute = state.selectedEndMinute;
+    const previousUserEditedEnd = state.userEditedEndTime;
+
+    state.selectedBlocklistId = blocklist.id;
+    state.isAlwaysOnMode = qsAlwaysOn;
+    state.userEditedEndTime = false;
+    if (!qsAlwaysOn) {
+        state.targetDurationMinutes = qsDurationMins;
+        const end = new Date(Date.now() + qsDurationMins * 60 * 1000);
+        state.selectedEndHour = end.getHours();
+        state.selectedEndMinute = end.getMinutes();
+    }
+
+    closeQuickStartModal();
+
+    try {
+        await proceedWithBlock();
+    } finally {
+        if (startBtn) startBtn.disabled = false;
+    }
+
+    // Restore prior selection so the hidden Quick start space is not left selected.
+    const previousStillExists = previousId
+        && state.appData.blocklists.some((bl) => bl.id === previousId && !isQuickStartBlocklist(bl));
+    if (previousStillExists) {
+        state.selectedBlocklistId = previousId;
+        state.isAlwaysOnMode = previousAlwaysOn;
+        state.targetDurationMinutes = previousDuration;
+        state.selectedEndHour = previousEndHour;
+        state.selectedEndMinute = previousEndMinute;
+        state.userEditedEndTime = previousUserEditedEnd;
+        const dropdown = document.getElementById('blocklist-select');
+        if (dropdown) {
+            dropdown.value = previousId;
+            handleBlocklistSelect({ target: dropdown });
+        }
+    } else {
+        deselectBlocklist();
+    }
+}
+
+function saveAsFocusSpace() {
+    confirmWebsiteInput();
+    confirmAppInput();
+    const draft = {
+        websites: [...qsWebsites],
+        apps: [...qsApps],
+        mode: qsMode,
+        overrideDifficulty: {
+            type: QS_OVERRIDE_TYPE,
+            count: sliderToOverrideCount(qsEffortSlider),
+            maxDifficulty: false,
+        },
+        iosScreenTimeSelection: cloneIOSScreenTimeSelection(qsIOSScreenTimeSelection),
+    };
+    closeQuickStartModal();
+    openBlocklistModal(null);
+    setBlocklistModalMode(draft.mode);
+    window.setModalData?.(
+        draft.websites,
+        draft.apps,
+        draft.iosScreenTimeSelection,
+    );
+    const overrideType = document.getElementById('override-type');
+    const overrideCount = document.getElementById('override-count');
+    if (overrideType) overrideType.value = draft.overrideDifficulty.type;
+    if (overrideCount) overrideCount.value = String(draft.overrideDifficulty.count);
+    overrideType?.dispatchEvent(new Event('change'));
+}
+
+export function openQuickStartModal() {
+    const modal = document.getElementById('quick-start-modal');
+    if (!modal) return;
+
+    qsWebsites = [];
+    qsApps = [];
+    qsIOSScreenTimeSelection = null;
+    qsDurationMins = QS_DEFAULT_DURATION_MINS;
+    qsAlwaysOn = false;
+    qsEffortSlider = QS_DEFAULT_SLIDER;
+
+    setQuickStartMode('blocklist');
+    updateDurationButtons();
+
+    const slider = document.getElementById('quick-start-effort-slider');
+    if (slider) slider.value = String(qsEffortSlider);
+    updateEffortSummary();
+    renderQsTags();
+    applyQuickStartTint();
+
+    installAppsPickerBridge();
+    modal.classList.remove('hidden');
+}
+
+export function closeQuickStartModal() {
+    const modal = document.getElementById('quick-start-modal');
+    modal?.classList.add('hidden');
+    restoreAppsPickerBridge();
+}
+
+export function applyQuickStartLanguage() {
+    const setText = (id, text) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    };
+    setText('quick-start-title', tSettings('quickStartTitle'));
+    setText('quick-start-mode-blocklist-label', tSettings('blocklistModeBlocklist'));
+    setText('quick-start-mode-allowlist-label', tSettings('blocklistModeAllowlist'));
+    setText('quick-start-duration-label', tSettings('quickSelect'));
+    setText('quick-start-duration-15', tSettings('durationQuick15m'));
+    setText('quick-start-duration-30', tSettings('durationQuick30m'));
+    setText('quick-start-duration-60', tSettings('durationQuick1Hour'));
+    setText('quick-start-duration-120', tSettings('durationQuick2Hours'));
+    setText('quick-start-duration-always-label', tSettings('durationQuickAlways'));
+    setText('quick-start-effort-label', tSettings('quickStartEffortLabel'));
+    setText('quick-start-effort-easy', tSettings('quickStartEffortEasy'));
+    setText('quick-start-effort-hard', tSettings('quickStartEffortHard'));
+    setText('quick-start-import-websites-caption', tSettings('modalPremadeListsCaption'));
+    setText('quick-start-browse-apps-caption', tSettings('modalBrowseAppsCaption'));
+    setText('quick-start-import-menu-text-file-label', tSettings('importWebsitesFromFile'));
+    setText('quick-start-import-menu-section-label', tSettings('importWebsitesPreMadeList'));
+
+    const btn = document.getElementById('quick-start-btn');
+    if (btn) btn.title = tSettings('quickStartTitle');
+
+    const hint = document.getElementById('quick-start-hint');
+    if (hint) {
+        const linkLabel = tSettings('quickStartSaveAsLink');
+        hint.innerHTML = `${escapeHtml(tSettings('quickStartHintBefore'))} <button type="button" class="quick-start-save-link" id="quick-start-save-as-link">${escapeHtml(linkLabel)}</button> ${escapeHtml(tSettings('quickStartHintAfter'))}`;
+        document.getElementById('quick-start-save-as-link')?.addEventListener('click', saveAsFocusSpace);
+    }
+
+    updateQuickStartModeLabels();
+    updateStartButtonLabel();
+    updateEffortSummary();
+}
+
+export function setupQuickStart() {
+    if (qsWired) return;
+    qsWired = true;
+
+    document.getElementById('quick-start-btn')?.addEventListener('click', () => openQuickStartModal());
+
+    document.getElementById('quick-start-modal')?.addEventListener('click', (e) => {
+        if (e.target.classList.contains('modal-overlay')) closeQuickStartModal();
+    });
+
+    document.querySelectorAll('#quick-start-mode-toggle .mode-btn').forEach((btn) => {
+        btn.addEventListener('click', () => setQuickStartMode(btn.dataset.mode));
+    });
+
+    document.querySelectorAll('.quick-start-duration-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            if (btn.dataset.mode === 'always') {
+                qsAlwaysOn = true;
+            } else {
+                qsAlwaysOn = false;
+                qsDurationMins = parseInt(btn.dataset.mins, 10) || QS_DEFAULT_DURATION_MINS;
+            }
+            updateDurationButtons();
+        });
+    });
+
+    document.getElementById('quick-start-effort-slider')?.addEventListener('input', (e) => {
+        qsEffortSlider = parseInt(e.target.value, 10) || 0;
+        updateEffortSummary();
+    });
+
+    const websiteInput = document.getElementById('quick-start-website-input');
+    websiteInput?.addEventListener('keydown', (e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && websiteInput.value.trim()) {
+            e.preventDefault();
+            confirmWebsiteInput();
+        }
+        if (e.key === 'Backspace' && !websiteInput.value && qsWebsites.length > 0) {
+            qsWebsites.pop();
+            renderQsTags();
+            e.preventDefault();
+        }
+    });
+
+    const appInput = document.getElementById('quick-start-app-input');
+    appInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && appInput.value.trim()) {
+            e.preventDefault();
+            confirmAppInput();
+        }
+        if (e.key === 'Backspace' && !appInput.value && qsApps.length > 0) {
+            qsApps.pop();
+            renderQsTags();
+            e.preventDefault();
+        }
+    });
+
+    setupWebsitesImportMenu({
+        importBtnId: 'quick-start-import-websites-btn',
+        menuId: 'quick-start-websites-import-menu',
+        textFileBtnId: 'quick-start-import-menu-text-file',
+        addDomainsToModal: (rawDomains) => {
+            const cleaned = (rawDomains || [])
+                .map((d) => cleanDomainInput(d))
+                .filter((d) => isValidDomain(d) && !isProtectedDomain(d));
+            cleaned.forEach((d) => {
+                if (!qsWebsites.includes(d)) qsWebsites.push(d);
+            });
+            renderQsTags();
+        },
+    });
+
+    const browseBtn = document.getElementById('quick-start-browse-apps-btn');
+    if (state.isIOS && browseBtn) {
+        browseBtn.addEventListener('click', async () => {
+            try {
+                const result = await tauriAPI.showActivityPicker({
+                    initialApplicationTokenData: qsIOSScreenTimeSelection?.applicationTokens || [],
+                    initialCategoryTokenData: qsIOSScreenTimeSelection?.categoryTokens || [],
+                    mode: getSelectedMode(),
+                });
+                if (!result.cancelled && (result.applicationCount > 0 || result.categoryCount > 0)) {
+                    qsIOSScreenTimeSelection = normalizeIOSScreenTimeSelection({
+                        applicationTokens: result.applicationTokens || [],
+                        categoryTokens: result.categoryTokens || [],
+                        applicationCount: result.applicationCount || 0,
+                        categoryCount: result.categoryCount || 0,
+                        requiresReselection: false,
+                    });
+                    renderQsTags();
+                } else if (!result.cancelled) {
+                    qsIOSScreenTimeSelection = null;
+                    renderQsTags();
+                }
+            } catch (err) {
+                console.error('Activity picker error:', err);
+                alert('Failed to open app picker: ' + err);
+            }
+        });
+    } else if (browseBtn) {
+        browseBtn.addEventListener('click', () => {
+            installAppsPickerBridge();
+            openInstalledAppsPicker();
+        });
+    }
+
+    document.getElementById('quick-start-start-btn')?.addEventListener('click', () => {
+        startQuickStart();
+    });
+    document.getElementById('quick-start-save-as-link')?.addEventListener('click', saveAsFocusSpace);
+}
