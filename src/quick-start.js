@@ -26,6 +26,7 @@ import {
     getMaxOverrideCharsForType,
     getOverrideEstimatedMinutes,
     normalizeOverrideCount,
+    usesMobileWordCountForOverrideType,
 } from './override-challenge.js';
 import { saveData } from './persistence.js';
 import {
@@ -135,7 +136,10 @@ function updateEffortSummary() {
     const minutes = getOverrideEstimatedMinutes(QS_OVERRIDE_TYPE, count, '');
     const locale = tSettings('locale');
     const countStr = count.toLocaleString(locale);
-    summary.textContent = tSettingsFmt('quickStartEffortSummary', {
+    const summaryKey = usesMobileWordCountForOverrideType(QS_OVERRIDE_TYPE)
+        ? 'quickStartEffortSummaryWords'
+        : 'quickStartEffortSummary';
+    summary.textContent = tSettingsFmt(summaryKey, {
         count: countStr,
         minutes: String(minutes),
     });
