@@ -7075,13 +7075,7 @@ body.android .blocklists-container {
     border-left-width: var(--blocklist-card-border);
 }
 
-/* Don't dim Quick start the way other active cards are — dashed border is the cue. */
-.blocklist-card-quick-start.blocklist-card-active .blocklist-name,
-.blocklist-card-quick-start.blocklist-card-active .blocklist-meta-sep,
-.blocklist-card-quick-start.blocklist-card-active .blocklist-actions{
-    opacity: 1;
-}
-
+/* Don't dim Quick start — dashed border is the ephemeral cue. */
 .blocklist-card-quick-start .blocklist-stripe{
     /* Keep stripe width so content aligns with normal cards; hide the color. */
     background: transparent !important;
@@ -7113,13 +7107,6 @@ body.android .blocklists-container {
 
 .blocklist-card-active{
     cursor: default;
-}
-
-.blocklist-card-active .blocklist-stripe,
-.blocklist-card-active .blocklist-name,
-.blocklist-card-active .blocklist-meta-sep,
-.blocklist-card-active .blocklist-actions{
-    opacity: 0.7;
 }
 
 .blocklist-card-active:hover{

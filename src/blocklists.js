@@ -233,12 +233,20 @@ export function getNextCopyName(blocklist) {
 
 /** Promote a running Quick start into a permanent focus space. */
 export function saveQuickStartAsFocusSpace(id) {
-    const blocklist = state.appData.blocklists.find((bl) => bl.id === id);
-    if (!blocklist || !isQuickStartBlocklist(blocklist)) return;
+    const idx = state.appData.blocklists.findIndex((bl) => bl.id === id);
+    if (idx === -1) return;
+    const blocklist = state.appData.blocklists[idx];
+    if (!isQuickStartBlocklist(blocklist)) return;
 
     blocklist.isQuickStart = false;
     if (blocklist.alwaysShowInSchedule === false) {
         blocklist.alwaysShowInSchedule = true;
+    }
+
+    // New/saved spaces go to the top of the focus list.
+    if (idx !== 0) {
+        state.appData.blocklists.splice(idx, 1);
+        state.appData.blocklists.unshift(blocklist);
     }
 
     saveData();
@@ -352,7 +360,7 @@ export function duplicateBlocklist(id) {
         overrideDifficulty: cloneOverrideDifficulty(blocklist.overrideDifficulty)
     };
 
-    state.appData.blocklists.push(duplicate);
+    state.appData.blocklists.unshift(duplicate);
 
     const scheduleDraft = getBlocklistScheduleDraft(id);
     if (scheduleDraft) {

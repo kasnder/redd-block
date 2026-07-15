@@ -390,7 +390,7 @@ async function startQuickStart() {
     if (startBtn) startBtn.disabled = true;
 
     const blocklist = buildQuickStartBlocklist();
-    state.appData.blocklists.push(blocklist);
+    state.appData.blocklists.unshift(blocklist);
     await saveData();
 
     const previousId = state.selectedBlocklistId;
