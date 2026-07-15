@@ -192,7 +192,7 @@ class BlockerService : AccessibilityService() {
 
     private fun navigateBrowserToBlank(browserPackage: String) {
         try {
-            val uri = "https://reddfocus.org".toUri()
+            val uri = "https://digitalhabits.org".toUri()
             val intent = Intent(Intent.ACTION_VIEW, uri).apply {
                 setPackage(browserPackage)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

@@ -2,7 +2,7 @@
 
 Block distracting websites and apps with scheduled or one-off blocks and customisable difficulty to override. Stay focused on what matters.
 
-Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and the University of Maastricht (Dr Konrad Kollnig), as part of the Reduce Digital Distraction project ([reddfocus.org](https://reddfocus.org)).
+Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and the University of Maastricht (Dr Konrad Kollnig), as part of the Reduce Digital Distraction project ([digitalhabits.org](https://digitalhabits.org)).
 
 ## Features
 

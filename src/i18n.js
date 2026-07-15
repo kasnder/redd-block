@@ -71,9 +71,9 @@ export const SETTINGS_TRANSLATIONS = {
         // First-run EULA gate
         eulaAgreeAria: 'I agree to the End User License Agreement and Privacy Policy',
         eulaAgreeLineHtml:
-            'I agree to the ReDD Project\'s <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">End User License Agreement</a>',
+            'I agree to Centre for Digital Habits\' <a href="https://digitalhabits.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/eula">End User License Agreement</a>',
         eulaNoteHtml:
-            'Note: we do not collect any user data, as per our <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">Privacy Policy</a>.',
+            'Note: we do not collect any user data, as per our <a href="https://digitalhabits.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy">Privacy Policy</a>.',
         eulaContinueBtn: 'Continue',
         eulaContinueBusy: 'Continuing…',
         eulaBackBtn: 'Back',
@@ -113,7 +113,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeDemoFullscreenExitAriaLabel: 'Exit fullscreen',
         welcomeDemoCloseLabel: 'Close',
         welcomeFooter1Html:
-            'Built by the <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, a not-for-profit creating open-source digital focus tools &amp; training. In collaboration with researchers at the University of Oxford and University of Maastricht.',
+            'Built by <a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Centre for Digital Habits</a>, a not-for-profit creating open-source digital focus tools &amp; training. In collaboration with researchers at the University of Oxford and University of Maastricht.',
         welcomeFooter2Html:
             '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Get started',
@@ -894,9 +894,9 @@ export const SETTINGS_TRANSLATIONS = {
         // First-run EULA gate
         eulaAgreeAria: 'Jeg accepterer slutbrugerlicensaftalen og privatlivspolitikken',
         eulaAgreeLineHtml:
-            'Jeg accepterer ReDD Projektets <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">slutbrugerlicensaftale</a>',
+            'Jeg accepterer Centre for Digital Habits\' <a href="https://digitalhabits.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/eula">slutbrugerlicensaftale</a>',
         eulaNoteHtml:
-            'Bemærk, at vi ikke indsamler brugerdata — som beskrevet i vores <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">privatlivspolitik</a>.',
+            'Bemærk, at vi ikke indsamler brugerdata — som beskrevet i vores <a href="https://digitalhabits.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy">privatlivspolitik</a>.',
         eulaContinueBtn: 'Fortsæt',
         eulaContinueBusy: 'Arbejder…',
         eulaBackBtn: 'Tilbage',
@@ -936,7 +936,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeDemoFullscreenExitAriaLabel: 'Afslut fuld skærm',
         welcomeDemoCloseLabel: 'Luk',
         welcomeFooter1Html:
-            'Udviklet af <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a>, en non-profit, der bygger open source digitale fokusværktøjer og kurser. I samarbejde med forskere ved University of Oxford og Maastricht University.',
+            'Udviklet af <a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Centre for Digital Habits</a>, en non-profit, der bygger open source digitale fokusværktøjer og kurser. I samarbejde med forskere ved University of Oxford og Maastricht University.',
         welcomeFooter2Html:
             '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Kom i gang',
@@ -1690,8 +1690,8 @@ export const SETTINGS_TRANSLATIONS = {
         bannerActionAllWebsitesIn: '允许访问所有网站',
         bannerActionSetUpIn: '设置',
         eulaAgreeAria: '我同意最终用户许可协议和隐私政策',
-        eulaAgreeLineHtml: '我同意 ReDD Project 的 <a href="https://reddfocus.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/eula">最终用户许可协议</a>',
-        eulaNoteHtml: '注意：根据我们的 <a href="https://reddfocus.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://reddfocus.org/privacy-policy">隐私政策</a>，我们不会收集任何用户数据。',
+        eulaAgreeLineHtml: '我同意 Centre for Digital Habits 的 <a href="https://digitalhabits.org/eula" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/eula">最终用户许可协议</a>',
+        eulaNoteHtml: '注意：根据我们的 <a href="https://digitalhabits.org/privacy-policy" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org/privacy-policy">隐私政策</a>，我们不会收集任何用户数据。',
         eulaContinueBtn: '继续',
         eulaContinueBusy: '正在继续...',
         eulaBackBtn: '返回',
@@ -1721,7 +1721,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeDemoFullscreenEnterAriaLabel: '进入全屏',
         welcomeDemoFullscreenExitAriaLabel: '退出全屏',
         welcomeDemoCloseLabel: '关闭',
-        welcomeFooter1Html: '由 <a href="https://reddfocus.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Reduce Digital Distraction Project</a> 开发，这是一个创建开源数字专注工具和培训的非营利项目。与牛津大学和马斯特里赫特大学研究人员合作。',
+        welcomeFooter1Html: '由 <a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Centre for Digital Habits</a> 开发，这是一个创建开源数字专注工具和培训的非营利项目。与牛津大学和马斯特里赫特大学研究人员合作。',
         welcomeFooter2Html: '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">在 GitHub 查看源代码</a>。',
         welcomeOnboardingContinueBtn: '开始使用',
         migrationPreWelcomeTitle: '欢迎使用 ReDD Blocker 2.0',

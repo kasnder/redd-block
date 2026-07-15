@@ -34,7 +34,7 @@ export function setupHelpMenuLinks() {
     }).catch(() => { });
 
     tauriAPI.onMenuHelpWhoWeAre(() => {
-        openExternal('https://www.reddfocus.org/#team-anchor');
+        openExternal('https://digitalhabits.org/#team-anchor');
     }).catch(() => { });
 }
 

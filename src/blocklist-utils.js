@@ -15,6 +15,7 @@ export const PROTECTED_DOMAINS = [
     '127.0.0.1', '0.0.0.0', '::1',
     'broadcasthost', 'local',
     'reddfocus.org', 'www.reddfocus.org',
+    'digitalhabits.org', 'www.digitalhabits.org',
     'ulyngs.github.io'
 ];
 

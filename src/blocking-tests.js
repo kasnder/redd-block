@@ -1430,6 +1430,8 @@
             assert(isProtectedDomain('local'), 'T49: "local" is protected');
             assert(isProtectedDomain('reddfocus.org'), 'T49: "reddfocus.org" is protected');
             assert(isProtectedDomain('www.reddfocus.org'), 'T49: "www.reddfocus.org" is protected');
+            assert(isProtectedDomain('digitalhabits.org'), 'T49: "digitalhabits.org" is protected');
+            assert(isProtectedDomain('www.digitalhabits.org'), 'T49: "www.digitalhabits.org" is protected');
             assert(isProtectedDomain('ulyngs.github.io'), 'T49: "ulyngs.github.io" is protected');
         })();
 

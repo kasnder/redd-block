@@ -216,7 +216,7 @@ same end state.
       Functionally a no-op for users; cleanup only.
 - [ ] **Deep-link the extension-compliance banner Install button**
       to the right store per browser (Chrome Web Store / Firefox AMO
-      / Edge Add-ons). Currently links to `reddfocus.org/tools/reddblock`.
+      / Edge Add-ons). Currently links to `digitalhabits.org/tools/reddblock`.
 - [ ] **`architecture.md` sections 4–9 full rewrite.** The banner at
       the top marks them as historical; defer until the migration
       lands on `main`.

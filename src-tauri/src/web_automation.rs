@@ -1087,6 +1087,8 @@ const PROTECTED_HOSTS: &[&str] = &[
     "local",
     "reddfocus.org",
     "www.reddfocus.org",
+    "digitalhabits.org",
+    "www.digitalhabits.org",
     "ulyngs.github.io",
 ];
 
