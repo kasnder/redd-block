@@ -51,7 +51,17 @@ export async function loadData() {
     if (normalizeLoadedEulaState()) {
         shouldSave = true;
     }
-    state.appData.blocklists = (state.appData.blocklists || []).map(normalizeBlocklist);
+    let healedQuickStartFlag = false;
+    state.appData.blocklists = (state.appData.blocklists || []).map((bl) => {
+        const normalized = normalizeBlocklist(bl);
+        if (normalized.isQuickStart === true && bl.isQuickStart !== true) {
+            healedQuickStartFlag = true;
+        }
+        return normalized;
+    });
+    if (healedQuickStartFlag) {
+        shouldSave = true;
+    }
     if (migrateBlocklistStartOverlaysToGlobal()) {
         shouldSave = true;
     }

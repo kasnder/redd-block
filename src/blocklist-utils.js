@@ -181,10 +181,29 @@ export function ensureIOSBlocklistSelectionReady(blocklist, actionLabel) {
     return false;
 }
 
+/** Ephemeral Quick start spaces (id prefix `qs-` heals older saves that dropped the flag). */
+export function isQuickStartBlocklist(blocklist) {
+    if (!blocklist) return false;
+    // Explicit false wins (after "Save as focus space").
+    if (blocklist.isQuickStart === false) return false;
+    if (blocklist.isQuickStart === true) return true;
+    return String(blocklist.id || '').startsWith('qs-');
+}
+
+/** Color-emoji presentation (VS16) so the bolt stays yellow, not a black text glyph. */
+export const QUICK_START_EMOJI = '⚡️';
+
 export function normalizeBlocklist(blocklist) {
     const normalizedBlocklist = { ...blocklist };
     normalizedBlocklist.apps = getBlocklistRegularApps(blocklist);
     normalizedBlocklist.iosScreenTimeSelection = getBlocklistIOSScreenTimeSelection(blocklist);
+    if (blocklist.isQuickStart === false) {
+        normalizedBlocklist.isQuickStart = false;
+    } else if (isQuickStartBlocklist(normalizedBlocklist)) {
+        // Heal Quick starts whose isQuickStart flag was stripped (e.g. edit-modal save).
+        normalizedBlocklist.isQuickStart = true;
+        normalizedBlocklist.emoji = QUICK_START_EMOJI;
+    }
     return normalizedBlocklist;
 }
 

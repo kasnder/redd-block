@@ -3,12 +3,12 @@
 import { state } from './state.js';
 import { escapeHtml, getContrastTextColor } from './utils.js';
 import { tSettings, weekdayAbbrevMon0List } from './i18n.js';
-import { isBlockAlwaysOn } from './blocklist-utils.js';
+import { isBlockAlwaysOn, isQuickStartBlocklist, QUICK_START_EMOJI } from './blocklist-utils.js';
 import { isNonRepeatingSchedule, isSchedulePausedNow, pickEarliestUpcomingScheduledBlock, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper, formatTitleBarScheduleStartWhen } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { disableTimeControls, updateTimeDisplay } from './time-inputs.js';
 import { isScheduleSegmentActiveNow, updateScheduleButtonState } from './schedule-editor.js';
-import { autoSelectSoleBlocklist, renderBlocklists } from './blocklists.js';
+import { autoSelectSoleBlocklist, renderBlocklists, saveQuickStartAsFocusSpace } from './blocklists.js';
 import { updateBlockedApps, updateOnboardingVisibility, updateWindowHeight } from './blocking-platform.js';
 import { handleBlocklistSelect, openBlocklistModal, openOverrideModal, openPauseModal, openScheduleOverrideModal, setBtnActionLabel, setStartBlockBtnLeadingIcon, setStartBtnBlocklistInfo, syncPauseButtonForSelectedBlocklist, syncSchedulerChromeVisibility, syncStopBtnLabelFit, openScheduledBlockEdit, refreshCalendarPreviews, handleTimeChange } from './confirm-modals.js';
 import { scheduleSelectionPromptLayout } from './theme.js';
@@ -25,18 +25,27 @@ export function render() {
     updateWeekCalendar();
     renderBlocklistSelector();
 
-    const visibleBlocklists = state.appData.blocklists.filter((bl) => !bl.isQuickStart);
+    const now = Date.now();
+    const visibleBlocklists = [
+        ...state.appData.blocklists.filter((bl) => isQuickStartBlocklist(bl) && state.appData.activeBlocks.some(
+            (b) => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now,
+        )),
+        ...state.appData.blocklists.filter((bl) => !isQuickStartBlocklist(bl)),
+    ];
     // Auto-select when the choice is unambiguous, but respect a user
     // deselect so they can return to the empty "Select a blocklist"
     // state if they want.
     //   - Exactly one blocklist exists → default-select it.
     //   - Otherwise, if nothing is selected, fall back to selecting
     //     the lone non-active blocklist if there's exactly one.
-    if (visibleBlocklists.length === 1) {
+    // Count only saved focus spaces for "sole space" auto-select so a
+    // running Quick start doesn't steal selection from an empty library.
+    const savedFocusSpaces = visibleBlocklists.filter((bl) => !isQuickStartBlocklist(bl));
+    if (savedFocusSpaces.length === 1) {
         autoSelectSoleBlocklist();
     } else if (!state.selectedBlocklistId && !state.userExplicitlyDeselected) {
         const activeIds = state.appData.activeBlocks.map(b => b.blocklistId);
-        const availableBlocklists = visibleBlocklists.filter(bl => !activeIds.includes(bl.id));
+        const availableBlocklists = savedFocusSpaces.filter(bl => !activeIds.includes(bl.id));
         if (availableBlocklists.length === 1) {
             const dropdown = document.getElementById('blocklist-select');
             dropdown.value = availableBlocklists[0].id;
@@ -50,7 +59,7 @@ export function render() {
     // Hide "Select a blocklist" prompt if there are no blocklists
     const selectionPrompt = document.getElementById('selection-prompt');
     if (selectionPrompt) {
-        if (visibleBlocklists.length === 0) {
+        if (savedFocusSpaces.length === 0) {
             selectionPrompt.classList.add('hidden');
         } else if (!state.selectedBlocklistId) {
             // Only show prompt if there are blocklists but none selected
@@ -470,15 +479,24 @@ export function openNowBlockingChipMenu(triggerBtn, entry) {
     menu.setAttribute('role', 'menu');
 
     // square = Stop focus space button (matches the Lucide icon on the main action button).
+    const saveIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/></svg>';
     const editIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
     const pauseIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
     const stopIcon = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>';
 
-    const items = [
+    const items = [];
+    if (isQuickStartBlocklist(entry.blocklist)) {
+        items.push({
+            label: tSettings('quickStartSaveAsLink'),
+            icon: saveIcon,
+            action: () => saveQuickStartAsFocusSpace(entry.blocklistId),
+        });
+    }
+    items.push(
         { label: tSettings('nowBlockingMenuEdit'), icon: editIcon, action: () => handleNowBlockingEdit(entry) },
         { label: tSettings('nowBlockingMenuPause'), icon: pauseIcon, action: () => handleNowBlockingPause(entry) },
-        { label: tSettings('nowBlockingMenuStop'), icon: stopIcon, action: () => handleNowBlockingStop(entry), danger: true }
-    ];
+        { label: tSettings('nowBlockingMenuStop'), icon: stopIcon, action: () => handleNowBlockingStop(entry), danger: true },
+    );
 
     items.forEach(item => {
         const btn = document.createElement('button');
@@ -619,7 +637,9 @@ export function isNowBlockingActiveChipsCurrent(row, chipsEl, entries) {
         const nameEl = chip.querySelector('.now-blocking-chip-name');
         const menuBtn = chip.querySelector('.now-blocking-chip-menu-btn');
         if (!emojiEl || !nameEl || !menuBtn) return false;
-        const emoji = entry.blocklist.emoji || '🚫';
+        const emoji = isQuickStartBlocklist(entry.blocklist)
+            ? QUICK_START_EMOJI
+            : (entry.blocklist.emoji || '🚫');
         const name = entry.blocklist.name || '';
         if (emojiEl.textContent !== emoji || nameEl.textContent !== name) return false;
     }
@@ -671,12 +691,14 @@ export function appendNowBlockingChip(chipsEl, entry, entries, nowMs) {
     chip.dataset.kind = entry.kind;
     chip.dataset.id = String(entry.id);
 
-    const emoji = entry.blocklist.emoji || '🚫';
+    const emoji = isQuickStartBlocklist(entry.blocklist)
+        ? QUICK_START_EMOJI
+        : (entry.blocklist.emoji || '🚫');
     const name = entry.blocklist.name || '';
     const untilText = buildNowBlockingUntilText(entry, nowMs);
 
     chip.innerHTML = `
-        <span class="now-blocking-chip-emoji">${escapeHtml(emoji)}</span>
+        <span class="now-blocking-chip-emoji">${emoji}</span>
         <span class="now-blocking-chip-name">${escapeHtml(name)}</span>
         ${untilText ? `<span class="now-blocking-chip-until">${escapeHtml(untilText)}</span>` : ''}
     `;
@@ -1103,14 +1125,30 @@ export function renderBlocklistSelector() {
 
     const newHTML = `
     <option value="">${tSettings('selectionPromptOption')}</option>
-    ${state.appData.blocklists.filter((bl) => !bl.isQuickStart).map(bl => {
-        const isActive = activeIds.includes(bl.id);
-        const activeLabel = isActive ? tSettings('runningSuffix') : '';
-        return `<option value="${bl.id}">${escapeHtml(bl.name)}${activeLabel}</option>`;
-    }).join('')}
+    ${(() => {
+        const now = Date.now();
+        const ordered = [
+            ...state.appData.blocklists.filter((bl) => isQuickStartBlocklist(bl) && state.appData.activeBlocks.some(
+                (b) => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now,
+            )),
+            ...state.appData.blocklists.filter((bl) => !isQuickStartBlocklist(bl)),
+        ];
+        return ordered.map((bl) => {
+            const isActive = activeIds.includes(bl.id);
+            const activeLabel = isActive ? tSettings('runningSuffix') : '';
+            return `<option value="${bl.id}">${escapeHtml(bl.name)}${activeLabel}</option>`;
+        }).join('');
+    })()}
   `;
 
-    const validSelectedId = selectedId && state.appData.blocklists.some((bl) => bl.id === selectedId && !bl.isQuickStart)
+    const validSelectedId = selectedId && state.appData.blocklists.some((bl) => {
+        if (bl.id !== selectedId) return false;
+        if (!isQuickStartBlocklist(bl)) return true;
+        const now = Date.now();
+        return state.appData.activeBlocks.some(
+            (b) => b.blocklistId === bl.id && b.startTime <= now && b.endTime > now,
+        );
+    })
         ? selectedId
         : '';
 

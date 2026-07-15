@@ -10,6 +10,8 @@ import {
     cloneIOSScreenTimeSelection,
     normalizeIOSScreenTimeSelection,
     formatIOSScreenTimeSelectionLabel,
+    isQuickStartBlocklist,
+    QUICK_START_EMOJI,
 } from './blocklist-utils.js';
 import {
     cleanDomainInput,
@@ -35,11 +37,14 @@ import {
 } from './confirm-modals.js';
 import { setBlocklistModalMode } from './list-mode.js';
 
+export { isQuickStartBlocklist };
+
 const QS_OVERRIDE_TYPE = 'random-words';
-const QS_DEFAULT_SLIDER = 28; // ~20 chars on the exponential curve
+const QS_DEFAULT_SLIDER = 3; // ~20 chars on the linear 5…500 scale
 const QS_DEFAULT_DURATION_MINS = 60;
+const QS_MAX_OVERRIDE_CHARS = 500;
 const QS_COLOR = '#B8D1DE';
-const QS_EMOJI = '⚡';
+const QS_EMOJI = QUICK_START_EMOJI;
 
 let qsWebsites = [];
 let qsApps = [];
@@ -56,15 +61,11 @@ function generateQuickStartId() {
     return `qs-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function isQuickStartBlocklist(blocklist) {
-    return blocklist?.isQuickStart === true;
-}
-
 function sliderToOverrideCount(sliderValue) {
     const t = Math.max(0, Math.min(100, Number(sliderValue) || 0)) / 100;
     const min = MIN_OVERRIDE_CHARS;
-    const max = getMaxOverrideCharsForType(QS_OVERRIDE_TYPE);
-    const count = Math.round(min * Math.pow(max / min, t));
+    const max = Math.min(QS_MAX_OVERRIDE_CHARS, getMaxOverrideCharsForType(QS_OVERRIDE_TYPE));
+    const count = Math.round(min + (max - min) * t);
     return normalizeOverrideCount(count, QS_OVERRIDE_TYPE);
 }
 

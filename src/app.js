@@ -36,6 +36,7 @@ import {
     ensureIOSBlocklistSelectionReady,
     normalizeBlocklist,
     collectActiveIOSManualBlockPayload,
+    isQuickStartBlocklist,
 } from './blocklist-utils.js';
 import { openInstalledAppsPicker } from './apps-picker.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, handleDurationInputChange, handleDurationQuickBtn, handlePopoverOutsideClick, handleTimePartClick, initializeTimeInputs, pad, parseEndTimeBoundedInt, scrollElementWithinContainer, scrollPopoverOptionIntoView, setupEndTimeDirectInputs, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
@@ -1685,8 +1686,14 @@ function setupModalListeners() {
             iosScreenTimeSelection: cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection),
             showItemDetails,
             alwaysShowInSchedule,
-            overrideDifficulty: overrideDifficultyPayload
+            overrideDifficulty: overrideDifficultyPayload,
         };
+        // Preserve Quick start / promoted-ordinary flag across edit saves.
+        if (existingBlocklistForSave?.isQuickStart === false) {
+            blocklist.isQuickStart = false;
+        } else if (isQuickStartBlocklist(existingBlocklistForSave)) {
+            blocklist.isQuickStart = true;
+        }
 
         if (state.editingBlocklistId) {
             const idx = state.appData.blocklists.findIndex(bl => bl.id === state.editingBlocklistId);

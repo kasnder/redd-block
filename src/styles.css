@@ -3797,18 +3797,29 @@ body:not(.ios) #settings-toolbar-scheduler{
     flex-shrink: 0;
     width: 30px;
     height: 30px;
-    background: var(--redd-navy);
-    border: 1px solid var(--redd-navy);
-    color: #f5c542;
+    background: var(--element-bg);
+    border: 1px solid var(--border-color);
+    color: inherit;
     box-shadow: var(--redd-shadow-card);
     border-radius: 8px;
 }
 
 .blocklists-section > .section-header #quick-start-btn:hover{
-    background: var(--primary-btn-bg-hover);
-    border-color: var(--primary-btn-bg-hover);
-    color: #ffd666;
+    background: var(--element-bg);
+    border-color: var(--border-color-medium);
     box-shadow: var(--redd-shadow-card-hover);
+}
+
+.blocklists-section > .section-header #quick-start-btn .quick-start-btn-emoji,
+.blocklist-card-quick-start .blocklist-emoji,
+.now-blocking-chip-emoji{
+    font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    font-style: normal;
+    line-height: 1;
+}
+
+.blocklists-section > .section-header #quick-start-btn .quick-start-btn-emoji{
+    font-size: 16px;
 }
 
 .blocklists-section > .section-header #add-blocklist-btn svg,
@@ -7012,6 +7023,31 @@ body.android .blocklists-container {
 .blocklist-card.selected{
     border-left-width: 0;
     overflow: visible;
+}
+
+/* Running Quick start: ephemeral card at the top of the list. */
+.blocklist-card-quick-start{
+    --blocklist-card-border: 2px;
+    border: var(--blocklist-card-border) dashed color-mix(in srgb, var(--text-muted) 55%, var(--border-color));
+    border-left-width: var(--blocklist-card-border);
+    padding-top: calc(var(--blocklist-card-padding-y) + 3px);
+    cursor: pointer;
+}
+
+.blocklist-card-quick-start.selected{
+    border-style: dashed;
+}
+
+/* Don't dim Quick start the way other active cards are — dashed border is the cue. */
+.blocklist-card-quick-start.blocklist-card-active .blocklist-name,
+.blocklist-card-quick-start.blocklist-card-active .blocklist-meta-sep,
+.blocklist-card-quick-start.blocklist-card-active .blocklist-actions{
+    opacity: 1;
+}
+
+.blocklist-card-quick-start .blocklist-stripe{
+    /* Keep stripe width so content aligns with normal cards; hide the color. */
+    background: transparent !important;
 }
 
 .blocklist-entering-chip{
