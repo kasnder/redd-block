@@ -11444,6 +11444,11 @@ body:not(.ios) #quick-start-modal .tags-input-stacked .browse-btn-caption{
 
 .quick-start-effort-header label{
     margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
 }
 
 .quick-start-effort-summary{
