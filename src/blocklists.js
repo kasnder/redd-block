@@ -1,6 +1,7 @@
 // Blocklist CRUD: duplication, import/export, delete-undo, list rendering.
 // Extracted verbatim from app.js.
 import { state } from './state.js';
+import { BaseDirectory } from '@tauri-apps/api/path';
 import { ask, message, open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { escapeHtml, getEnteringChipColor } from './utils.js';
@@ -375,6 +376,33 @@ export function duplicateBlocklist(id) {
 export const BLOCKLIST_EXPORT_FORMAT = 'redd-block-rules';
 export const BLOCKLIST_EXPORT_FORMAT_VERSION = 2;
 
+function blocklistsExportDefaultPath() {
+    return `${BLOCKLIST_EXPORT_FORMAT}.json`;
+}
+
+function serializeBlocklistsExportContent(payload) {
+    return `${JSON.stringify(payload, null, 2)}\n`;
+}
+
+/** iOS save() returns opaque file:// URLs; show the filename in the success dialog. */
+function formatExportSuccessDestination(path) {
+    if (!state.isIOS || typeof path !== 'string') return path;
+    try {
+        return decodeURIComponent(new URL(path).pathname.split('/').pop() || path);
+    } catch {
+        const segment = path.split('/').pop();
+        return segment ? decodeURIComponent(segment) : path;
+    }
+}
+
+function pickBlocklistsExportDestination() {
+    return saveDialog({
+        title: tSettings('exportBlocklistsSaveTitle'),
+        defaultPath: blocklistsExportDefaultPath(),
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+    });
+}
+
 export function serializeBlocklistForExport(blocklist) {
     const payload = {
         name: blocklist.name,
@@ -539,24 +567,33 @@ export function blocklistFromImportedEntry(entry) {
 }
 
 export async function exportBlocklistsToFile() {
-    const blocklists = state.appData.blocklists || [];
-    if (blocklists.length === 0) {
-        await message(tSettings('exportBlocklistsEmpty'), { title: tSettings('exportBlocklistsFailedTitle'), kind: 'info' });
-        return;
-    }
-
     try {
-        const selectedPath = await saveDialog({
-            title: tSettings('exportBlocklistsSaveTitle'),
-            defaultPath: 'redd-block-rules.json',
-            filters: [{ name: 'JSON', extensions: ['json'] }]
-        });
+        const payload = buildBlocklistsExportPayload();
+        const exportCount = payload.blocklists?.length ?? 0;
+        if (exportCount === 0) {
+            await message(tSettings('exportBlocklistsEmpty'), { title: tSettings('exportBlocklistsFailedTitle'), kind: 'info' });
+            return;
+        }
+
+        const content = serializeBlocklistsExportContent(payload);
+
+        // iOS: Tauri's save picker exports a staged Documents file, so write content there first.
+        if (state.isIOS) {
+            await writeTextFile(blocklistsExportDefaultPath(), content, { baseDir: BaseDirectory.Document });
+        }
+
+        const selectedPath = await pickBlocklistsExportDestination();
         if (!selectedPath || typeof selectedPath !== 'string') return;
 
-        const payload = buildBlocklistsExportPayload();
-        await writeTextFile(selectedPath, `${JSON.stringify(payload, null, 2)}\n`);
+        if (!state.isIOS) {
+            await writeTextFile(selectedPath, content);
+        }
+
         await message(
-            tSettingsFmt('exportBlocklistsSuccessFmt', { n: blocklists.length, path: selectedPath }),
+            tSettingsFmt('exportBlocklistsSuccessFmt', {
+                n: exportCount,
+                path: formatExportSuccessDestination(selectedPath)
+            }),
             { title: tSettings('exportBlocklistsSuccessTitle'), kind: 'info' }
         );
     } catch (err) {
