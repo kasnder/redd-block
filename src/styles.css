@@ -6976,11 +6976,12 @@ body.dark-mode .schedule-pending-discard:hover{
 /* Two-column selected layout: the list shares a grid row with the start-a-block
    panel, so let it scroll at the panel's bottom edge instead of cutting off at a
    fixed height (height: 0 keeps it from inflating the row; the max() keeps the
-   default height as a floor when the panel is short). */
+   default height as a floor when the panel is short). The 8px offset mirrors
+   .time-picker-container's margin-bottom so both columns end on the same line. */
 @media (min-width: 769px) {
     body:not(.ios):not(.handset-device) .grid-top-row--blocklist-selected .blocklists-container{
         height: 0;
-        min-height: max(var(--blocklists-scroll-max-height), 100%);
+        min-height: max(var(--blocklists-scroll-max-height), calc(100% - 8px));
         max-height: none;
     }
 }
