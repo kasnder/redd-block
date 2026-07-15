@@ -15,7 +15,7 @@ import { getEffectiveScheduleStartOverlayId, rememberLastScheduleStartOverlayId,
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, initializeTimeInputs, pad, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
 import { resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
 import { resetWebsitesImportMenuPosition } from './website-input.js';
-import { bindUiZoomLayoutObserver, scheduleSelectionPromptLayout, scheduleUiZoomResponsiveLayout } from './theme.js';
+import { bindUiZoomLayoutObserver, scheduleSelectionPromptLayout, scheduleUiZoomResponsiveLayout, usesStackSettingsPlacement } from './theme.js';
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import {
     IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
@@ -1498,22 +1498,38 @@ function usesIOSPhoneEnterSchedulerModal() {
     return document.body.classList.contains('ios-phone');
 }
 
+/**
+ * Full-screen enter sheet: iPhone always; desktop when the grid is single-column
+ * (≤718px). iPad / Android keep their existing inline enter UI.
+ */
+export function usesEnterSchedulerSheet() {
+    if (usesIOSPhoneEnterSchedulerModal()) return true;
+    if (
+        document.body.classList.contains('ios')
+        || document.body.classList.contains('android')
+        || document.body.classList.contains('handset-device')
+    ) {
+        return false;
+    }
+    return usesStackSettingsPlacement();
+}
+
 export function isIOSPhoneDevice() {
     return usesIOSPhoneEnterSchedulerModal();
 }
 
-/** Selected border + entering chip on the card; never on iOS iPhone (enter lives in full-screen sheet). */
+/** Selected border + entering chip on the card; never while enter lives in a full-screen sheet. */
 export function isBlocklistCardVisuallySelected(blocklistId) {
-    if (usesIOSPhoneEnterSchedulerModal()) return false;
+    if (usesEnterSchedulerSheet()) return false;
     return blocklistId === state.selectedBlocklistId;
 }
 
 export function isEnterSchedulerModalOpen() {
-    return usesIOSPhoneEnterSchedulerModal()
+    return usesEnterSchedulerSheet()
         && document.body.classList.contains('enter-scheduler-modal-open');
 }
 
-/** Live enter-tab root — modal sheet on iOS iPhone, inline scheduler elsewhere. */
+/** Live enter-tab root — modal sheet when sheet mode is active, inline scheduler elsewhere. */
 export function getLiveTimePickerContainer() {
     const inModal = document.querySelector('#enter-scheduler-modal .mobile-modal-scroll-body #time-picker-container');
     if (inModal) return inModal;
@@ -1545,12 +1561,79 @@ function syncEnterSchedulerModalTitle(blocklist) {
     titleEl.textContent = name ? `${emoji} ${name}` : emoji;
 }
 
+function ensureEnterSchedulerModalChrome() {
+    const modal = getEnterSchedulerModal();
+    const content = modal?.querySelector('.modal-content');
+    const titleSource = content?.querySelector('h3');
+    if (!modal || !content || !titleSource) return null;
+
+    modal.classList.add('mobile-fullscreen-modal');
+    titleSource.classList.add('mobile-modal-title-source');
+
+    let header = content.querySelector('.mobile-modal-header');
+    if (!header) {
+        header = document.createElement('div');
+        header.className = 'mobile-modal-header';
+
+        const backButton = document.createElement('button');
+        backButton.type = 'button';
+        backButton.className = 'mobile-modal-back-btn';
+        backButton.setAttribute('aria-label', 'Back');
+        backButton.innerHTML = `
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M15 18l-6-6 6-6"></path>
+            </svg>
+        `;
+        backButton.addEventListener('click', () => {
+            const dismissButton = modal.querySelector('#cancel-enter-scheduler-btn');
+            if (dismissButton) dismissButton.click();
+            else deselectBlocklist();
+        });
+
+        const headerTitle = document.createElement('div');
+        headerTitle.className = 'mobile-modal-header-title';
+        const syncHeaderTitle = () => {
+            const nextTitle = titleSource.textContent?.trim() || '';
+            headerTitle.textContent = nextTitle;
+            backButton.setAttribute('aria-label', nextTitle ? `Back from ${nextTitle}` : 'Back');
+        };
+        syncHeaderTitle();
+        new MutationObserver(syncHeaderTitle).observe(titleSource, {
+            childList: true,
+            characterData: true,
+            subtree: true,
+        });
+
+        header.append(backButton, headerTitle);
+        content.prepend(header);
+    }
+
+    let scrollBody = content.querySelector('.mobile-modal-scroll-body');
+    if (!scrollBody) {
+        scrollBody = document.createElement('div');
+        scrollBody.className = 'mobile-modal-scroll-body';
+        while (header.nextSibling) {
+            scrollBody.appendChild(header.nextSibling);
+        }
+        content.appendChild(scrollBody);
+    }
+
+    return scrollBody;
+}
+
 function openEnterSchedulerModal() {
     const modal = getEnterSchedulerModal();
-    const timePicker = getLiveTimePickerContainer();
-    const scrollBody = getEnterSchedulerScrollBody();
     const home = getTimePickerHome();
-    if (!modal || !timePicker || !scrollBody || !home) return;
+    if (!modal || !home) return;
+
+    // Desktop sheet must always paint as the mobile full-screen chrome (not a dialog).
+    if (!usesIOSPhoneEnterSchedulerModal()) {
+        document.body.classList.add('desktop-compact-layout', 'enter-scheduler-sheet-layout');
+    }
+
+    const scrollBody = ensureEnterSchedulerModalChrome();
+    const timePicker = getLiveTimePickerContainer();
+    if (!scrollBody || !timePicker) return;
 
     clearSchedulerPlaceholderMeasurer();
 
@@ -1575,13 +1658,56 @@ function closeEnterSchedulerModal() {
     document.body.classList.remove('enter-scheduler-modal-open');
 }
 
-function syncIOSPhoneEnterSchedulerModal(blocklist, { openEnterUi = false } = {}) {
-    if (!usesIOSPhoneEnterSchedulerModal()) return;
+function syncEnterSchedulerModal(blocklist, { openEnterUi = false } = {}) {
+    if (!usesEnterSchedulerSheet()) {
+        if (document.body.classList.contains('enter-scheduler-modal-open')) {
+            closeEnterSchedulerModal();
+        }
+        return;
+    }
     if (state.selectedBlocklistId && blocklist && openEnterUi) {
         syncEnterSchedulerModalTitle(blocklist);
         openEnterSchedulerModal();
     } else {
         closeEnterSchedulerModal();
+    }
+}
+
+/** Keep desktop single-column on the same sheet/modal path as iPhone when crossing 718px. */
+let lastEnterSchedulerSheetMode = null;
+export function syncEnterSchedulerSheetLayout() {
+    const sheet = usesEnterSchedulerSheet();
+    // Desktop-only body class: list-only home + fullscreen enter/settings/create/quick-start.
+    document.body.classList.toggle(
+        'desktop-compact-layout',
+        sheet && !usesIOSPhoneEnterSchedulerModal(),
+    );
+    // Legacy alias kept for any interim selectors.
+    document.body.classList.toggle(
+        'enter-scheduler-sheet-layout',
+        sheet && !usesIOSPhoneEnterSchedulerModal(),
+    );
+
+    const changed = lastEnterSchedulerSheetMode !== null && lastEnterSchedulerSheetMode !== sheet;
+    lastEnterSchedulerSheetMode = sheet;
+
+    if (!sheet) {
+        if (document.body.classList.contains('enter-scheduler-modal-open')) {
+            closeEnterSchedulerModal();
+        }
+        if (changed) renderBlocklists();
+        return;
+    }
+
+    if (changed) {
+        renderBlocklists();
+        if (state.selectedBlocklistId) {
+            const blocklist = state.appData.blocklists.find((bl) => bl.id === state.selectedBlocklistId);
+            if (blocklist) {
+                syncEnterSchedulerModalTitle(blocklist);
+                openEnterSchedulerModal();
+            }
+        }
     }
 }
 
@@ -1613,7 +1739,7 @@ export function refreshSelectedBlocklistUi(blocklistId = state.selectedBlocklist
 }
 
 // Handle blocklist selection.
-// On iOS iPhone the enter sheet only opens when openEnterUi is true (card tap or explicit selection flows).
+// Enter sheet (iPhone, or desktop ≤718px) only opens when openEnterUi is true.
 export function handleBlocklistSelect(e, { openEnterUi = false } = {}) {
     if (state.suppressBlocklistSelectChange) return;
     const newBlocklistId = e.target.value || null;
@@ -1776,7 +1902,7 @@ export function handleBlocklistSelect(e, { openEnterUi = false } = {}) {
     const selectedBlocklist = state.selectedBlocklistId
         ? state.appData.blocklists.find((bl) => bl.id === state.selectedBlocklistId)
         : null;
-    syncIOSPhoneEnterSchedulerModal(selectedBlocklist, { openEnterUi });
+    syncEnterSchedulerModal(selectedBlocklist, { openEnterUi });
 
     // Wait for DOM reflow to capture the correct height after showing/hiding elements
     setTimeout(() => {
@@ -2283,6 +2409,9 @@ export function applyModalBlocklistTint(hexColor) {
 
 // Open blocklist modal
 export function openBlocklistModal(blocklist = null) {
+    // Keep narrow-desktop sheet chrome in sync before showing create/edit.
+    syncEnterSchedulerSheetLayout();
+
     state.editingBlocklistId = blocklist?.id || null;
     state.blocklistModalPreviewSnapshot = null;
 

@@ -79,7 +79,10 @@
        strip reads as its own band without going flat white. */
     --title-bar-bg: #efede8;
     --title-bar-height: 44px;
-    --title-bar-center-safe-inset: 108px;
+    /* Clear native traffic lights (mac) / custom window controls (win). Kept tight so
+       centred chips keep as much width as possible in a narrow window. */
+    --title-bar-center-safe-inset-start: 76px;
+    --title-bar-center-safe-inset-end: 16px;
 
     /* Stacked top banners (desktop):
        - margin-x / margin-y: uniform outer inset — title bar → first inset card,
@@ -407,6 +410,12 @@ body.android .time-pickers-row {
    we no longer need the legacy 80px left padding. */
 body.mac .title-bar{
     padding-left: 0;
+}
+
+/* Windows: chrome buttons sit on the right; flip the safe insets. */
+body.windows{
+    --title-bar-center-safe-inset-start: 16px;
+    --title-bar-center-safe-inset-end: 100px;
 }
 
 .app-title{
@@ -1844,7 +1853,7 @@ body.dark-mode .app-blocking-closedown-banner{
 }
 
 /* Stacked / overview: grid is one column but cards must not stretch past 500px. */
-@media (min-width: 769px) {
+  @media (min-width: 719px) {
     .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section{
         max-width: 500px;
         width: 100%;
@@ -1865,7 +1874,7 @@ body.dark-mode .app-blocking-closedown-banner{
 }
 
 /* Stack on small screens (md breakpoint) */
-@media (max-width: 768px) {
+  @media (max-width: 718px) {
     .grid-top-row,
     .grid-top-row.grid-top-row--blocklist-selected{
         grid-template-columns: 1fr;
@@ -1903,7 +1912,7 @@ body.dark-mode .app-blocking-closedown-banner{
 
 /* Portrait iPad: same vertical stack as iPhone — blocklists, then scheduler, then
    week calendar (calendar stays in .main-content below .grid-top-row). */
-@media (min-width: 769px) and (max-width: 1024px) and (orientation: portrait) {
+  @media (min-width: 719px) and (max-width: 1024px) and (orientation: portrait) {
     body.ios:not(.ios-phone) .grid-top-row{
         grid-template-columns: 1fr;
         gap: 18px;
@@ -2522,7 +2531,7 @@ body.ios:not(.ios-phone) .main-content .always-on-chip svg{
 
 /* iPad (portrait + landscape): modal UI — content scaled ×1.2 from base sizes,
    then shells/padding/gaps use the same factor (--ipad-s). */
-@media (min-width: 769px) and (max-width: 1024px) {
+  @media (min-width: 719px) and (max-width: 1024px) {
     body.ios:not(.ios-phone){
         --ipad-s: 1.2;
     }
@@ -3242,7 +3251,7 @@ body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-foote
 }
 
 /* Cramped two-column zone (iPad landscape / narrow desktop columns only). */
-@media (min-width: 769px) and (max-width: 1024px) and (orientation: landscape) {
+  @media (min-width: 719px) and (max-width: 1024px) and (orientation: landscape) {
     .grid-top-row{
         grid-template-columns: minmax(0, min(400px, 50%)) minmax(0, 1fr);
     }
@@ -3435,14 +3444,14 @@ body:not(.ios) .scheduler-section > .section-header.scheduler-header-compact{
 }
 
 /* Stacked layout: minimal gap under lone settings row — prompt sits highest */
-@media (max-width: 768px) {
+  @media (max-width: 718px) {
     .scheduler-section > .section-header.scheduler-header-compact{
         margin-bottom: 2px;
     }
 }
 
 /* Two-column: a touch more breathing room under compact header vs tighter prior pass */
-@media (min-width: 769px) {
+  @media (min-width: 719px) {
     .scheduler-section > .section-header.scheduler-header-compact{
         margin-bottom: 12px;
     }
@@ -3576,7 +3585,7 @@ body.ios:not(.ios-phone){
     --app-settings-size: 44px;
 }
 
-@media (max-width: 768px) {
+  @media (max-width: 718px) {
 
     body.ios .main-content {
         --app-settings-right: 18px;
@@ -3616,7 +3625,7 @@ body.ios .blocklists-section > .section-header #settings-btn-stack {
     padding: 0;
 }
 
-@media (max-width: 768px) {
+  @media (max-width: 718px) {
     body.ios .blocklists-section > .section-header #settings-btn-stack {
         width: 32px;
         height: 32px;
@@ -3656,7 +3665,7 @@ body.ios .scheduler-section > .section-header {
 }
 
 /* Two-column desktop/tablet: one full-width sticky heading row, then blocklists + detail below. */
-@media (min-width: 769px) {
+  @media (min-width: 719px) {
     .grid-top-row{
         grid-template-rows: auto auto;
         row-gap: 0;
@@ -3851,8 +3860,8 @@ body:not(.ios) #settings-toolbar-scheduler{
 /* BLOCKING NOW row — heading, pulse dot, chips; centred in `.title-bar`. */
 .now-blocking-row{
     position: absolute;
-    left: var(--title-bar-center-safe-inset);
-    right: var(--title-bar-center-safe-inset);
+    left: var(--title-bar-center-safe-inset-start);
+    right: var(--title-bar-center-safe-inset-end);
     top: 50%;
     transform: translateY(-50%);
     display: flex;
@@ -3967,9 +3976,14 @@ body:not(.ios) #settings-toolbar-scheduler{
 }
 
 .now-blocking-chip-emoji{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-size: 14px;
     line-height: 1;
     flex-shrink: 0;
+    /* Color emoji glyphs sit low in the em box — nudge up to match text. */
+    transform: translateY(-1px);
 }
 
 .now-blocking-chip-name{
@@ -4816,7 +4830,7 @@ body.dark-mode .day-row.weekend{
 }
 
 /* Legacy alias — grid placement now handled by the shared two-column rules above. */
-@media (min-width: 769px) {
+  @media (min-width: 719px) {
     body:not(.ios) .grid-top-row.grid-top-row--blocklist-selected{
         row-gap: 0;
     }
@@ -6209,7 +6223,7 @@ body:not(.ios) .segment-row > .time-pickers-row{
     }
 }
 
-@media (max-width: 768px) {
+  @media (max-width: 718px) {
     .segment-row{
         gap: 8px;
     }
@@ -6380,6 +6394,11 @@ body.android .segment-days.compact-day-labels .segment-day-toggle {
     color: var(--text-muted);
     cursor: pointer;
     transition: all 0.15s ease;
+}
+
+.schedule-panel-overlay-customise-btn svg{
+    width: 16px;
+    height: 16px;
 }
 
 .schedule-panel-overlay-customise-btn:hover:not(:disabled){
@@ -6978,7 +6997,7 @@ body.dark-mode .schedule-pending-discard:hover{
    fixed height (height: 0 keeps it from inflating the row; the max() keeps the
    default height as a floor when the panel is short). The 8px offset mirrors
    .time-picker-container's margin-bottom so both columns end on the same line. */
-@media (min-width: 769px) {
+  @media (min-width: 719px) {
     body:not(.ios):not(.handset-device) .grid-top-row--blocklist-selected .blocklists-container{
         height: 0;
         min-height: max(var(--blocklists-scroll-max-height), calc(100% - 8px));
@@ -7011,13 +7030,15 @@ body.android .blocklists-container {
     --blocklist-title-status-gap: 9px;
     --blocklist-status-segment-gap: 9px;
     --blocklist-status-tight-gap: 4px;
-    --blocklist-action-btn-size: 28px;
+    --blocklist-action-btn-size: 30px;
     --blocklist-actions-gap: 2px;
     --blocklist-actions-slot: calc(var(--blocklist-action-btn-size) * 2 + var(--blocklist-actions-gap));
     --blocklist-menu-anchor-offset: calc(var(--blocklist-action-btn-size) + var(--blocklist-actions-gap));
     display: flex;
     align-items: stretch;
-    padding: var(--blocklist-card-padding-y) 10px var(--blocklist-card-padding-y) 0;
+    /* Keep a little room past the action buttons; most of the visual inset is
+       already inside the 30px hit targets around the 19px icons. */
+    padding: var(--blocklist-card-padding-y) 8px var(--blocklist-card-padding-y) 0;
     /* Reduced by 4px to offset the selection border on top/right/bottom */
     border: var(--blocklist-card-border) solid transparent;
     border-left-width: 0;
@@ -7555,8 +7576,8 @@ body.android .blocklist-actions {
 }
 
 .blocklist-action-btn svg{
-    width: 18px;
-    height: 18px;
+    width: 19px;
+    height: 19px;
 }
 
 body.ios .blocklist-action-btn svg,
@@ -11300,6 +11321,371 @@ body.handset-device .mobile-fullscreen-modal .mobile-modal-scroll-body{
         max(18px, env(safe-area-inset-left, 0px));
 }
 
+/* Desktop ≤718px: same enter sheet as iPhone — list-only home, details in overlay.
+   Sit below the native title bar (z-index 1000) so the back + space-name header
+   isn’t hidden under the traffic lights / blocking chips. */
+body.desktop-compact-layout .scheduler-section,
+body.desktop-compact-layout .selection-prompt,
+body.enter-scheduler-sheet-layout .scheduler-section,
+body.enter-scheduler-sheet-layout .selection-prompt{
+    display: none !important;
+}
+
+/* Desktop enter sheet: always full-bleed under the title bar whenever open —
+   keyed on enter-scheduler-modal-open so we never fall back to a centered dialog.
+   Same treatment for create/settings/quick-start and override/pause challenges. */
+body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal,
+body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal,
+body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal,
+body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal,
+body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal,
+body.desktop-compact-layout #override-modal.mobile-fullscreen-modal,
+body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal,
+body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal{
+    top: var(--title-bar-height);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    background: var(--app-bg);
+    padding: 0;
+    align-items: stretch;
+    justify-content: stretch;
+    overflow: hidden;
+}
+
+body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .modal-content,
+body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .modal-content,
+body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .modal-content,
+body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .modal-content,
+body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-content,
+body.desktop-compact-layout #override-modal.mobile-fullscreen-modal .modal-content,
+body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .modal-content,
+body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal .modal-content{
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    max-height: none;
+    height: 100%;
+    min-width: 0;
+    border-radius: 0;
+    padding: 0;
+    box-shadow: none;
+    overflow: hidden;
+    background: var(--app-bg);
+}
+
+body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .mobile-modal-header,
+body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-header,
+body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .mobile-modal-header,
+body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .mobile-modal-header,
+body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .mobile-modal-header,
+body.desktop-compact-layout #override-modal.mobile-fullscreen-modal .mobile-modal-header,
+body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-modal-header,
+body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal .mobile-modal-header{
+    position: relative;
+    top: auto;
+    flex-shrink: 0;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 6px 16px;
+    background: color-mix(in srgb, var(--app-bg) 92%, transparent);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid rgba(225, 220, 214, 0.88);
+}
+
+body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .mobile-modal-back-btn,
+body.desktop-compact-layout .mobile-fullscreen-modal .mobile-modal-back-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .mobile-modal-back-btn:hover,
+body.desktop-compact-layout .mobile-fullscreen-modal .mobile-modal-back-btn:hover{
+    background: var(--element-bg);
+}
+
+body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .mobile-modal-back-btn svg,
+body.desktop-compact-layout .mobile-fullscreen-modal .mobile-modal-back-btn svg{
+    width: 20px;
+    height: 20px;
+}
+
+body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .mobile-modal-header-title,
+body.desktop-compact-layout .mobile-fullscreen-modal .mobile-modal-header-title{
+    font-family: var(--font-heading);
+    font-size: 1.25rem;
+    font-weight: 700;
+    line-height: 1.2;
+    color: var(--text-primary);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .mobile-modal-title-source,
+body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .modal-buttons,
+body.desktop-compact-layout .mobile-fullscreen-modal .mobile-modal-title-source{
+    display: none;
+}
+
+body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .modal-buttons{
+    display: none;
+}
+
+body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .mobile-modal-scroll-body,
+body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
+body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
+body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
+body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
+body.desktop-compact-layout #override-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
+body.desktop-compact-layout #override-all-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
+body.desktop-compact-layout #pause-modal.mobile-fullscreen-modal .mobile-modal-scroll-body{
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    /* Cancel the desktop popup scrollbar hack so full-screen sheets keep equal gutters. */
+    margin-right: 0 !important;
+    padding: 18px 20px 20px !important;
+    scrollbar-gutter: stable;
+}
+
+/* Title lives in the sheet header — keep the space chip, drop the duplicate h3 row chrome. */
+body.desktop-compact-layout #override-modal .start-confirm-header-room,
+body.desktop-compact-layout #pause-modal .start-confirm-header-room{
+    margin-top: 0;
+}
+
+/* Match two-column panel padding; bump horizontal so tabs/chevrons aren’t tight to the card edge. */
+body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .time-picker-container{
+    padding-left: 18px;
+    padding-right: 18px;
+}
+
+/* Space name lives in the sheet header — hide the duplicate room chip. */
+body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .scheduler-room-chip,
+body.desktop-compact-layout #enter-scheduler-modal .scheduler-room-chip{
+    display: none;
+}
+
+body.desktop-compact-layout #settings-modal .settings-modal-header{
+    display: none;
+}
+
+body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .modal-buttons,
+body.desktop-compact-layout #settings-modal.mobile-fullscreen-modal .modal-buttons{
+    flex-shrink: 0;
+    display: flex;
+    gap: 10px;
+    margin: 0;
+    padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid rgba(225, 220, 214, 0.88);
+    background: var(--app-bg);
+}
+
+/* Quick start: flatten desktop wrappers like handset; title lives in the mobile header. */
+body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .quick-start-header,
+body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .quick-start-modal-scroll-body{
+    display: contents;
+}
+
+body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .quick-start-mode-toggle{
+    min-width: 0;
+    width: 100%;
+    margin-bottom: 12px;
+}
+
+/* Override desktop popup sizing while compact. */
+body.desktop-compact-layout #quick-start-modal .modal-content{
+    max-width: 100%;
+    max-height: none;
+    padding: 0;
+}
+
+/* Narrow desktop: same full-screen sheets via viewport media query (not only the
+   JS body class). Covers create/edit focus space, settings, quick start, and
+   override/pause when the window is ≤718px. */
+@media (max-width: 718px) {
+    body:not(.handset-device):not(.ios):not(.android) :is(
+        #enter-scheduler-modal,
+        #quick-start-modal,
+        #blocklist-modal,
+        #settings-modal,
+        #override-modal,
+        #override-all-modal,
+        #pause-modal
+    ).mobile-fullscreen-modal{
+        top: var(--title-bar-height);
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        max-width: 100%;
+        background: var(--app-bg);
+        padding: 0;
+        align-items: stretch;
+        justify-content: stretch;
+        overflow: hidden;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) :is(
+        #enter-scheduler-modal,
+        #quick-start-modal,
+        #blocklist-modal,
+        #settings-modal,
+        #override-modal,
+        #override-all-modal,
+        #pause-modal
+    ).mobile-fullscreen-modal .modal-content{
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        max-width: 100%;
+        max-height: none;
+        height: 100%;
+        min-width: 0;
+        border-radius: 0;
+        padding: 0;
+        box-shadow: none;
+        overflow: hidden;
+        background: var(--app-bg);
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) :is(
+        #enter-scheduler-modal,
+        #quick-start-modal,
+        #blocklist-modal,
+        #settings-modal,
+        #override-modal,
+        #override-all-modal,
+        #pause-modal
+    ).mobile-fullscreen-modal .mobile-modal-header{
+        position: relative;
+        top: auto;
+        flex-shrink: 0;
+        z-index: 2;
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+        padding: 6px 16px;
+        background: color-mix(in srgb, var(--app-bg) 92%, transparent);
+        backdrop-filter: blur(14px);
+        border-bottom: 1px solid rgba(225, 220, 214, 0.88);
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-back-btn{
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 32px;
+        height: 32px;
+        padding: 0;
+        border: none;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-primary);
+        cursor: pointer;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-back-btn:hover{
+        background: var(--element-bg);
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-back-btn svg{
+        width: 20px;
+        height: 20px;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-header-title{
+        font-family: var(--font-heading);
+        font-size: 1.25rem;
+        font-weight: 700;
+        line-height: 1.2;
+        color: var(--text-primary);
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) .mobile-fullscreen-modal .mobile-modal-title-source{
+        display: none;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) :is(
+        #enter-scheduler-modal,
+        #quick-start-modal,
+        #blocklist-modal,
+        #settings-modal,
+        #override-modal,
+        #override-all-modal,
+        #pause-modal
+    ).mobile-fullscreen-modal .mobile-modal-scroll-body{
+        flex: 1;
+        min-height: 0;
+        min-width: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        margin-right: 0 !important;
+        padding: 18px 20px 20px !important;
+        scrollbar-gutter: stable;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) :is(
+        #blocklist-modal,
+        #settings-modal
+    ).mobile-fullscreen-modal .modal-buttons{
+        flex-shrink: 0;
+        display: flex;
+        gap: 10px;
+        margin: 0;
+        padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+        border-top: 1px solid rgba(225, 220, 214, 0.88);
+        background: var(--app-bg);
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) #settings-modal .settings-modal-header{
+        display: none;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) #quick-start-modal.mobile-fullscreen-modal .quick-start-header,
+    body:not(.handset-device):not(.ios):not(.android) #quick-start-modal.mobile-fullscreen-modal .quick-start-modal-scroll-body{
+        display: contents;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) #quick-start-modal.mobile-fullscreen-modal .quick-start-mode-toggle{
+        min-width: 0;
+        width: 100%;
+        margin-bottom: 12px;
+    }
+
+    body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .modal-buttons{
+        display: none;
+    }
+}
+
 /* iOS iPhone home: focus spaces only — enter lives in a full-screen sheet. */
 body.ios-phone .main-content,
 body.ios-phone.ui-zoom-tier-stack .main-content{
@@ -11353,8 +11739,8 @@ body.ios-phone .blocklists-container{
     flex: 1 1 auto;
 }
 
-/* Landscape is often ≥769px wide — block the desktop grid hoisting and width caps that reserve a timer column. */
-@media (min-width: 769px) {
+/* Landscape is often ≥719px wide — block the desktop grid hoisting and width caps that reserve a timer column. */
+  @media (min-width: 719px) {
     body.ios-phone .grid-top-row{
         display: flex !important;
         flex-direction: column !important;
@@ -11489,16 +11875,16 @@ body.handset-device .mobile-fullscreen-modal .mobile-modal-header{
     display: grid;
     grid-template-columns: auto 1fr auto;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     margin:
         0
         calc(max(18px, env(safe-area-inset-right, 0px)) * -1)
         0
         calc(max(18px, env(safe-area-inset-left, 0px)) * -1);
     padding:
-        calc(env(safe-area-inset-top, 0px) + 12px)
+        calc(env(safe-area-inset-top, 0px) + 6px)
         max(18px, env(safe-area-inset-right, 0px))
-        12px
+        6px
         max(18px, env(safe-area-inset-left, 0px));
     background: color-mix(in srgb, var(--app-bg) 92%, transparent);
     backdrop-filter: blur(14px);
@@ -11868,9 +12254,15 @@ body:not(.ios) #quick-start-modal .tags-input-stacked .browse-btn-caption{
 /* Add/edit blocklist modal — slightly wider than the default 400px so the
    apps tag list, override-difficulty row and colour/emoji pickers have room
    to breathe. Matches the 500px blocklist-card width for visual rhyme.
-   Handset full-screen modals ignore this and expand to the viewport width. */
-body:not(.handset-device) #blocklist-modal .modal-content{
+   Handset + narrow-desktop full-screen sheets expand to the viewport instead. */
+body:not(.handset-device):not(.desktop-compact-layout) #blocklist-modal .modal-content{
     max-width: 500px;
+}
+
+@media (max-width: 718px) {
+    body:not(.handset-device):not(.ios):not(.android) #blocklist-modal.mobile-fullscreen-modal .modal-content{
+        max-width: 100%;
+    }
 }
 
 #blocklist-modal .modal-content{
@@ -11880,6 +12272,12 @@ body:not(.handset-device) #blocklist-modal .modal-content{
     overflow: hidden;
     overscroll-behavior-y: none;
     padding: 16px 24px 0;
+}
+
+body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .modal-content,
+body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content{
+    padding: 0;
+    max-height: none;
 }
 
 #blocklist-modal #modal-title{
@@ -11899,10 +12297,6 @@ body:not(.handset-device) #blocklist-modal .modal-content{
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
-}
-
-body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content{
-    padding: 0;
 }
 
 /* Word count fits in 3 digits (max 500); keep the stepper compact on iOS. */
@@ -14266,12 +14660,17 @@ body.android #settings-latest-version-wrap {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 4px 0 12px;
+    padding: 0 0 12px;
     cursor: pointer;
     font-size: 15px;
     color: var(--text-muted);
     transition: color 0.2s ease;
     margin-top: 0;
+}
+
+/* Tighten the gap above Advanced options (Stop Difficulty form-group sits above). */
+#blocklist-modal .form-group:has(+ .blocklist-advanced-toggle){
+    margin-bottom: 8px;
 }
 
 .blocklist-advanced-toggle:hover{
@@ -14303,6 +14702,7 @@ body.android #settings-latest-version-wrap {
     z-index: 2;
 }
 
+body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .modal-buttons,
 body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-buttons{
     margin: 0;
     padding:
@@ -14310,7 +14710,7 @@ body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-buttons{
         max(18px, env(safe-area-inset-right, 0px))
         calc(env(safe-area-inset-bottom, 0px) + 12px)
         max(18px, env(safe-area-inset-left, 0px));
-    background: #ffffff;
+    background: var(--app-bg);
     border-top: 1px solid var(--border-color-medium);
 }
 

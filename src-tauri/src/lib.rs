@@ -331,7 +331,7 @@ pub fn run() {
                 let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                     .title("")
                     .inner_size(1000.0, 900.0)
-                    .min_inner_size(600.0, 500.0)
+                    .min_inner_size(400.0, 360.0)
                     .resizable(true)
                     .center()
                     // The blocking-warning overlay runs in NonactivatingPanel
@@ -525,7 +525,7 @@ pub fn run() {
                                         let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                                             .title("")
                                             .inner_size(1000.0, 900.0)
-                                            .min_inner_size(600.0, 500.0)
+                                            .min_inner_size(400.0, 360.0)
                                             .resizable(true)
                                             .center()
                                             // Keep in sync with the initial build above
@@ -588,7 +588,7 @@ pub fn run() {
                 let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                     .title("ReDD Blocker")
                     .inner_size(840.0, 750.0)
-                    .min_inner_size(600.0, 500.0)
+                    .min_inner_size(400.0, 360.0)
                     .resizable(true)
                     .decorations(false) // Hide native title bar, use custom controls
                     .icon(tauri::include_image!("icons/128x128.png"))?

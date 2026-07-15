@@ -1701,7 +1701,8 @@ function setupModalListeners() {
                 state.appData.blocklists[idx] = blocklist;
             }
         } else {
-            state.appData.blocklists.push(blocklist);
+            // New spaces go to the top of the focus list.
+            state.appData.blocklists.unshift(blocklist);
         }
 
         saveData();

@@ -19,7 +19,7 @@ import {
     generateId,
 } from './app.js';
 import { buildBlocklistCardMetaHtml, buildBlocklistCardDetailsHtml, blocklistCardHasExpandableSummary } from './list-presentation.js';
-import { cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, isBlocklistCardVisuallySelected, isEnterSchedulerModalOpen, isIOSPhoneDevice, openBlocklistModal } from './confirm-modals.js';
+import { cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, isBlocklistCardVisuallySelected, isEnterSchedulerModalOpen, usesEnterSchedulerSheet, openBlocklistModal } from './confirm-modals.js';
 import { APP_BLOCKING_SNOOZE_ICON_IMG_12, appBlockingWarningSnoozedUntilMs, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistId } from './blocking-platform.js';
 
 function isQuickStartActivelyRunning(blocklist, now = Date.now()) {
@@ -1002,8 +1002,8 @@ export function renderBlocklists() {
             ? `<span class="blocklist-entering-chip" style="background-color: ${enteringChipColor}">${tSettings('blocklistEnteringChip')}</span>`
             : '';
 
-        const isIosPhoneCard = isIOSPhoneDevice();
-        const editMenuItemHtml = isIosPhoneCard
+        const usesEnterSheetCards = usesEnterSchedulerSheet();
+        const editMenuItemHtml = usesEnterSheetCards
             ? `<button class="blocklist-menu-item edit-blocklist-item" title="${tSettings('blocklistCardEditTooltip')}" aria-label="${tSettings('blocklistCardEditTooltip')}">
                       ${BLOCKLIST_EDIT_ICON_SVG}
                       ${tSettings('blocklistCardEditTooltip')}
@@ -1050,7 +1050,7 @@ export function renderBlocklists() {
                   </div>
                 </div>`;
 
-        const secondaryActionHtml = isIosPhoneCard
+        const secondaryActionHtml = usesEnterSheetCards
             ? `<button class="blocklist-action-btn blocklist-enter-btn" title="${tSettings('mainStartBlockTitle')}" aria-label="${tSettings('mainStartBlockTitle')}">
                 ${BLOCKLIST_ENTER_CHEVRON_SVG}
               </button>`
@@ -1091,7 +1091,7 @@ export function renderBlocklists() {
         // Everywhere on the card except action controls selects/opens enter.
         card.addEventListener('click', (e) => {
             if (e.target.closest('.blocklist-meta-items-btn')) return;
-            if (isIOSPhoneDevice()) {
+            if (usesEnterSchedulerSheet()) {
                 if (e.target.closest('.blocklist-menu-btn') || e.target.closest('.blocklist-menu')) return;
             } else if (e.target.closest('.blocklist-actions') || e.target.closest('.blocklist-menu')) {
                 return;
@@ -1255,7 +1255,11 @@ function restoreBlocklistMenu(menu) {
 }
 
 function getBlocklistMenuScrollParent() {
-    if (document.body.classList.contains('ios-phone')) {
+    if (
+        document.body.classList.contains('ios-phone')
+        || document.body.classList.contains('desktop-compact-layout')
+        || document.body.classList.contains('enter-scheduler-sheet-layout')
+    ) {
         return document.querySelector('.main-content');
     }
     return document.getElementById('blocklists-container');

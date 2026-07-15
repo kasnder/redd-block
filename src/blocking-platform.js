@@ -1457,18 +1457,19 @@ export function setupHandsetModalScreens() {
         'start-schedule-confirm-modal',
         'settings-modal',
         'override-all-modal',
+        // Desktop single-column reuses this sheet; wrap chrome on every platform.
+        'enter-scheduler-modal',
     ];
-    if (document.body.classList.contains('ios-phone')) {
-        modalIds.push('enter-scheduler-modal');
-    }
 
     for (const modalId of modalIds) {
         const overlay = document.getElementById(modalId);
         const content = overlay?.querySelector('.modal-content');
         const titleSource = content?.querySelector('h3');
-        if (!overlay || !content || !titleSource || content.querySelector('.mobile-modal-header')) continue;
+        if (!overlay || !content || !titleSource) continue;
 
         overlay.classList.add('mobile-fullscreen-modal');
+        if (content.querySelector('.mobile-modal-header')) continue;
+
         const isRoomStyleConfirmModal =
             modalId === 'start-block-confirm-modal' || modalId === 'start-schedule-confirm-modal';
         if (!isRoomStyleConfirmModal) {

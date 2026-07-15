@@ -25,8 +25,8 @@ static BLOCKING_WARNING_SAVED_GEOM: Mutex<Option<SavedWindowGeom>> = Mutex::new(
 static BLOCKING_WARNING_AUX_WINDOWS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// Matches `WebviewWindowBuilder` min on macOS / Windows.
-const MAIN_RESTORE_MIN_W: f64 = 600.0;
-const MAIN_RESTORE_MIN_H: f64 = 500.0;
+const MAIN_RESTORE_MIN_W: f64 = 400.0;
+const MAIN_RESTORE_MIN_H: f64 = 360.0;
 
 /// Inner width (logical points) for the warning-only shell — frontend
 /// measures height and calls [`resize_blocking_warning_inner_size`].
@@ -35,7 +35,7 @@ const WARNING_COMPACT_W: f64 = 592.0;
 /// Short-lived bootstrap height before JS fits the window to content.
 const WARNING_COMPACT_BOOTSTRAP_H: f64 = 360.0;
 
-/// Loose bounds so we can shrink below the normal 600×500 app min. The
+/// Loose bounds so we can shrink below the normal app min. The
 /// height floor needs to be small enough that the compact scheduled-block
 /// heads-up card (which is shorter than the force-quit warning) doesn't
 /// get padded out by an oversized window — `syncBlockingWarningWindowToContent`

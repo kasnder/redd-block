@@ -7,7 +7,7 @@ import { resolveMicrosoftStorePackage, isVersionHigher, getLatestVersionPlatform
 import { updateOverrideAllButtonVisibility, refreshUninstallButtonState } from './settings.js';
 import { stopHelperUiRefreshLoop } from './modal-manager.js';
 import { saveData } from './persistence.js';
-import { getLiveTimePickerContainer, syncAllStopBtnLabelFits, syncPauseDurationRowLayout } from './confirm-modals.js';
+import { getLiveTimePickerContainer, syncAllStopBtnLabelFits, syncPauseDurationRowLayout, syncEnterSchedulerSheetLayout } from './confirm-modals.js';
 import { wireEnforcementToggle, wireBlockingMethodSettings, resetSettingsEnforcementSection } from './enforcement.js';
 import { applyEnforcementDescCopy } from './onboarding.js';
 import {
@@ -24,7 +24,7 @@ export const UI_ZOOM_MAX = 1.8;
 export const UI_ZOOM_MAX_DESKTOP = 1.5;  // cap on macOS/Windows (native webview zoom)
 export const UI_ZOOM_MAX_IOS = 1.4;  // cap on iOS (CSS zoom on phone; transform scale on iPad)
 /** Layout breakpoints — CSS `zoom` does not affect @media / @container; tiers use effective width. */
-export const UI_ZOOM_LAYOUT_STACK_MAX = 768;
+export const UI_ZOOM_LAYOUT_STACK_MAX = 718;
 export const UI_ZOOM_LAYOUT_CRAMPED_MAX = 1024;
 export const UI_ZOOM_LAYOUT_NARROW_MAX = 800;
 export const SCHED_TABS_ICON_ONLY_EXIT_WIDTH_DELTA = 8;
@@ -268,6 +268,7 @@ export function syncUiZoomResponsiveLayout() {
     syncSchedulerModeTabLabelMode();
     syncMobileScheduleDayLabelsViewportMode();
     syncAllStopBtnLabelFits();
+    syncEnterSchedulerSheetLayout();
     scheduleSelectionPromptLayout();
     const pauseModal = document.getElementById('pause-modal');
     if (pauseModal && !pauseModal.classList.contains('hidden')) {
@@ -276,10 +277,10 @@ export function syncUiZoomResponsiveLayout() {
 }
 
 export function usesStackSettingsPlacement() {
-    if (window.matchMedia('(max-width: 768px)').matches) return true;
+    if (window.matchMedia('(max-width: 718px)').matches) return true;
     return document.body.classList.contains('ios')
         && !document.body.classList.contains('ios-phone')
-        && window.matchMedia('(min-width: 769px) and (max-width: 1024px) and (orientation: portrait)').matches;
+        && window.matchMedia('(min-width: 719px) and (max-width: 1024px) and (orientation: portrait)').matches;
 }
 
 /** True when labelled Now/Schedule tabs do not fit in the scheduler header row. */
