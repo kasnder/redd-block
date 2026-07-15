@@ -10,6 +10,63 @@ SCHEDULES), then platform-specific notes under nested headings:
 `#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
 description.` Legacy flat lists still work.
 
+## v3.7.0
+
+### QUICK START FOCUS SPACES
+
+- **One-off quick start.** Start a 'Block' or 'Allow' mode focus space straight
+  from the home screen without creating a named focus space first. Choose 
+  duration, add your websites & apps, and use the slider to indicate how difficult 
+  overriding should be - look for the lightning bolt button to get started!
+- **Keep track of your quick start focus spaces.** Quick start focus spaces
+  appear in your focus-space list with clear temporary styling, so you can see
+  and control them without confusing them with saved spaces.
+- **From one-off to routine.** At any point before or during a quick start focus
+  space, you can save it as a regular focus space instead so it won't disappear
+  when the focus space ends.
+
+### FOCUS SPACES & SCHEDULES
+
+- **Pause one-off blocks and schedules independently.** If a focus space has
+  both a running one-off block and a schedule, pausing one no longer pauses the
+  other too.
+- **Pause flow is clearer.** Pause now uses the same safer confirmation flow as
+  stop, and paused-state copy in focus-space cards is clearer.
+- **Cards and summaries are clearer.** Focus-space cards and confirm modals
+  show clearer app/site counts, expanded details are easier to inspect, and the
+  card layout is steadier.
+- **Deleted spaces stay deleted.** If you remove your saved focus spaces and
+  close the app, reopening it no longer recreates an old space or invents a
+  new one for returning users.
+
+### LOCALIZATION
+
+- **Simplified Chinese.** ReDD Blocker is now available in **Simplified
+  Chinese** and can auto-select it when your device or browser language is
+  Chinese.
+
+### BY PLATFORM
+
+#### DESKTOP
+
+- **Selection stays put after pause or stop.** On desktop, pausing or stopping
+  a focus space no longer drops your current selection.
+
+#### iOS
+
+- **Card-first home screen on iPhone.** On smaller iOS screens, the home screen
+  now acts as a clean list of focus-space cards, with start/stop and related
+  controls opening after you select a card instead of appearing immediately on
+  the home screen.
+- **Full-screen entry and Quick start flows.** On smaller iOS screens, the
+  entry screen, timer controls, and Quick start flow use full-screen
+  presentations that fit the redesigned mobile layout better.
+- **Clearer card affordances and landscape layout.** Focus-space cards better
+  indicate that they are interactive, and landscape layouts for the header, app
+  picker, swatches, and time segments are more stable.
+
+- **Version:** 3.7.0 (macOS, Windows, and iOS).
+
 ## v3.6.0
 
 ### ALLOW MODE
