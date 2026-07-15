@@ -18,7 +18,7 @@ import {
     generateId,
 } from './app.js';
 import { buildBlocklistCardMetaHtml, buildBlocklistCardDetailsHtml, blocklistCardHasExpandableSummary } from './list-presentation.js';
-import { cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, openBlocklistModal } from './confirm-modals.js';
+import { cloneOverrideDifficulty, deselectBlocklist, handleBlocklistSelect, isBlocklistCardVisuallySelected, isEnterSchedulerModalOpen, isIOSPhoneDevice, openBlocklistModal } from './confirm-modals.js';
 import { APP_BLOCKING_SNOOZE_ICON_IMG_12, appBlockingWarningSnoozedUntilMs, formatAppBlockingSnoozeStartsIn, getActiveAppBlockingSnoozeBlocklistId } from './blocking-platform.js';
 
 function isQuickStartActivelyRunning(blocklist, now = Date.now()) {
@@ -88,6 +88,32 @@ function setBlocklistCardExpanded(card, id, expanded) {
 
 function toggleBlocklistCardExpanded(card, id) {
     setBlocklistCardExpanded(card, id, !expandedBlocklistCardIds.has(id));
+}
+
+const BLOCKLIST_EDIT_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+                        <path d="m15 5 4 4"/>
+                      </svg>`;
+
+const BLOCKLIST_ENTER_CHEVRON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="m9 18 6-6-6-6"/>
+                      </svg>`;
+
+function openBlocklistEnterFromCard(blocklistId) {
+    if (state.selectedBlocklistId === blocklistId) {
+        if (isEnterSchedulerModalOpen()) {
+            deselectBlocklist();
+            return;
+        }
+        const dropdown = document.getElementById('blocklist-select');
+        dropdown.value = blocklistId;
+        handleBlocklistSelect({ target: dropdown }, { openEnterUi: true });
+        return;
+    }
+
+    const dropdown = document.getElementById('blocklist-select');
+    dropdown.value = blocklistId;
+    handleBlocklistSelect({ target: dropdown }, { openEnterUi: true });
 }
 
 const BLOCKLIST_RUNNING_DOT = '<span class="badge-running-dot" aria-hidden="true"></span>';
@@ -926,8 +952,7 @@ export function renderBlocklists() {
             ? `<span class="blocklist-name-badges">${activeBadge}</span>`
             : '';
 
-        // Check if this blocklist is selected
-        const isSelected = bl.id === state.selectedBlocklistId;
+        const isSelected = isBlocklistCardVisuallySelected(bl.id);
         const selectedClass = isSelected ? ' selected' : '';
         const expandedClass = isExpanded ? ' blocklist-card-expanded' : '';
         const accent = bl.color || '#667eea';
@@ -941,19 +966,15 @@ export function renderBlocklists() {
             ? `<span class="blocklist-entering-chip" style="background-color: ${enteringChipColor}">${tSettings('blocklistEnteringChip')}</span>`
             : '';
 
-        return `
-      <div class="blocklist-card${activeClass}${quickStartClass}${selectedClass}${expandedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle}>
-        ${enteringChip}
-        <div class="blocklist-stripe" style="background: ${borderColor}"></div>
-        <div class="blocklist-card-body">
-          <div class="blocklist-card-header">
-            <div class="blocklist-card-title-row">
-              <div class="blocklist-name">
-                <span class="blocklist-emoji">${isQuickStart ? QUICK_START_EMOJI : (bl.emoji || '🚫')}</span>
-                <span class="blocklist-title-text">${escapeHtml(bl.name)}</span>
-                ${badgesHtml}
-              </div>
-              <div class="blocklist-actions">
+        const isIosPhoneCard = isIOSPhoneDevice();
+        const editMenuItemHtml = isIosPhoneCard
+            ? `<button class="blocklist-menu-item edit-blocklist-item" title="${tSettings('blocklistCardEditTooltip')}" aria-label="${tSettings('blocklistCardEditTooltip')}">
+                      ${BLOCKLIST_EDIT_ICON_SVG}
+                      ${tSettings('blocklistCardEditTooltip')}
+                    </button>`
+            : '';
+
+        const menuHtml = `
                 <div class="blocklist-menu-wrapper">
                   <button class="blocklist-action-btn blocklist-menu-btn" title="${tSettings('blocklistCardMenuTitle')}" aria-label="${tSettings('blocklistCardMenuTitle')}">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -972,6 +993,7 @@ export function renderBlocklists() {
                       </svg>
                       ${tSettings('quickStartSaveAsLink')}
                     </button>` : ''}
+                    ${editMenuItemHtml}
                     <button class="blocklist-menu-item duplicate-blocklist-item" title="${tSettings('blocklistCardDuplicate')}" aria-label="${tSettings('blocklistCardDuplicate')}">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <line x1="15" x2="15" y1="12" y2="18"/>
@@ -990,13 +1012,31 @@ export function renderBlocklists() {
                       ${tSettings('blocklistCardDelete')}
                     </button>
                   </div>
-                </div>
-                <button class="blocklist-action-btn edit-btn" title="${tSettings('blocklistCardEditTooltip')}" aria-label="${tSettings('blocklistCardEditTooltip')}">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
-                    <path d="m15 5 4 4"/>
-                  </svg>
-                </button>
+                </div>`;
+
+        const secondaryActionHtml = isIosPhoneCard
+            ? `<button class="blocklist-action-btn blocklist-enter-btn" title="${tSettings('mainStartBlockTitle')}" aria-label="${tSettings('mainStartBlockTitle')}">
+                ${BLOCKLIST_ENTER_CHEVRON_SVG}
+              </button>`
+            : `<button class="blocklist-action-btn edit-btn" title="${tSettings('blocklistCardEditTooltip')}" aria-label="${tSettings('blocklistCardEditTooltip')}">
+                ${BLOCKLIST_EDIT_ICON_SVG}
+              </button>`;
+
+        return `
+      <div class="blocklist-card${activeClass}${quickStartClass}${selectedClass}${expandedClass}" data-id="${bl.id}" data-active="${isActive}" ${selectedStyle}>
+        ${enteringChip}
+        <div class="blocklist-stripe" style="background: ${borderColor}"></div>
+        <div class="blocklist-card-body">
+          <div class="blocklist-card-header">
+            <div class="blocklist-card-title-row">
+              <div class="blocklist-name">
+                <span class="blocklist-emoji">${isQuickStart ? QUICK_START_EMOJI : (bl.emoji || '🚫')}</span>
+                <span class="blocklist-title-text">${escapeHtml(bl.name)}</span>
+                ${badgesHtml}
+              </div>
+              <div class="blocklist-actions">
+                ${menuHtml}
+                ${secondaryActionHtml}
               </div>
             </div>
             <div class="blocklist-meta">${metaHtml}</div>
@@ -1012,22 +1052,35 @@ export function renderBlocklists() {
         const id = card.dataset.id;
         const isActive = card.dataset.active === 'true';
 
-        // Everywhere on the card except the summary button selects/deselects.
+        // Everywhere on the card except action controls selects/opens enter.
         card.addEventListener('click', (e) => {
             if (e.target.closest('.blocklist-meta-items-btn')) return;
-            if (e.target.closest('.blocklist-actions') || e.target.closest('.blocklist-menu')) return;
-
-            if (state.selectedBlocklistId === id) {
-                deselectBlocklist();
+            if (isIOSPhoneDevice()) {
+                if (e.target.closest('.blocklist-menu-btn') || e.target.closest('.blocklist-menu')) return;
+            } else if (e.target.closest('.blocklist-actions') || e.target.closest('.blocklist-menu')) {
                 return;
             }
 
-            const dropdown = document.getElementById('blocklist-select');
-            dropdown.value = id;
-            handleBlocklistSelect({ target: dropdown });
+            openBlocklistEnterFromCard(id);
         });
 
-        card.querySelector('.edit-btn').addEventListener('click', (e) => {
+        card.querySelector('.blocklist-enter-btn')?.addEventListener('touchstart', (e) => {
+            e.stopPropagation();
+        }, { passive: true });
+
+        card.querySelector('.blocklist-enter-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openBlocklistEnterFromCard(id);
+        });
+
+        card.querySelector('.edit-btn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeAllBlocklistMenus();
+            const blocklist = state.appData.blocklists.find(bl => bl.id === id);
+            openBlocklistModal(blocklist);
+        });
+
+        card.querySelector('.edit-blocklist-item')?.addEventListener('click', (e) => {
             e.stopPropagation();
             closeAllBlocklistMenus();
             const blocklist = state.appData.blocklists.find(bl => bl.id === id);
@@ -1067,7 +1120,7 @@ export function renderBlocklists() {
             duplicateBlocklist(id);
         });
 
-        card.querySelector('.delete-blocklist-item').addEventListener('click', (e) => {
+        card.querySelector('.delete-blocklist-item')?.addEventListener('click', (e) => {
             e.stopPropagation();
             closeAllBlocklistMenus();
             deleteBlocklist(id);
@@ -1076,7 +1129,7 @@ export function renderBlocklists() {
         // Drag and drop using mouse events on document
         card.addEventListener('mousedown', (e) => {
             // Don't start drag if clicking on buttons
-            if (e.target.closest('.edit-btn') || e.target.closest('.blocklist-menu-btn') || e.target.closest('.blocklist-menu')) return;
+            if (e.target.closest('.blocklist-enter-btn') || e.target.closest('.edit-btn') || e.target.closest('.blocklist-menu-btn') || e.target.closest('.blocklist-menu')) return;
             if (e.target.closest('.blocklist-meta-items-btn')) return;
             if (e.target.closest('.blocklist-actions')) return;
             if (card.classList.contains('blocklist-card-quick-start')) return;
@@ -1165,6 +1218,13 @@ function restoreBlocklistMenu(menu) {
     delete menu._blocklistMenuScrollParent;
 }
 
+function getBlocklistMenuScrollParent() {
+    if (document.body.classList.contains('ios-phone')) {
+        return document.querySelector('.main-content');
+    }
+    return document.getElementById('blocklists-container');
+}
+
 function positionBlocklistMenu(menuBtn, menu, wrapper) {
     if (menu.parentElement !== document.body) {
         document.body.appendChild(menu);
@@ -1195,7 +1255,7 @@ function positionBlocklistMenu(menuBtn, menu, wrapper) {
     menu.style.transform = 'none';
     menu.style.zIndex = String(BLOCKLIST_MENU_Z_INDEX);
 
-    const scrollParent = document.getElementById('blocklists-container');
+    const scrollParent = getBlocklistMenuScrollParent();
     if (scrollParent) {
         menu._blocklistMenuScrollParent = scrollParent;
         scrollParent.addEventListener('scroll', closeAllBlocklistMenus, { once: true });

@@ -7,7 +7,7 @@ import { resolveMicrosoftStorePackage, isVersionHigher, getLatestVersionPlatform
 import { updateOverrideAllButtonVisibility, refreshUninstallButtonState } from './settings.js';
 import { stopHelperUiRefreshLoop } from './modal-manager.js';
 import { saveData } from './persistence.js';
-import { syncAllStopBtnLabelFits, syncPauseDurationRowLayout } from './confirm-modals.js';
+import { getLiveTimePickerContainer, syncAllStopBtnLabelFits, syncPauseDurationRowLayout } from './confirm-modals.js';
 import { wireEnforcementToggle, wireBlockingMethodSettings, resetSettingsEnforcementSection } from './enforcement.js';
 import { applyEnforcementDescCopy } from './onboarding.js';
 import {
@@ -308,8 +308,8 @@ export function schedulerModeTabsNeedIconOnly(header, modeTabs, toolbar) {
 
 /** Keep desktop/iOS scheduler header chrome from overlapping as space tightens. */
 export function syncSchedulerModeTabLabelMode() {
-    const enterHeader = document.getElementById('scheduler-enter-header');
-    const timePicker = document.getElementById('time-picker-container');
+    const timePicker = getLiveTimePickerContainer();
+    const enterHeader = timePicker?.querySelector('#scheduler-enter-header');
     const modeTabs = enterHeader?.querySelector('.scheduler-mode-tabs');
     const body = document.body;
     if (!enterHeader || !modeTabs || !timePicker || timePicker.classList.contains('hidden')) {
@@ -337,7 +337,7 @@ export function syncSchedulerModeTabLabelMode() {
     body.classList.remove('ui-zoom-sched-hide-title', 'ui-zoom-sched-tabs-icons');
     void enterHeader.offsetWidth;
 
-    const mainTitle = document.getElementById('main-start-block-title');
+    const mainTitle = timePicker?.querySelector('#main-start-block-title');
     const toolbar = document.querySelector('#settings-toolbar-scheduler');
     const iconOnly = schedulerModeTabsNeedIconOnly(enterHeader, modeTabs, toolbar);
 
@@ -381,11 +381,19 @@ export function clearSelectionPromptLayout() {
     }
     if (gridTopRow) gridTopRow.classList.remove('grid-top-row--selection-prompt-active');
     document.body.classList.remove('selection-prompt-layout-two-col', 'selection-prompt-layout-stack');
+    const measurer = document.getElementById('scheduler-placeholder-measurer');
+    if (measurer) measurer.innerHTML = '';
+}
+
+function stripIdsFromSubtree(root) {
+    if (!root) return;
+    if (root.id) root.removeAttribute('id');
+    root.querySelectorAll('[id]').forEach((el) => el.removeAttribute('id'));
 }
 
 export function measureTimePickerPlaceholderHeight(section) {
     const mainContent = document.getElementById('main-content');
-    const timePicker = section?.querySelector('#time-picker-container');
+    const timePicker = getLiveTimePickerContainer();
     if (!section || !mainContent || !timePicker || section.clientWidth <= 0) return 0;
 
     let measurer = document.getElementById('scheduler-placeholder-measurer');
@@ -400,20 +408,26 @@ export function measureTimePickerPlaceholderHeight(section) {
     measurer.className = 'scheduler-content';
     measurer.style.width = `${section.clientWidth}px`;
     measurer.innerHTML = timePicker.outerHTML;
+    stripIdsFromSubtree(measurer);
 
-    const measuredPicker = measurer.querySelector('#time-picker-container');
+    const measuredPicker = measurer.querySelector('.time-picker-container');
     measuredPicker?.classList.remove('hidden');
-    measuredPicker?.querySelector('#instant-block-panel')?.classList.remove('hidden');
-    measuredPicker?.querySelector('#schedule-block-panel')?.classList.add('hidden');
+    measuredPicker?.querySelector('.instant-block-panel')?.classList.remove('hidden');
+    measuredPicker?.querySelector('.schedule-block-panel')?.classList.add('hidden');
     measuredPicker?.querySelector('.always-on-message')?.classList.add('hidden');
-    measuredPicker?.querySelector('#timed-controls')?.classList.add('hidden');
-    measuredPicker?.querySelector('#block-action-buttons')?.classList.add('hidden');
+    measuredPicker?.querySelector('.timed-controls')?.classList.add('hidden');
+    measuredPicker?.querySelector('.block-action-buttons')?.classList.add('hidden');
 
     return measuredPicker?.offsetHeight || 0;
 }
 
 /** Pin the empty-state hint to the first blocklist card (two-column) or reserve time-picker space (stack). */
 export function syncSelectionPromptLayout() {
+    if (document.body.classList.contains('ios-phone')) {
+        clearSelectionPromptLayout();
+        return;
+    }
+
     const prompt = document.getElementById('selection-prompt');
     const gridTopRow = document.querySelector('.grid-top-row');
     const schedulerSection = document.getElementById('scheduler-section');

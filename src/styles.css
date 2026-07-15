@@ -3370,34 +3370,35 @@ body.ios.ui-zoom-tier-stack .main-content{
 }
 
 /* Handset landscape: keep two columns, but let the scheduler claim the width it
-   needs before blocklists, and keep the whole app inset from the screen edges. */
+   needs before blocklists, and keep the whole app inset from the screen edges.
+   iOS iPhone is excluded — home is focus spaces only (enter lives in a sheet). */
 @media (orientation: landscape) {
-    body.handset-device .app-container{
+    body.handset-device:not(.ios-phone) .app-container{
         width: auto;
         margin-left: 12px;
         margin-right: 12px;
     }
 
-    body.handset-device .main-content{
+    body.handset-device:not(.ios-phone) .main-content{
         padding-left: 18px;
         padding-right: 18px;
         --app-settings-right: 18px;
     }
 
-    body.handset-device .grid-top-row{
+    body.handset-device:not(.ios-phone) .grid-top-row{
         display: flex;
         gap: 12px;
         align-items: flex-start;
         min-width: 0;
     }
 
-    body.handset-device .blocklists-section{
+    body.handset-device:not(.ios-phone) .blocklists-section{
         flex: 45 1 0;
         max-width: 45%;
         min-width: 0;
     }
 
-    body.handset-device .scheduler-section{
+    body.handset-device:not(.ios-phone) .scheduler-section{
         flex: 55 1 0;
         min-width: 0;
         max-width: 55%;
@@ -7385,9 +7386,77 @@ body.android .selection-prompt {
     -webkit-appearance: none;
 }
 
-.blocklist-meta-items-btn:hover{
-    color: color-mix(in srgb, var(--blocklist-meta-items-color) 80%, var(--text-muted));
-    text-decoration: none;
+@media (hover: hover) and (pointer: fine) {
+    .blocklist-meta-items-btn:hover{
+        color: color-mix(in srgb, var(--blocklist-meta-items-color) 80%, var(--text-muted));
+        text-decoration: none;
+    }
+}
+
+/* iOS iPhone: WebKit often drops button underlines; keep dashed underline for tap affordance. */
+body.ios-phone .blocklist-meta-items-btn{
+    text-decoration-line: underline;
+    text-decoration-style: dashed;
+    -webkit-text-decoration-line: underline;
+    -webkit-text-decoration-style: dashed;
+}
+
+@media (hover: none), (pointer: coarse) {
+    body.ios-phone .blocklist-meta-items-btn:hover,
+    body.ios-phone .blocklist-meta-items-btn:focus-visible{
+        color: var(--blocklist-meta-items-color);
+        text-decoration: underline dashed;
+        text-decoration-thickness: 1px;
+        -webkit-text-decoration-thickness: 1px;
+        text-underline-offset: 2px;
+    }
+}
+
+/* iOS iPhone: chevron opens enter sheet; edit lives in the overflow menu. */
+body.ios-phone .blocklist-card{
+    --blocklist-action-btn-size: 32px;
+}
+
+body.ios-phone .blocklist-card-title-row{
+    position: static;
+}
+
+body.ios-phone .blocklist-card-header{
+    position: relative;
+    padding-right: var(--blocklist-actions-slot);
+}
+
+body.ios-phone .blocklist-name{
+    padding-right: 0;
+}
+
+body.ios-phone .blocklist-actions{
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+body.ios-phone .blocklist-menu-btn,
+body.ios-phone .blocklist-enter-btn{
+    -webkit-tap-highlight-color: transparent;
+}
+
+body.ios-phone .blocklist-menu-btn svg,
+body.ios-phone .blocklist-enter-btn svg{
+    width: 22px;
+    height: 22px;
+}
+
+@media (hover: none), (pointer: coarse) {
+    body.ios-phone .blocklist-menu-btn:hover,
+    body.ios-phone .blocklist-menu-btn:active,
+    body.ios-phone .blocklist-menu-btn:focus-visible,
+    body.ios-phone .blocklist-enter-btn:hover,
+    body.ios-phone .blocklist-enter-btn:active,
+    body.ios-phone .blocklist-enter-btn:focus-visible{
+        background: var(--element-hover-bg);
+        color: var(--text-secondary);
+    }
 }
 
 .blocklist-card-details.hidden{
@@ -10977,6 +11046,16 @@ body.handset-device #blocklist-modal .tags-input-stacked .browse-btn{
     gap: 6px;
 }
 
+/* iOS iPhone: app input is hidden — picker button should span the full input row width. */
+body.ios-phone #blocklist-modal .tags-input-stacked .apps-input-with-button .browse-btn{
+    width: 100%;
+    max-width: 100%;
+    flex: 1 1 auto;
+    box-sizing: border-box;
+    justify-content: center;
+    padding: 10px 12px;
+}
+
 body.ios #blocklist-modal .tags-input-stacked .apps-picker-only .browse-btn{
     width: 100%;
 }
@@ -11189,7 +11268,8 @@ body.handset-device #override-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #override-all-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #pause-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #start-block-confirm-modal.mobile-fullscreen-modal .modal-content,
-body.handset-device #start-schedule-confirm-modal.mobile-fullscreen-modal .modal-content{
+body.handset-device #start-schedule-confirm-modal.mobile-fullscreen-modal .modal-content,
+body.handset-device #enter-scheduler-modal.mobile-fullscreen-modal .modal-content{
     display: flex;
     flex-direction: column;
     width: 100%;
@@ -11219,6 +11299,187 @@ body.handset-device .mobile-fullscreen-modal .mobile-modal-scroll-body{
         max(18px, env(safe-area-inset-left, 0px));
 }
 
+/* iOS iPhone home: focus spaces only — enter lives in a full-screen sheet. */
+body.ios-phone .main-content,
+body.ios-phone.ui-zoom-tier-stack .main-content{
+    padding-left: max(18px, env(safe-area-inset-left, 0px));
+    padding-right: max(18px, env(safe-area-inset-right, 0px));
+    --app-settings-right: max(18px, env(safe-area-inset-right, 0px));
+}
+
+body.ios-phone .grid-top-row{
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    flex: 1;
+    min-height: 0;
+}
+
+body.ios-phone .scheduler-section,
+body.ios-phone .selection-prompt{
+    display: none !important;
+}
+
+body.ios-phone .blocklists-section{
+    display: flex !important;
+    flex-direction: column;
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: 100%;
+    min-height: 0;
+}
+
+body.ios-phone .grid-top-row .blocklists-section{
+    display: flex !important;
+    flex-direction: column;
+}
+
+body.ios-phone .blocklists-section > .section-header.blocklists-section-header{
+    width: 100%;
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 25;
+    background: var(--container-bg);
+}
+
+body.ios-phone .blocklists-container{
+    --blocklists-scroll-max-height: none;
+    max-height: none;
+    overflow: visible;
+    -webkit-overflow-scrolling: auto;
+    width: 100%;
+    flex: 1 1 auto;
+}
+
+/* Landscape is often ≥769px wide — block the desktop grid hoisting and width caps that reserve a timer column. */
+@media (min-width: 769px) {
+    body.ios-phone .grid-top-row{
+        display: flex !important;
+        flex-direction: column !important;
+        grid-template-columns: none !important;
+        grid-template-rows: none;
+    }
+
+    body.ios-phone .grid-top-row .blocklists-section,
+    body.ios-phone .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section,
+    body.ios-phone .grid-top-row.grid-top-row--blocklist-selected .blocklists-section,
+    body.ios-phone.ui-zoom-tier-cramped .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section{
+        display: flex !important;
+        flex-direction: column;
+        flex: 1 1 auto !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0;
+    }
+
+    body.ios-phone .grid-top-row .scheduler-section,
+    body.ios-phone .grid-top-row .scheduler-content{
+        display: none !important;
+    }
+
+    body.ios-phone .grid-top-row .blocklists-section > .section-header.blocklists-section-header,
+    body.ios-phone .grid-top-row .blocklists-container{
+        grid-column: auto;
+        grid-row: auto;
+        width: 100%;
+    }
+}
+
+@media (orientation: landscape) {
+    body.ios-phone .grid-top-row{
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch;
+        flex: 0 0 auto;
+        min-height: auto;
+    }
+
+    body.ios-phone .grid-top-row .blocklists-section,
+    body.ios-phone .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section,
+    body.ios-phone .grid-top-row.grid-top-row--blocklist-selected .blocklists-section,
+    body.ios-phone.ui-zoom-tier-cramped .grid-top-row:not(.grid-top-row--blocklist-selected) .blocklists-section{
+        flex: 0 0 auto !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        min-height: auto;
+    }
+
+    body.ios-phone .blocklists-container{
+        flex: 0 0 auto;
+        overflow: visible !important;
+        max-height: none !important;
+    }
+
+    body.ios-phone .scheduler-section,
+    body.ios-phone .scheduler-content{
+        display: none !important;
+    }
+}
+
+body.ios-phone #enter-scheduler-modal.mobile-fullscreen-modal .time-picker-container{
+    background: transparent;
+    box-shadow: none;
+    border-radius: 0;
+    padding: 0;
+    margin-bottom: 0;
+}
+
+body.ios-phone #enter-scheduler-modal .scheduler-room-chip{
+    display: none;
+}
+
+/* Enter sheet schedule segments: two rows (time, then days); touch-sized natural-width day pills. */
+body.ios-phone #enter-scheduler-modal .schedule-block-panel .segment-row > .time-pickers-row,
+body.ios-phone #enter-scheduler-modal .schedule-block-panel .segment-row > .segment-days-group{
+    width: 100%;
+}
+
+body.ios-phone #enter-scheduler-modal .segment-day-toggle{
+    height: 34px;
+    min-height: 34px;
+    max-height: 34px;
+    padding: 0 8px;
+    font-size: 15px;
+    border-radius: 7px;
+    flex: 0 0 auto;
+    width: auto;
+}
+
+body.ios-phone #enter-scheduler-modal .segment-days{
+    gap: 4px;
+    align-items: center;
+    width: auto;
+    max-width: 100%;
+    flex-wrap: nowrap;
+}
+
+/* iOS iPhone: weekday pills use natural width everywhere (like desktop), never stretch to fill. */
+body.ios-phone .segment-days,
+body.ios-phone .segment-days.compact-day-labels,
+body.ios-phone .start-confirm-segment-days,
+body.ios-phone .start-confirm-segment-days.compact-day-labels{
+    width: auto;
+    max-width: 100%;
+}
+
+body.ios-phone .segment-days.compact-day-labels .segment-day-toggle,
+body.ios-phone .start-confirm-segment-days.compact-day-labels .segment-day-toggle{
+    flex: 0 0 auto;
+    width: auto;
+}
+
+body.ios-phone .segment-row > .segment-days-group,
+body.ios-phone .schedule-block-panel .segment-row > .segment-days-group{
+    width: 100%;
+    max-width: 100%;
+}
+
+body.ios-phone #start-schedule-confirm-modal .start-confirm-segment-days{
+    width: auto;
+    justify-content: flex-start;
+}
+
 body.handset-device .mobile-fullscreen-modal .mobile-modal-header{
     position: relative;
     top: auto;
@@ -11241,6 +11502,20 @@ body.handset-device .mobile-fullscreen-modal .mobile-modal-header{
     background: color-mix(in srgb, var(--app-bg) 92%, transparent);
     backdrop-filter: blur(14px);
     border-bottom: 1px solid rgba(225, 220, 214, 0.88);
+}
+
+/* Landscape: drop header bleed margins so back/title align with scroll-body horizontal safe padding. */
+@media (orientation: landscape) {
+    body.ios-phone .mobile-fullscreen-modal .mobile-modal-header{
+        margin-left: 0;
+        margin-right: 0;
+        padding-left: max(18px, env(safe-area-inset-left, 0px));
+        padding-right: max(18px, env(safe-area-inset-right, 0px));
+    }
+
+    body.ios-phone #settings-modal.mobile-fullscreen-modal .mobile-modal-header .settings-header-version{
+        margin-right: 0;
+    }
 }
 
 body.handset-device .mobile-fullscreen-modal .mobile-modal-back-btn{
@@ -15179,8 +15454,8 @@ body.handset-device .schedule-segments:has(.schedule-segment:nth-child(4))::-web
     background: var(--scrollbar-thumb-hover);
 }
 
-/* Handset: larger schedule/time controls for touch (iPad upsizes via :not(.ios-phone) rules). */
-body.handset-device .main-content .segment-row > .segment-days-group{
+/* Handset Android: larger schedule/time controls; compact day pills fill row when stacked below time. */
+body.handset-device:not(.ios-phone) .main-content .segment-row > .segment-days-group{
     flex: 1 1 100%;
     width: 100%;
     min-width: 100%;
@@ -15201,12 +15476,12 @@ body.handset-device .main-content .segment-days{
     align-items: center;
 }
 
-body.handset-device .main-content .segment-days.compact-day-labels{
+body.handset-device:not(.ios-phone) .main-content .segment-days.compact-day-labels{
     flex-wrap: nowrap;
     width: 100%;
 }
 
-body.handset-device .main-content .segment-days.compact-day-labels .segment-day-toggle{
+body.handset-device:not(.ios-phone) .main-content .segment-days.compact-day-labels .segment-day-toggle{
     flex: 1 1 0;
     min-width: 0;
     width: auto;
@@ -15588,6 +15863,29 @@ body.handset-device #blocklist-modal .color-swatches .color-swatch.selected::aft
 
 body.handset-device #blocklist-modal .custom-swatch .custom-icon{
     font-size: clamp(14px, 3.8vw, 20px);
+}
+
+/* iOS iPhone — cap swatch size so landscape matches portrait */
+body.ios-phone #blocklist-modal .emoji-swatches,
+body.ios-phone #blocklist-modal .color-swatches{
+    grid-template-columns: repeat(9, minmax(0, 36px));
+    justify-content: start;
+}
+
+body.ios-phone #blocklist-modal .emoji-swatch{
+    font-size: 20px;
+}
+
+body.ios-phone #blocklist-modal .custom-emoji-swatch .custom-icon{
+    font-size: 18px;
+}
+
+body.ios-phone #blocklist-modal .color-swatches .color-swatch.selected::after{
+    font-size: 13px;
+}
+
+body.ios-phone #blocklist-modal .custom-swatch .custom-icon{
+    font-size: 16px;
 }
 
 /* Blocklist entry emoji */
