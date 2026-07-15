@@ -585,7 +585,7 @@ export function handleNowBlockingStop(entry) {
 export function buildNowBlockingIdleMessage(nowMs = Date.now()) {
     const upcoming = pickEarliestUpcomingScheduledBlock(nowMs);
     if (!upcoming) {
-        return tSettings('titleBarNoActiveBlocks');
+        return null;
     }
     const whenPhrase = formatTitleBarScheduleStartWhen(new Date(upcoming.startMs), nowMs);
     const emojiRaw = upcoming.blocklist.emoji != null ? String(upcoming.blocklist.emoji).trim() : '';
@@ -737,12 +737,23 @@ export function renderNowBlockingRow(nowMs = Date.now()) {
     const chipsEl = document.getElementById('now-blocking-chips');
     if (!row || !chipsEl) return;
 
-    row.classList.remove('hidden');
-
     const entries = collectNowBlockingEntries(nowMs);
 
     if (entries.length === 0) {
         const idleMessage = buildNowBlockingIdleMessage(nowMs);
+        if (!idleMessage) {
+            // Nothing active and nothing upcoming — leave the title bar empty.
+            if (row.classList.contains('hidden') && row.classList.contains('idle') && chipsEl.childElementCount === 0) {
+                return;
+            }
+            closeNowBlockingChipMenus();
+            chipsEl.innerHTML = '';
+            row.classList.add('idle', 'hidden');
+            row.classList.remove('many-active-chips');
+            row.removeAttribute('aria-labelledby');
+            return;
+        }
+
         // Idle copy is day-granular ("today", "tomorrow", or a date) — not a per-second
         // countdown — so skip clearing/rebuilding the row when nothing changed.
         if (isNowBlockingIdleDisplayCurrent(row, chipsEl, idleMessage)) {
@@ -750,6 +761,7 @@ export function renderNowBlockingRow(nowMs = Date.now()) {
         }
 
         closeNowBlockingChipMenus();
+        row.classList.remove('hidden');
         row.classList.add('idle');
         row.classList.remove('many-active-chips');
         row.setAttribute('aria-labelledby', 'now-blocking-idle-msg');
@@ -766,6 +778,7 @@ export function renderNowBlockingRow(nowMs = Date.now()) {
         return;
     }
 
+    row.classList.remove('hidden');
     row.classList.remove('idle');
     row.classList.toggle('many-active-chips', entries.length > 2);
     row.setAttribute('aria-labelledby', 'now-blocking-label-text');
