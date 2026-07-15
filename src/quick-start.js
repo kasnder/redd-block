@@ -7,6 +7,7 @@ import { tauriAPI } from './tauri-api.js';
 import { escapeHtml } from './utils.js';
 import {
     isProtectedDomain,
+    isProtectedApp,
     cloneIOSScreenTimeSelection,
     normalizeIOSScreenTimeSelection,
     formatIOSScreenTimeSelectionLabel,
@@ -157,6 +158,7 @@ function updateDurationButtons() {
 }
 
 function renderQsTags() {
+    qsApps = qsApps.filter((app) => !isProtectedApp(app));
     const websitesEl = document.getElementById('quick-start-websites-tags');
     const appsEl = document.getElementById('quick-start-apps-tags');
     if (!websitesEl || !appsEl) return;
@@ -246,6 +248,16 @@ function confirmAppInput() {
     if (!input) return;
     const raw = input.value.trim();
     if (!raw) return;
+    if (isProtectedApp(raw)) {
+        input.value = '';
+        input.placeholder = tSettings('cannotBlockSelfAppPlaceholder');
+        input.classList.add('input-error');
+        setTimeout(() => {
+            input.classList.remove('input-error');
+            input.placeholder = tSettings('placeholderAppExample');
+        }, 2000);
+        return;
+    }
     if (!qsApps.some((a) => a.toLowerCase() === raw.toLowerCase())) {
         qsApps.push(raw);
     }
@@ -282,7 +294,7 @@ function buildQuickStartBlocklist() {
         color: QS_COLOR,
         emoji: QS_EMOJI,
         websites: [...qsWebsites],
-        apps: [...qsApps],
+        apps: qsApps.filter((app) => !isProtectedApp(app)),
         iosScreenTimeSelection: cloneIOSScreenTimeSelection(qsIOSScreenTimeSelection),
         showItemDetails: true,
         alwaysShowInSchedule: false,
@@ -370,7 +382,7 @@ function saveAsFocusSpace() {
     confirmAppInput();
     const draft = {
         websites: [...qsWebsites],
-        apps: [...qsApps],
+        apps: qsApps.filter((app) => !isProtectedApp(app)),
         mode: qsMode,
         overrideDifficulty: {
             type: QS_OVERRIDE_TYPE,
