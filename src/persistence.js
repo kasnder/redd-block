@@ -80,7 +80,7 @@ export async function loadData() {
     // imported spaces — the migration (which runs later, post-onboarding)
     // creates the default itself if there's no legacy data to import.
     const androidMigrationPending = state.isAndroid && !state.appData.settings?.androidMigrationDone;
-    if (state.appData.blocklists.length === 0 && !androidMigrationPending) {
+    if (state.appData.blocklists.length === 0 && !androidMigrationPending && shouldCreateDefaultBlocklist()) {
         createDefaultBlocklist();
         shouldSave = true;
     }
@@ -88,6 +88,16 @@ export async function loadData() {
     if (shouldSave) {
         await saveData();
     }
+}
+
+function shouldCreateDefaultBlocklist() {
+    const settings = state.appData?.settings || {};
+    const hasSeenOnboarding =
+        settings.onboardingComplete === true
+        || settings.welcomeOnboardingShown === true
+        || settings.eulaAcceptedRevision != null
+        || settings.eulaAcceptedAt != null;
+    return !hasSeenOnboarding;
 }
 
 // The first-launch default "Distractions" space. Shared by loadData and the

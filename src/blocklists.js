@@ -673,6 +673,7 @@ export async function deleteBlocklist(id) {
     state.appData.blocklists = state.appData.blocklists.filter(bl => bl.id !== id);
     state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.blocklistId !== id);
     expandedBlocklistCardIds.delete(id);
+    void saveData();
 
     // If the deleted blocklist was the selected one, reset the scheduler UI
     if (state.selectedBlocklistId === id) {
@@ -708,9 +709,6 @@ export function commitDelete() {
 
     clearTimeout(pendingDelete.timeoutId);
 
-    // Save data permanently
-    saveData();
-
     // Update hosts if needed
     if (pendingDelete.activeBlocks.length > 0) {
         updateHostsFile();
@@ -731,6 +729,7 @@ export function undoDelete() {
     pendingDelete.activeBlocks.forEach(block => {
         state.appData.activeBlocks.push(block);
     });
+    void saveData();
 
     // Hide toast
     document.getElementById('undo-toast').classList.add('hidden');
