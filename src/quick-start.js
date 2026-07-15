@@ -21,7 +21,7 @@ import {
     setupWebsitesImportMenu,
 } from './website-input.js';
 import { openInstalledAppsPicker } from './apps-picker.js';
-import { displayNameForBlockedApp } from './blocking-platform.js';
+import { displayNameForBlockedApp, resetModalScrollPosition } from './blocking-platform.js';
 import {
     MIN_OVERRIDE_CHARS,
     getMaxOverrideCharsForType,
@@ -496,10 +496,11 @@ export function openQuickStartModal() {
     renderQsTags();
     applyQuickStartTint();
 
-    modal.querySelector('.quick-start-modal-scroll-body')?.scrollTo(0, 0);
-
     installAppsPickerBridge();
     modal.classList.remove('hidden');
+    resetModalScrollPosition(modal);
+    // Desktop popup scrolls the inner body; handset uses .mobile-modal-scroll-body.
+    modal.querySelector('.quick-start-modal-scroll-body')?.scrollTo(0, 0);
 }
 
 export function closeQuickStartModal() {

@@ -1450,6 +1450,7 @@ export function attachModalScrollResetOnShow(modalEl) {
 export function setupHandsetModalScreens() {
     const modalIds = [
         'blocklist-modal',
+        'quick-start-modal',
         'override-modal',
         'pause-modal',
         'start-block-confirm-modal',

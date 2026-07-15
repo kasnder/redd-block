@@ -11183,6 +11183,7 @@ body.handset-device .mobile-fullscreen-modal{
 
 body.handset-device .mobile-fullscreen-modal .modal-content,
 body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content,
+body.handset-device #quick-start-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #settings-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #override-modal.mobile-fullscreen-modal .modal-content,
 body.handset-device #override-all-modal.mobile-fullscreen-modal .modal-content,
@@ -11290,17 +11291,27 @@ body.handset-device .mobile-fullscreen-modal .modal-buttons{
     padding-bottom: 0;
 }
 
-/* ——— Quick start modal ——— */
+/* ——— Quick start modal ———
+   Desktop: sticky header + inner scroll body (popup).
+   Handset: shares .mobile-fullscreen-modal layout with add/edit focus space
+   (header edge-to-edge + safe area; light content fills the viewport). */
 body:not(.handset-device) #quick-start-modal .modal-content{
     max-width: 500px;
-}
-
-#quick-start-modal .modal-content{
     display: flex;
     flex-direction: column;
     max-height: 95vh;
     overflow: hidden;
     padding: 20px 24px 22px;
+}
+
+/* setupHandsetModalScreens wraps body in .mobile-modal-scroll-body on all
+   platforms; keep the desktop flex/scroll chain working through that wrapper. */
+body:not(.handset-device) #quick-start-modal .mobile-modal-scroll-body{
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .quick-start-header{
@@ -11314,7 +11325,7 @@ body:not(.handset-device) #quick-start-modal .modal-content{
     z-index: 2;
 }
 
-#quick-start-modal .quick-start-modal-scroll-body{
+body:not(.handset-device) #quick-start-modal .quick-start-modal-scroll-body{
     flex: 1;
     min-height: 0;
     overflow-x: hidden;
@@ -11709,14 +11720,30 @@ body.ios:not(.handset-device) #blocklist-modal{
     padding-top: env(safe-area-inset-top, 8px);
 }
 
-body.handset-device #blocklist-modal.mobile-fullscreen-modal .mobile-modal-header{
+body.handset-device #blocklist-modal.mobile-fullscreen-modal .mobile-modal-header,
+body.handset-device #quick-start-modal.mobile-fullscreen-modal .mobile-modal-header{
     padding-top: calc(env(safe-area-inset-top, 0px) + 4px);
     padding-bottom: 8px;
 }
 
-body.handset-device #blocklist-modal.mobile-fullscreen-modal .mobile-modal-scroll-body{
+body.handset-device #blocklist-modal.mobile-fullscreen-modal .mobile-modal-scroll-body,
+body.handset-device #quick-start-modal.mobile-fullscreen-modal .mobile-modal-scroll-body{
     padding-top: 12px;
     padding-bottom: 16px;
+}
+
+/* Flatten quick-start's desktop-only header/scroll wrappers so handset uses
+   the same .mobile-modal-header + .mobile-modal-scroll-body chrome as
+   add/edit focus space. Title text is synced into the mobile header. */
+body.handset-device #quick-start-modal.mobile-fullscreen-modal .quick-start-header,
+body.handset-device #quick-start-modal.mobile-fullscreen-modal .quick-start-modal-scroll-body{
+    display: contents;
+}
+
+body.handset-device #quick-start-modal.mobile-fullscreen-modal .quick-start-mode-toggle{
+    min-width: 0;
+    width: 100%;
+    margin-bottom: 12px;
 }
 
 .modal-content h3{
