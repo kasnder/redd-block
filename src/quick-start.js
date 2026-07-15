@@ -332,6 +332,15 @@ async function startQuickStart() {
         if (startBtn) startBtn.disabled = false;
     }
 
+    const now = Date.now();
+    const started = state.appData.activeBlocks.some(
+        (b) => b.blocklistId === blocklist.id && b.endTime > now,
+    );
+    if (!started) {
+        state.appData.blocklists = state.appData.blocklists.filter((bl) => bl.id !== blocklist.id);
+        await saveData();
+    }
+
     // Restore prior selection so the hidden Quick start space is not left selected.
     const previousStillExists = previousId
         && state.appData.blocklists.some((bl) => bl.id === previousId && !isQuickStartBlocklist(bl));
