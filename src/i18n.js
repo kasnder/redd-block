@@ -457,6 +457,7 @@ export const SETTINGS_TRANSLATIONS = {
         placeholderWebsiteExample: 'e.g., facebook.com',
         placeholderAppExample: 'e.g., Safari',
         invalidDomainMsg: 'Please enter a valid domain (e.g. reddit.com)',
+        activityPickerFailedFmt: 'Failed to open app picker: {error}',
         cannotBlockDomainPlaceholder: '⚠️ Can\'t block this domain!',
         cannotBlockSelfAppPlaceholder: '⚠️ Can\'t block ReDD Blocker itself!',
         // Start/schedule controls
@@ -1264,6 +1265,7 @@ export const SETTINGS_TRANSLATIONS = {
         placeholderWebsiteExample: 'f.eks. facebook.com',
         placeholderAppExample: 'f.eks. Safari',
         invalidDomainMsg: 'Indtast et gyldigt domæne (f.eks. reddit.com)',
+        activityPickerFailedFmt: 'Kunne ikke åbne app-vælger: {error}',
         cannotBlockDomainPlaceholder: '⚠️ Dette domæne kan ikke blokeres!',
         cannotBlockSelfAppPlaceholder: '⚠️ ReDD Blocker kan ikke blokere sig selv!',
         // Start/schedule controls
@@ -2055,6 +2057,7 @@ export const SETTINGS_TRANSLATIONS = {
         placeholderWebsiteExample: '例如：facebook.com',
         placeholderAppExample: '例如：Safari',
         invalidDomainMsg: '请输入有效域名（例如 reddit.com）',
+        activityPickerFailedFmt: '无法打开应用选择器：{error}',
         cannotBlockDomainPlaceholder: '无法阻止此域名',
         cannotBlockSelfAppPlaceholder: '不能阻止 ReDD Blocker 自身',
         durationQuick15m: '15 分钟',

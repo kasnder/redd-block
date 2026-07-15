@@ -58,6 +58,7 @@ let qsEffortSlider = QS_DEFAULT_SLIDER;
 let qsWired = false;
 let savedModalAppsBridge = null;
 let savedRenderModalTagsBridge = null;
+let activeQuickStartTooltip = null;
 
 function generateQuickStartId() {
     return `qs-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
@@ -81,6 +82,75 @@ function applyQuickStartTint() {
     if (!modal) return;
     modal.style.setProperty('--blocklist-tint', QS_COLOR);
     modal.style.setProperty('--blocklist-tag-text', '#1e2d3e');
+}
+
+function restoreQuickStartTooltip(tooltip = activeQuickStartTooltip) {
+    if (!tooltip) return;
+    tooltip.classList.remove('info-tooltip-portaled');
+    tooltip.removeAttribute('data-tooltip-side');
+    tooltip.style.left = '';
+    tooltip.style.top = '';
+    tooltip.style.zIndex = '';
+    tooltip.style.removeProperty('--info-tooltip-arrow-left');
+    const wrapper = tooltip._quickStartTooltipWrapper;
+    if (wrapper && tooltip.parentElement !== wrapper) {
+        wrapper.appendChild(tooltip);
+    }
+    delete tooltip._quickStartTooltipWrapper;
+    if (activeQuickStartTooltip === tooltip) activeQuickStartTooltip = null;
+}
+
+function positionQuickStartTooltip(wrapper) {
+    const tooltip = wrapper?.querySelector('.info-tooltip');
+    if (!tooltip) return;
+    if (activeQuickStartTooltip && activeQuickStartTooltip !== tooltip) {
+        restoreQuickStartTooltip(activeQuickStartTooltip);
+    }
+    if (tooltip.parentElement !== document.body) {
+        tooltip._quickStartTooltipWrapper = wrapper;
+        document.body.appendChild(tooltip);
+    }
+    tooltip.classList.add('info-tooltip-portaled');
+    tooltip.style.zIndex = '1001';
+
+    const padding = 8;
+    const gap = 10;
+    const anchorRect = wrapper.getBoundingClientRect();
+    const tooltipRect = tooltip.getBoundingClientRect();
+    const openBelow = anchorRect.top < tooltipRect.height + gap + padding
+        && window.innerHeight - anchorRect.bottom > anchorRect.top;
+    const maxLeft = window.innerWidth - tooltipRect.width - padding;
+    const left = Math.max(padding, Math.min(anchorRect.left - 2, maxLeft));
+    const top = openBelow
+        ? Math.min(window.innerHeight - tooltipRect.height - padding, anchorRect.bottom + gap)
+        : Math.max(padding, anchorRect.top - tooltipRect.height - gap);
+    const arrowLeft = Math.max(
+        12,
+        Math.min(tooltipRect.width - 12, anchorRect.left + (anchorRect.width / 2) - left),
+    );
+
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+    tooltip.style.setProperty('--info-tooltip-arrow-left', `${arrowLeft}px`);
+    tooltip.dataset.tooltipSide = openBelow ? 'bottom' : 'top';
+    activeQuickStartTooltip = tooltip;
+}
+
+function setupQuickStartTooltips() {
+    document.querySelectorAll('#quick-start-modal .info-tooltip-wrapper').forEach((wrapper) => {
+        if (wrapper.dataset.quickStartTooltipWired === '1') return;
+        wrapper.dataset.quickStartTooltipWired = '1';
+        wrapper.addEventListener('mouseenter', () => positionQuickStartTooltip(wrapper));
+        wrapper.addEventListener('mouseleave', () => restoreQuickStartTooltip());
+    });
+    window.addEventListener('resize', () => {
+        const wrapper = activeQuickStartTooltip?._quickStartTooltipWrapper;
+        if (wrapper) positionQuickStartTooltip(wrapper);
+    });
+    document.addEventListener('scroll', () => {
+        const wrapper = activeQuickStartTooltip?._quickStartTooltipWrapper;
+        if (wrapper) positionQuickStartTooltip(wrapper);
+    }, true);
 }
 
 function setQuickStartMode(mode) {
@@ -426,6 +496,8 @@ export function openQuickStartModal() {
     renderQsTags();
     applyQuickStartTint();
 
+    modal.querySelector('.quick-start-modal-scroll-body')?.scrollTo(0, 0);
+
     installAppsPickerBridge();
     modal.classList.remove('hidden');
 }
@@ -433,6 +505,7 @@ export function openQuickStartModal() {
 export function closeQuickStartModal() {
     const modal = document.getElementById('quick-start-modal');
     modal?.classList.add('hidden');
+    restoreQuickStartTooltip();
     restoreAppsPickerBridge();
 }
 
@@ -457,6 +530,36 @@ export function applyQuickStartLanguage() {
     setText('quick-start-browse-apps-caption', tSettings('modalBrowseAppsCaption'));
     setText('quick-start-import-menu-text-file-label', tSettings('importWebsitesFromFile'));
     setText('quick-start-import-menu-section-label', tSettings('importWebsitesPreMadeList'));
+    setText('quick-start-website-input-error', tSettings('invalidDomainMsg'));
+
+    const importPresetKeys = {
+        email: 'importPresetEmail',
+        gambling: 'importPresetGambling',
+        news: 'importPresetNews',
+        porn: 'importPresetPorn',
+        'search-engines': 'importPresetSearchEngines',
+        shopping: 'importPresetShopping',
+        'social-media': 'importPresetSocialMedia',
+    };
+    document.querySelectorAll('#quick-start-websites-import-menu [data-preset]').forEach((btn) => {
+        const key = importPresetKeys[btn.dataset.preset];
+        if (key) btn.textContent = tSettings(key);
+    });
+
+    const importWebsitesBtn = document.getElementById('quick-start-import-websites-btn');
+    if (importWebsitesBtn) {
+        importWebsitesBtn.title = tSettings('importWebsitesTitle');
+        importWebsitesBtn.setAttribute('aria-label', tSettings('importWebsitesTitle'));
+    }
+
+    const browseAppsBtn = document.getElementById('quick-start-browse-apps-btn');
+    if (browseAppsBtn) {
+        const browseTitle = state.isIOS
+            ? tSettings('modalBrowseAppsTitleIos')
+            : tSettings('browseApplicationsTitle');
+        browseAppsBtn.title = browseTitle;
+        browseAppsBtn.setAttribute('aria-label', browseTitle);
+    }
 
     const btn = document.getElementById('quick-start-btn');
     if (btn) btn.title = tSettings('quickStartTitle');
@@ -482,6 +585,7 @@ export function setupQuickStart() {
     document.getElementById('quick-start-modal')?.addEventListener('click', (e) => {
         if (e.target.classList.contains('modal-overlay')) closeQuickStartModal();
     });
+    setupQuickStartTooltips();
 
     document.querySelectorAll('#quick-start-mode-toggle .mode-btn').forEach((btn) => {
         btn.addEventListener('click', () => setQuickStartMode(btn.dataset.mode));
@@ -569,7 +673,7 @@ export function setupQuickStart() {
                 }
             } catch (err) {
                 console.error('Activity picker error:', err);
-                alert('Failed to open app picker: ' + err);
+                alert(tSettingsFmt('activityPickerFailedFmt', { error: String(err) }));
             }
         });
     } else if (browseBtn) {

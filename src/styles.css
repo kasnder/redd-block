@@ -10584,7 +10584,7 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     content: '';
     position: absolute;
     top: 100%;
-    left: 9px;
+    left: var(--info-tooltip-arrow-left, 9px);
     transform: translateX(-50%);
     border: 6px solid transparent;
     border-top-color: hsl(222, 47%, 11%);
@@ -10603,6 +10603,26 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
 .info-tooltip-wrapper:hover .info-tooltip{
     opacity: 1;
     visibility: visible;
+}
+
+.info-tooltip.info-tooltip-portaled{
+    position: fixed;
+    bottom: auto;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: none;
+}
+
+.info-tooltip.info-tooltip-portaled[data-tooltip-side="bottom"]::before{
+    top: auto;
+    bottom: 100%;
+    border-top-color: transparent;
+    border-bottom-color: hsl(222, 47%, 11%);
+}
+
+.info-tooltip.info-tooltip-portaled[data-tooltip-side="bottom"]::after{
+    top: auto;
+    bottom: 100%;
 }
 
 /* Tags Input */
@@ -11279,9 +11299,7 @@ body:not(.handset-device) #quick-start-modal .modal-content{
     display: flex;
     flex-direction: column;
     max-height: 95vh;
-    overflow-x: hidden;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
+    overflow: hidden;
     padding: 20px 24px 22px;
 }
 
@@ -11291,6 +11309,25 @@ body:not(.handset-device) #quick-start-modal .modal-content{
     justify-content: space-between;
     gap: 12px;
     margin-bottom: 16px;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 2;
+}
+
+#quick-start-modal .quick-start-modal-scroll-body{
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    margin: -96px -24px 0;
+    padding: 96px 24px 0;
+}
+
+#quick-start-modal .form-group .label-with-info,
+#quick-start-modal .info-tooltip-wrapper{
+    overflow: visible;
 }
 
 #quick-start-modal #quick-start-title{

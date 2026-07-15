@@ -51,11 +51,13 @@ export function closeEscapeSubLayer() {
         repeatMenu.classList.add('hidden');
         return true;
     }
-    const importMenu = document.getElementById('websites-import-menu');
-    if (importMenu && !importMenu.classList.contains('hidden')) {
+    const importMenu = document.querySelector('.websites-import-menu:not(.hidden)');
+    if (importMenu) {
         importMenu.classList.add('hidden');
-        document.getElementById('modal-import-websites-btn')?.setAttribute('aria-expanded', 'false');
-        resetWebsitesImportMenuPosition();
+        resetWebsitesImportMenuPosition(importMenu.id);
+        importMenu.closest('.modal-overlay')
+            ?.querySelector('[aria-haspopup="menu"][aria-expanded="true"]')
+            ?.setAttribute('aria-expanded', 'false');
         return true;
     }
     if (document.querySelector('.blocklist-menu:not(.hidden)')) {
