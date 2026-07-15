@@ -30,7 +30,7 @@ export function setupHelpMenuLinks() {
     }).catch(() => { });
 
     tauriAPI.onMenuHelpContactUs(() => {
-        openExternal('mailto:team@reddfocus.org');
+        openExternal('mailto:team@digitalhabits.org');
     }).catch(() => { });
 
     tauriAPI.onMenuHelpWhoWeAre(() => {

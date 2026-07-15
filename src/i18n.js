@@ -444,7 +444,7 @@ export const SETTINGS_TRANSLATIONS = {
             'Closing {apps} now — saving any pending dialogs in them…',
         appBlockingListMoreFmt: '{n} more',
         settingsFeedbackFooterHtml:
-            'Feedback or suggestions? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a> or email <a href="mailto:team@reddfocus.org">team@reddfocus.org</a>.',
+            'Feedback or suggestions? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a> or email <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>.',
         madeWith: 'Made with',
         by: 'by',
         andWord: 'and',
@@ -1250,7 +1250,7 @@ export const SETTINGS_TRANSLATIONS = {
             'Lukker {apps} nu — giver eventuelle åbne dialoger tid i dem…',
         appBlockingListMoreFmt: '{n} flere',
         settingsFeedbackFooterHtml:
-            'Feedback eller forslag? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Opret et issue på GitHub</a> eller skriv til <a href="mailto:team@reddfocus.org">team@reddfocus.org</a>.',
+            'Feedback eller forslag? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Opret et issue på GitHub</a> eller skriv til <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>.',
         madeWith: 'Lavet med',
         by: 'af',
         andWord: 'og',
@@ -2040,7 +2040,7 @@ export const SETTINGS_TRANSLATIONS = {
         appBlockingClosedownFinalSingleHtml: '正在关闭 {apps}...',
         appBlockingClosedownFinalMultiHtml: '正在关闭 {apps}...',
         appBlockingListMoreFmt: '另有 {count} 个',
-        settingsFeedbackFooterHtml: '有反馈或需要帮助？请联系 <a href="mailto:team@reddfocus.org">team@reddfocus.org</a>。',
+        settingsFeedbackFooterHtml: '有反馈或需要帮助？请联系 <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>。',
         madeWith: '用心制作',
         by: '出品',
         andWord: '和',
