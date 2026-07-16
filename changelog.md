@@ -10,6 +10,54 @@ SCHEDULES), then platform-specific notes under nested headings:
 `#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
 description.` Legacy flat lists still work.
 
+## v3.8.0
+
+### FOCUS SPACES & SCHEDULES
+
+- **New focus spaces rise to the top.** Newly created focus spaces, Quick
+  starts, and duplicates now appear at the top of the list instead of at the
+  bottom.
+- **Active cards stay bright.** Running focus spaces no longer look dimmed
+  while they are active.
+- **Shorter stop control.** The stop button now reads "Stop" for a clearer,
+  tighter action label.
+- **Add/edit works after Quick Start.** Closing Quick Start no longer breaks
+  website and app selection in the add/edit focus space modal on narrow
+  screens.
+- **Aligned start panel layout.** The focus list bottom edge now lines up with
+  the start panel card for a steadier layout.
+
+### UI & LAYOUT
+
+- **Full-screen sheets on narrow screens.** At narrow widths (718px and below),
+  enter, create, settings, and override flows use full-screen windows
+  instead of popup modals, with tighter compact layouts and improved
+  focus-card spacing.
+- **Cleaner title bar when idle.** The title bar no longer shows idle copy
+  when nothing is running
+- **Setup title no longer overflows.** The setup screen title wraps correctly
+  instead of overflowing.
+- **Enforcement info spans full width.** Allow-mode enforcement info messages
+  now span the full panel width on smaller screens.
+
+### BY PLATFORM
+
+#### DESKTOP
+
+- **Lower minimum window height.** Narrow desktop windows can be resized
+  shorter to fit compact full-screen-sheet layouts.
+
+#### iOS
+
+- **Export works again.** Exporting focus spaces on iOS now saves real
+  content instead of an empty file, and shows a readable filename in the
+  success dialog.
+- **Website import menu fits the screen.** The add-website import menu is
+  correctly sized and positioned on iPhone, opening upward when needed
+  instead of clipping off-screen.
+
+- **Version:** 3.8.0 (macOS, Windows, and iOS).
+
 ## v3.7.0
 
 ### QUICK START FOCUS SPACES
