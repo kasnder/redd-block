@@ -9782,7 +9782,7 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
     --enforcement-toggle-body-size: 12.5px;
 }
 
-.enforcement-toggle-text .enforcement-toggle-disable-note{
+.enforcement-toggle-section .enforcement-toggle-disable-note{
     display: flex;
     align-items: flex-start;
     gap: 5px;
@@ -9794,7 +9794,7 @@ body.dark-mode .settings-safari-fda-grant-btn.modal-btn.primary-btn:hover:not(:d
     color: #b45309;
 }
 
-.enforcement-toggle-text .enforcement-toggle-disable-note svg{
+.enforcement-toggle-section .enforcement-toggle-disable-note svg{
     flex-shrink: 0;
     margin-top: 2px;
     color: currentColor;
