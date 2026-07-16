@@ -27,7 +27,9 @@ description.` Legacy flat lists still work.
 - **Aligned start panel layout.** The focus list bottom edge now lines up with
   the start panel card for a steadier layout.
 
-### UI & LAYOUT
+### BY PLATFORM
+
+#### DESKTOP
 
 - **Full-screen sheets on narrow screens.** At narrow widths (718px and below),
   enter, create, settings, and override flows use full-screen windows
@@ -39,11 +41,6 @@ description.` Legacy flat lists still work.
   instead of overflowing.
 - **Enforcement info spans full width.** Allow-mode enforcement info messages
   now span the full panel width on smaller screens.
-
-### BY PLATFORM
-
-#### DESKTOP
-
 - **Lower minimum window height.** Narrow desktop windows can be resized
   shorter to fit compact full-screen-sheet layouts.
 
