@@ -134,6 +134,8 @@ export function setupWebsitesImportMenu({
     const menu = document.getElementById(menuId);
     if (!importBtn || !menu) return;
 
+    menu._importBtn = importBtn;
+
     const resetMenuPosition = () => {
         resetWebsitesImportMenuPosition(menuId);
     };
@@ -142,27 +144,47 @@ export function setupWebsitesImportMenu({
         const rect = importBtn.getBoundingClientRect();
         const viewportPadding = 12;
         const gap = 4;
-        const minWidth = Math.max(rect.width, 220);
-        const maxMenuHeight = Math.min(320, Math.round(window.innerHeight * 0.45));
+        const isIOS = document.body.classList.contains('ios');
 
         menu.classList.add('websites-import-menu-fixed');
         menu.style.left = 'auto';
         menu.style.right = `${Math.max(viewportPadding, window.innerWidth - rect.right)}px`;
-        menu.style.width = `${minWidth}px`;
-        menu.style.minWidth = `${minWidth}px`;
+        menu.style.maxHeight = '';
 
-        const spaceBelow = window.innerHeight - rect.bottom - viewportPadding;
-        const spaceAbove = rect.top - viewportPadding;
-        const openUpward = spaceBelow < 180 && spaceAbove > spaceBelow;
+        if (isIOS) {
+            menu.style.width = '';
+            menu.style.minWidth = '';
+        } else {
+            const minWidth = Math.max(rect.width, 220);
+            menu.style.width = `${minWidth}px`;
+            menu.style.minWidth = `${minWidth}px`;
+        }
+
+        menu.style.top = '';
+        menu.style.bottom = '';
+
+        const modalContent = importBtn.closest('.modal-content');
+        const header = modalContent?.querySelector('.mobile-modal-header');
+        const topLimit = header
+            ? header.getBoundingClientRect().bottom
+            : viewportPadding;
+        const footer = modalContent?.querySelector(':scope > .modal-buttons');
+        const bottomLimit = footer
+            ? footer.getBoundingClientRect().top
+            : window.innerHeight - viewportPadding;
+
+        const menuHeight = menu.scrollHeight;
+        const spaceBelow = bottomLimit - rect.bottom - gap;
+        const spaceAbove = rect.top - topLimit - gap;
+        const fitsAbove = spaceAbove >= menuHeight;
+        const openUpward = spaceBelow < menuHeight && fitsAbove;
 
         if (openUpward) {
             menu.style.top = 'auto';
             menu.style.bottom = `${Math.max(viewportPadding, window.innerHeight - rect.top + gap)}px`;
-            menu.style.maxHeight = `${Math.max(120, Math.min(maxMenuHeight, spaceAbove - gap))}px`;
         } else {
             menu.style.bottom = 'auto';
             menu.style.top = `${Math.max(viewportPadding, rect.bottom + gap)}px`;
-            menu.style.maxHeight = `${Math.max(120, Math.min(maxMenuHeight, spaceBelow - gap))}px`;
         }
     };
 

@@ -3206,6 +3206,8 @@ body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-foote
     }
 
     body.ios:not(.ios-phone) .modal-overlay .websites-import-menu{
+        width: max-content;
+        max-width: min(calc(280px * var(--ipad-s)), calc(100vw - 24px));
         min-width: calc(200px * var(--ipad-s));
         padding: calc(4px * var(--ipad-s));
         border-radius: calc(8px * var(--ipad-s));
@@ -3213,9 +3215,10 @@ body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-foote
 
     body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-item{
         gap: calc(8px * var(--ipad-s));
-        padding: calc(6px * var(--ipad-s)) calc(10px * var(--ipad-s));
+        padding: calc(5px * var(--ipad-s)) calc(10px * var(--ipad-s));
         font-size: calc(13px * var(--ipad-s));
         border-radius: calc(6px * var(--ipad-s));
+        min-height: unset;
     }
 
     body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-item svg{
@@ -3225,7 +3228,7 @@ body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-foote
 
     body.ios:not(.ios-phone) .modal-overlay .websites-import-menu-section-label{
         font-size: calc(11px * var(--ipad-s));
-        padding: calc(6px * var(--ipad-s)) calc(10px * var(--ipad-s)) calc(2px * var(--ipad-s));
+        padding: calc(5px * var(--ipad-s)) calc(10px * var(--ipad-s)) 0;
     }
 
     /* Blocklist card ellipsis menu (duplicate / delete) */
@@ -10900,7 +10903,6 @@ body:not(.ios) #blocklist-modal .tags-input-stacked .browse-btn-caption{
     right: 0;
     z-index: 1000;
     min-width: 200px;
-    max-height: min(280px, calc(100dvh - 160px));
     padding: 4px;
     border-radius: 8px;
     background: var(--panel-bg);
@@ -10909,10 +10911,7 @@ body:not(.ios) #blocklist-modal .tags-input-stacked .browse-btn-caption{
     display: flex;
     flex-direction: column;
     gap: 1px;
-    overflow-y: auto;
-    overscroll-behavior: contain;
-    -webkit-overflow-scrolling: touch;
-    touch-action: pan-y;
+    overflow: visible;
 }
 
 .websites-import-menu.websites-import-menu-fixed{
@@ -10928,17 +10927,21 @@ body.dark-mode .websites-import-menu{
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 10px;
+    padding: 5px 10px;
     border: none;
     border-radius: 6px;
     background: transparent;
     color: var(--text-primary);
     font-size: 13px;
+    line-height: 1;
     text-align: left;
     cursor: pointer;
     transition: background 0.1s;
     width: 100%;
     font-family: inherit;
+    min-height: unset;
+    appearance: none;
+    -webkit-appearance: none;
 }
 
 .websites-import-menu-item:hover{
@@ -10955,12 +10958,13 @@ body.dark-mode .websites-import-menu{
 .websites-import-menu-divider{
     height: 1px;
     background: var(--border-color);
-    margin: 4px 6px;
+    margin: 1px 6px;
 }
 
 .websites-import-menu-section-label{
-    padding: 6px 10px 2px;
+    padding: 5px 10px 0;
     font-size: 11px;
+    line-height: 1;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
@@ -16053,6 +16057,33 @@ body.handset-device .modal-overlay .websites-import-menu-item{
 body.handset-device .modal-overlay .websites-import-menu-item svg{
     width: 18px;
     height: 18px;
+}
+
+/* iOS: keep the websites Lists menu compact; generic handset touch sizing is too large here. */
+body.ios.handset-device .modal-overlay .websites-import-menu{
+    width: max-content;
+    max-width: min(280px, calc(100vw - 24px));
+    min-width: 200px;
+    padding: 4px;
+    border-radius: 8px;
+}
+
+body.ios.handset-device .modal-overlay .websites-import-menu-item{
+    padding: 5px 10px;
+    font-size: 13px;
+    gap: 8px;
+    border-radius: 6px;
+    min-height: unset;
+}
+
+body.ios.handset-device .modal-overlay .websites-import-menu-item svg{
+    width: 14px;
+    height: 14px;
+}
+
+body.ios.handset-device .modal-overlay .websites-import-menu-section-label{
+    padding: 5px 10px 0;
+    font-size: 11px;
 }
 
 /* Color Picker */

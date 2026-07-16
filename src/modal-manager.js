@@ -55,9 +55,7 @@ export function closeEscapeSubLayer() {
     if (importMenu) {
         importMenu.classList.add('hidden');
         resetWebsitesImportMenuPosition(importMenu.id);
-        importMenu.closest('.modal-overlay')
-            ?.querySelector('[aria-haspopup="menu"][aria-expanded="true"]')
-            ?.setAttribute('aria-expanded', 'false');
+        importMenu._importBtn?.setAttribute('aria-expanded', 'false');
         return true;
     }
     if (document.querySelector('.blocklist-menu:not(.hidden)')) {
