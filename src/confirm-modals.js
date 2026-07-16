@@ -2411,6 +2411,10 @@ export function applyModalBlocklistTint(hexColor) {
 export function openBlocklistModal(blocklist = null) {
     // Keep narrow-desktop sheet chrome in sync before showing create/edit.
     syncEnterSchedulerSheetLayout();
+    // Quick Start temporarily reuses the apps/tag bridge; restore the blocklist
+    // modal's own bridge every time this modal opens in case another close path
+    // left the global handlers pointed elsewhere.
+    window.restoreBlocklistModalTagBridges?.();
 
     state.editingBlocklistId = blocklist?.id || null;
     state.blocklistModalPreviewSnapshot = null;

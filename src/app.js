@@ -1761,7 +1761,6 @@ function setupModalListeners() {
     // and the original direct array bridge so extracted modules like the app
     // picker still share the same mutable selection state.
     window.getModalApps = () => modalApps;
-    window.modalApps = modalApps;
     window.lockedWebsites = [];
     window.lockedApps = [];
     window.clearModalTagSelections = () => {
@@ -1769,7 +1768,7 @@ function setupModalListeners() {
         selectedApps.clear();
     };
 
-    window.renderModalTags = () => {
+    const renderModalTags = () => {
         renderTags(modalWebsitesTags, modalWebsites, (idx) => {
             const value = modalWebsites[idx];
             if (window.lockedWebsites && window.lockedWebsites.includes(value)) {
@@ -1843,6 +1842,11 @@ function setupModalListeners() {
         syncModalWebsitePlaceholder();
         syncModalAppPlaceholder();
     };
+    window.restoreBlocklistModalTagBridges = () => {
+        window.modalApps = modalApps;
+        window.renderModalTags = renderModalTags;
+    };
+    window.restoreBlocklistModalTagBridges();
 
     // Esc inside the modal clears any active tag selection (it does NOT close
     // the modal in that case — only when no selection is active).

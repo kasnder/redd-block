@@ -582,6 +582,7 @@ export function setupQuickStart() {
     qsWired = true;
 
     document.getElementById('quick-start-btn')?.addEventListener('click', () => openQuickStartModal());
+    document.getElementById('close-quick-start-btn')?.addEventListener('click', () => closeQuickStartModal());
 
     document.getElementById('quick-start-modal')?.addEventListener('click', (e) => {
         if (e.target.classList.contains('modal-overlay')) closeQuickStartModal();
