@@ -8160,8 +8160,8 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     justify-content: center;
     gap: 12px;
     margin: 0 auto 8px;
-    width: max-content;
-    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
     text-align: left;
 }
 
