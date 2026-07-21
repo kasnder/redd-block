@@ -583,9 +583,16 @@ fn set_perm_inner(
 }
 
 pub fn running_supported_browsers() -> Vec<SupportedBrowser> {
-    use sysinfo::{ProcessesToUpdate, System};
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
     let mut sys = System::new();
-    sys.refresh_processes(ProcessesToUpdate::All, true);
+    // Name matching only — skip the default per-process CPU/memory/disk/
+    // exe/cmdline refresh, which is system-wide work this 1 s tick (and
+    // the UI's permission polling) would otherwise repeat forever.
+    sys.refresh_processes_specifics(
+        ProcessesToUpdate::All,
+        true,
+        ProcessRefreshKind::nothing(),
+    );
     let mut out = Vec::new();
     for browser in SupportedBrowser::all() {
         let needle = browser.process_name().to_ascii_lowercase();
@@ -633,6 +640,16 @@ fn read_tabs(browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
     // it), so `... & tab & ...` would concatenate the literal text "tab"
     // instead of an ASCII-9 separator and the Rust parser would drop every row.
     // Hoisting into `_sep`/`_eol` keeps them as real control characters.
+    //
+    // PERF: `URL of every tab of w` fetches a whole window's tab URLs in
+    // ONE Apple Event; the inner repeat then walks a local list with no
+    // further IPC. The previous per-tab `URL of t` cost one Apple Event
+    // round-trip per tab per tick — with many tabs open, by far the
+    // dominant CPU/battery cost of this watcher, on both sides of the
+    // event. Tab indices are positional in the returned list, matching
+    // the `tab <i> of window <w>` addressing `apply_actions` uses.
+    // Safari reports `missing value` for empty tabs; the `as text`
+    // coercion is wrapped in `try` so those rows degrade to "".
     let script = format!(
         r#"set _sep to tab
 set _eol to linefeed
@@ -643,19 +660,18 @@ if application "{app}" is running then
     repeat with w in windows
       set _wi to _wi + 1
       try
-        set _tabs to tabs of w
+        set _urls to URL of every tab of w
       on error
-        set _tabs to {{}}
+        set _urls to {{}}
       end try
       set _ti to 0
-      repeat with t in _tabs
+      repeat with _u in _urls
         set _ti to _ti + 1
+        set _u_text to ""
         try
-          set _u to URL of t
-        on error
-          set _u to ""
+          set _u_text to _u as text
         end try
-        set _out to _out & _wi & _sep & _ti & _sep & _u & _eol
+        set _out to _out & _wi & _sep & _ti & _sep & _u_text & _eol
       end repeat
     end repeat
     return _out

@@ -274,13 +274,12 @@ pub fn blocklist_mode_is_allowlist(mode: &str) -> bool {
 /// ascending by `endsAt`. This is the single source of truth for what the
 /// extension sees on every frame.
 pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInfo>) {
-    let raw = match std::fs::read_to_string(data_path) {
-        Ok(s) => s,
-        Err(_) => return (vec![], vec![]),
-    };
-    let data: Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(_) => return (vec![], vec![]),
+    // mtime-keyed parse cache: this runs on every watcher/enforcer tick,
+    // but the file only changes on user actions. The derivation below
+    // stays live (it depends on now()); only the parse is cached.
+    let data = match crate::data_cache::read(data_path) {
+        Some(d) => d,
+        None => return (vec![], vec![]),
     };
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -413,13 +412,9 @@ pub fn derive_blocklist(data_path: &std::path::Path) -> Vec<String> {
 /// segments. App-only schedules (no websites) still contribute here
 /// even though `derive_payload` only surfaces domains.
 pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
-    let raw = match std::fs::read_to_string(data_path) {
-        Ok(s) => s,
-        Err(_) => return vec![],
-    };
-    let data: Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(_) => return vec![],
+    let data = match crate::data_cache::read(data_path) {
+        Some(d) => d,
+        None => return vec![],
     };
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -505,13 +500,9 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
 /// Mirrors the frontend's `collectManualAllowedApps` /
 /// `collectScheduleAllowedApps` merge.
 pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
-    let raw = match std::fs::read_to_string(data_path) {
-        Ok(s) => s,
-        Err(_) => return vec![],
-    };
-    let data: Value = match serde_json::from_str(&raw) {
-        Ok(v) => v,
-        Err(_) => return vec![],
+    let data = match crate::data_cache::read(data_path) {
+        Some(d) => d,
+        None => return vec![],
     };
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -418,6 +418,12 @@ pub(crate) fn write_data_file_atomic(
 
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
+    } else {
+        // Drop the shared parse cache so the enforcement loops re-read
+        // this write even if it landed within the filesystem's
+        // timestamp granularity (see data_cache.rs).
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        crate::data_cache::invalidate(path);
     }
     result
 }

@@ -111,6 +111,8 @@ pub mod enforcer;
 #[cfg(target_os = "macos")]
 pub mod web_automation;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod data_cache;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod native_host;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod native_host_install;

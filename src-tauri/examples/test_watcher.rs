@@ -19,7 +19,7 @@ fn main() {
     }
 
     let h = redd_block_lib::app_watcher::start(None);
-    h.set_apps(names);
+    h.set_apps(names.clone(), names);
     std::thread::sleep(std::time::Duration::from_secs(3));
     h.stop();
 }

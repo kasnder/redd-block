@@ -69,13 +69,12 @@ fn enforcement_enabled(app: &AppHandle) -> bool {
         Some(p) => p,
         None => return false,
     };
-    let data: serde_json::Value = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or(serde_json::Value::Null);
-    data.get("settings")
-        .and_then(|s| s.get("enforcementEnabled"))
-        .and_then(|v| v.as_bool())
+    crate::data_cache::read(&path)
+        .and_then(|data| {
+            data.get("settings")
+                .and_then(|s| s.get("enforcementEnabled"))
+                .and_then(|v| v.as_bool())
+        })
         .unwrap_or(false)
 }
 
@@ -91,8 +90,7 @@ pub const GRACE_MAX_SECS: u64 = 300;
 
 fn current_grace(app: &AppHandle) -> Duration {
     let secs = crate::commands::canonical_data_path(app)
-        .and_then(|p| std::fs::read_to_string(&p).ok())
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+        .and_then(|p| crate::data_cache::read(&p))
         .and_then(|v| {
             v.get("settings")
                 .and_then(|s| s.get("extensionGraceSeconds"))

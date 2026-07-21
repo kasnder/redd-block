@@ -41,14 +41,13 @@ impl Method {
 }
 
 /// Read `settings.blockingMethods` from the canonical data file.
+/// Served from the shared mtime-keyed parse cache — the Automation
+/// watcher calls this once per running browser on every 1 s tick.
 pub fn read_map_from_path(path: &Path) -> HashMap<String, String> {
-    let Ok(raw) = std::fs::read_to_string(path) else {
-        return HashMap::new();
-    };
-    let Ok(data) = serde_json::from_str::<Value>(&raw) else {
-        return HashMap::new();
-    };
-    read_map_from_value(&data)
+    match crate::data_cache::read(path) {
+        Some(data) => read_map_from_value(&data),
+        None => HashMap::new(),
+    }
 }
 
 pub fn read_map(app: &AppHandle) -> HashMap<String, String> {
