@@ -44,6 +44,15 @@ use crate::native_host::{self, BlockInfo};
 /// send Apple Events to browsers `sysinfo` reports as alive.
 const TICK: Duration = Duration::from_millis(1000);
 
+/// Cadence for browsers that are running but NOT frontmost while
+/// workspace events are active. Only the frontmost browser is scripted
+/// every tick — the user can't see a background browser's tabs, and a
+/// blocked tab parked there is bounced within one tick of the browser
+/// being activated (the activation updates `frontmost_bundle_id`
+/// immediately). The slower full pass still catches background
+/// navigation (media/JS opening a blocked site in a hidden window).
+const BACKGROUND_BROWSER_TICK: Duration = Duration::from_secs(5);
+
 /// Once a browser's Automation permission is denied, stop hammering
 /// osascript every second (each call just returns -1743 until the user
 /// changes System Settings). Re-probe at this cadence so a later grant
@@ -351,13 +360,28 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
         // blocklist. Used to fire exactly one "restore" pass when a
         // block ends, instead of scripting browsers forever while idle.
         let mut had_active_block = false;
+        // When the last full pass (all running browsers, not just the
+        // frontmost one) was scripted — drives BACKGROUND_BROWSER_TICK.
+        let mut last_full_pass: Option<Instant> = None;
         loop {
             std::thread::sleep(TICK);
             let enabled = shared_thread.lock().map(|s| s.enabled).unwrap_or(false);
             if !enabled {
                 continue;
             }
-            tick(&app, &shared_thread, &block_page_url, &mut had_active_block);
+            // Displays off → nobody can see a blocked tab. Skip all
+            // Apple Events (and the data-file stat) until wake; the
+            // first tick after wake redirects/restores as needed.
+            if crate::workspace_events::screen_asleep() {
+                continue;
+            }
+            tick(
+                &app,
+                &shared_thread,
+                &block_page_url,
+                &mut had_active_block,
+                &mut last_full_pass,
+            );
         }
     });
     WebAutomationHandle { shared }
@@ -368,6 +392,7 @@ fn tick(
     shared: &Arc<Mutex<Shared>>,
     block_page_url: &str,
     had_active_block: &mut bool,
+    last_full_pass: &mut Option<Instant>,
 ) {
     let path = match crate::commands::canonical_data_path(app) {
         Some(p) => p,
@@ -382,9 +407,50 @@ fn tick(
     if !blocking_active && !*had_active_block {
         return;
     }
+    // The restore pass must reach every running browser, regardless of
+    // the frontmost-only cadence below — computed before the flag flips.
+    let restore_pass = !blocking_active && *had_active_block;
     *had_active_block = blocking_active;
 
-    let running = running_supported_browsers()
+    // Frontmost-aware cadence. The browser the user is looking at is
+    // scripted every tick; the rest ride BACKGROUND_BROWSER_TICK. When
+    // events aren't installed (or the frontmost app is unknown) every
+    // tick is a full pass — the pre-events behavior.
+    let events = crate::workspace_events::events_active();
+    let frontmost_bid = if events {
+        crate::workspace_events::frontmost_bundle_id()
+    } else {
+        None
+    };
+    let frontmost_browser = frontmost_bid
+        .as_deref()
+        .and_then(|bid| SupportedBrowser::all().into_iter().find(|b| b.bundle_id() == bid));
+    let full_pass = restore_pass
+        || !events
+        || frontmost_bid.is_none()
+        || last_full_pass
+            .map(|t| t.elapsed() >= BACKGROUND_BROWSER_TICK)
+            .unwrap_or(true);
+
+    // Nothing due this tick: the frontmost app isn't an automation
+    // browser and the background cadence hasn't elapsed. Skip even the
+    // process scan.
+    if !full_pass && frontmost_browser.is_none() {
+        return;
+    }
+
+    // Frontmost-only ticks skip the sysinfo process scan entirely — a
+    // frontmost browser is by definition running.
+    let candidates = if full_pass {
+        running_supported_browsers()
+    } else {
+        frontmost_browser.into_iter().collect()
+    };
+    if full_pass {
+        *last_full_pass = Some(Instant::now());
+    }
+
+    let running = candidates
         .into_iter()
         .filter(|browser| {
             let key = match browser {

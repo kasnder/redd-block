@@ -103,6 +103,8 @@ pub mod app_watcher;
 pub mod app_group;
 #[cfg(target_os = "macos")]
 pub mod window_inventory;
+#[cfg(target_os = "macos")]
+pub mod workspace_events;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod enforcer;
 // JOMO-style website blocking via macOS Automation (Apple Events) — the
@@ -650,6 +652,13 @@ pub fn run() {
             // browser if the user doesn't fix it within the grace
             // window — that's the whole point of the migration, so
             // there's no reason to gate it behind a frontend opt-in.
+            // NSWorkspace notification bridge: app launch/activation +
+            // screen sleep/wake events that let the app watcher and the
+            // Automation watcher idle instead of polling. Must run on
+            // the main thread, before the watchers start.
+            #[cfg(target_os = "macos")]
+            workspace_events::install();
+
             #[cfg(not(any(target_os = "ios", target_os = "android")))]
             {
                 commands::app_blocking::register(app);

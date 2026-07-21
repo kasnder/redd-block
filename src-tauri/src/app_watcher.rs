@@ -43,7 +43,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -63,6 +63,69 @@ const POLL_INTERVAL: Duration = Duration::from_millis(2000);
 /// Faster cadence while at least one PID is mid-countdown (PreQuit /
 /// PostQuit) so the warning overlay and grace timers stay responsive.
 const POLL_INTERVAL_ACTIVE: Duration = Duration::from_millis(1000);
+/// Safety-net cadence when NSWorkspace launch/activation events are
+/// driving wakeups (macOS). Events cover the normal cases — a blocked
+/// app launching, a non-allowed app coming frontmost — within
+/// milliseconds; this slow sweep only catches what AppKit can't see
+/// (raw binaries exec'd outside LaunchServices). Never used while a
+/// countdown is in flight.
+const EVENTED_SAFETY_NET: Duration = Duration::from_secs(15);
+
+/// Wake handle shared with `workspace_events` (macOS) and `set_policy`:
+/// flag + condvar so a wake that lands mid-sweep is never lost.
+type WakePair = (Mutex<bool>, Condvar);
+
+/// True when NSWorkspace events are installed and can be trusted to wake
+/// the sweep loop; false on Windows and whenever install didn't run —
+/// callers then keep the legacy polling cadences.
+fn workspace_events_active() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        crate::workspace_events::events_active()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
+/// Raise the wake flag and notify — from `set_policy`, `stop`, and (on
+/// macOS) NSWorkspace launch/activation/screen-wake notifications.
+fn notify_wake(wake: &WakePair) {
+    let (flag, cvar) = wake;
+    if let Ok(mut raised) = flag.lock() {
+        *raised = true;
+    }
+    cvar.notify_all();
+}
+
+/// Sleep until `timeout` elapses or the wake flag is raised, consuming
+/// the flag. Spurious sweeps are harmless — sweeps are idempotent.
+fn wait_for_wake(wake: &WakePair, timeout: Duration) {
+    let (flag, cvar) = wake;
+    let Ok(mut raised) = flag.lock() else {
+        std::thread::sleep(timeout);
+        return;
+    };
+    let deadline = Instant::now() + timeout;
+    while !*raised {
+        let now = Instant::now();
+        if now >= deadline {
+            break;
+        }
+        match cvar.wait_timeout(raised, deadline - now) {
+            Ok((guard, wait_result)) => {
+                raised = guard;
+                if wait_result.timed_out() {
+                    break;
+                }
+            }
+            Err(_) => return,
+        }
+    }
+    *raised = false;
+}
+
 /// After the user clicks "Let's go!", how long they get to save +
 /// manually quit before the watcher sends the polite Cmd-Q.
 const PREQUIT_DURATION: Duration = Duration::from_secs(30);
@@ -159,6 +222,7 @@ pub struct Handle {
     allowlist_warn_pending: Arc<AtomicBool>,
     pending_warning_apps: PendingWarningApps,
     stop: Arc<AtomicBool>,
+    wake: Arc<WakePair>,
     join: Mutex<Option<std::thread::JoinHandle<()>>>,
 }
 
@@ -172,43 +236,57 @@ impl Handle {
         allowlist_active: bool,
         allowlist_newly_started: bool,
     ) {
-        log::info!(
-            "app_watcher::set_policy: {} blocked, {} newly blocked, {} allowed, allowlist_active={allowlist_active}",
-            blocked.len(),
-            newly_added_blocked.len(),
-            allowed.len(),
-        );
+        // Track whether anything actually changed. The disk-sync loop
+        // calls this every 2 s with an unchanged policy in steady state;
+        // only real transitions may wake the sweep thread (and produce a
+        // log line), otherwise the evented safety-net cadence would
+        // degrade right back into 2 s polling.
+        let mut changed = false;
+
+        let new_blocked: HashSet<String> =
+            blocked.into_iter().filter(|n| !is_protected(n)).collect();
+        let new_allowed: HashSet<String> =
+            allowed.into_iter().filter(|n| !is_protected(n)).collect();
+
         if let Ok(mut w) = self.apps.write() {
-            w.clear();
-            for n in blocked {
-                if is_protected(&n) {
-                    continue;
-                }
-                w.insert(n);
+            if *w != new_blocked {
+                changed = true;
+                *w = new_blocked;
             }
         }
         if let Ok(mut w) = self.allowed_apps.write() {
-            w.clear();
-            for n in allowed {
-                if is_protected(&n) {
-                    continue;
-                }
-                w.insert(n);
+            if *w != new_allowed {
+                changed = true;
+                *w = new_allowed;
             }
         }
-        self.allowlist_active
-            .store(allowlist_active, Ordering::SeqCst);
+        if self
+            .allowlist_active
+            .swap(allowlist_active, Ordering::SeqCst)
+            != allowlist_active
+        {
+            changed = true;
+        }
         if allowlist_newly_started {
             self.allowlist_warn_pending.store(true, Ordering::SeqCst);
+            changed = true;
         }
         if !newly_added_blocked.is_empty() {
             if let Ok(mut p) = self.pending_warning_apps.lock() {
                 for n in newly_added_blocked {
                     if !is_protected(&n) {
+                        changed = true;
                         p.insert(n);
                     }
                 }
             }
+        }
+
+        if changed {
+            log::info!(
+                "app_watcher::set_policy: policy changed (allowlist_active={allowlist_active}); waking sweep"
+            );
+            notify_wake(&self.wake);
         }
     }
 
@@ -219,6 +297,9 @@ impl Handle {
 
     pub fn stop(&self) {
         self.stop.store(true, Ordering::SeqCst);
+        // Wake the sweep thread so the join doesn't block for a full
+        // safety-net interval.
+        notify_wake(&self.wake);
         if let Ok(mut slot) = self.join.lock() {
             if let Some(j) = slot.take() {
                 let _ = j.join();
@@ -276,12 +357,19 @@ pub fn start(app: Option<AppHandle>) -> Handle {
     let allowlist_warn_pending = Arc::new(AtomicBool::new(false));
     let pending_warning_apps: PendingWarningApps = Arc::new(Mutex::new(HashSet::new()));
     let stop = Arc::new(AtomicBool::new(false));
+    let wake: Arc<WakePair> = Arc::new((Mutex::new(false), Condvar::new()));
+    // App launches / activations / screen wakes trip the same condvar
+    // the sweep loop sleeps on, so the evented safety-net cadence stays
+    // as responsive as the old 1-2 s polling.
+    #[cfg(target_os = "macos")]
+    crate::workspace_events::add_waker(wake.clone());
     let apps_for_thread = apps.clone();
     let allowed_for_thread = allowed_apps.clone();
     let allowlist_active_for_thread = allowlist_active.clone();
     let allowlist_warn_for_thread = allowlist_warn_pending.clone();
     let pending_for_thread = pending_warning_apps.clone();
     let stop_for_thread = stop.clone();
+    let wake_for_thread = wake.clone();
     let join = std::thread::spawn(move || {
         run(
             app,
@@ -291,6 +379,7 @@ pub fn start(app: Option<AppHandle>) -> Handle {
             allowlist_warn_for_thread,
             pending_for_thread,
             stop_for_thread,
+            wake_for_thread,
         )
     });
     Handle {
@@ -300,6 +389,7 @@ pub fn start(app: Option<AppHandle>) -> Handle {
         allowlist_warn_pending,
         pending_warning_apps,
         stop,
+        wake,
         join: Mutex::new(Some(join)),
     }
 }
@@ -490,6 +580,7 @@ fn run(
     allowlist_warn_pending: Arc<AtomicBool>,
     pending_warning_apps: PendingWarningApps,
     stop: Arc<AtomicBool>,
+    wake: Arc<WakePair>,
 ) {
     let mut entries: HashMap<sysinfo::Pid, PidEntry> = HashMap::new();
     let mut sys = sysinfo::System::new();
@@ -506,17 +597,27 @@ fn run(
         );
         // Poll fast while a countdown is in flight, or while an allowlist
         // block-start sweep is pending so visible apps behind ReDD Blocker
-        // are caught within ~500ms instead of the 2s idle cadence.
+        // are caught within ~500ms instead of the idle cadence.
+        //
+        // Idle cadence: with NSWorkspace events active (macOS), app
+        // launches / activations / policy changes wake the condvar
+        // directly, so the timed sweep is only a safety net for
+        // processes AppKit doesn't announce — it runs at
+        // EVENTED_SAFETY_NET instead of 1-2 s. Without events (Windows,
+        // or install failure) the legacy polling cadences apply.
+        let evented = workspace_events_active();
         let interval = if !entries.is_empty() {
             POLL_INTERVAL_ACTIVE
         } else if allowlist_warn_pending.load(Ordering::SeqCst) {
             Duration::from_millis(500)
+        } else if evented {
+            EVENTED_SAFETY_NET
         } else if allowlist_active.load(Ordering::SeqCst) {
             POLL_INTERVAL_ACTIVE
         } else {
             POLL_INTERVAL
         };
-        std::thread::sleep(interval);
+        wait_for_wake(&wake, interval);
     }
     // On stop: clear any in-flight warnings so the UI doesn't keep
     // showing a stale modal after the watcher's gone. Mid-block PIDs
@@ -538,6 +639,7 @@ fn run(
     _allowlist_warn_pending: Arc<AtomicBool>,
     _pending_warning_apps: PendingWarningApps,
     _stop: Arc<AtomicBool>,
+    _wake: Arc<WakePair>,
 ) {
     // Linux has no in-process watcher; blocking apps would need a
     // distro-specific approach (e.g. cgroup freezer) — out of scope.
