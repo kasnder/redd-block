@@ -6,8 +6,10 @@
 // supported browser's open-tab URLs, and for any tab sitting on a
 // blocked domain it sets that tab's URL to the bundled block page —
 // the exact same `blocked.html` the extension uses, just reached via a
-// `file://` URL with the same query params. When a block ends, tabs
-// still parked on the block page are restored to their original URL.
+// `file://` URL with the same query params. When a site is no longer
+// blocked (ended / paused / allowlist changed), tabs still parked on
+// the block page are restored to their original URL — same rule as the
+// extension's `restoreUnblockedTabs`.
 //
 // This is the macOS replacement for the extension on Safari + Chromium.
 // Firefox has no usable scripting dictionary, so it stays on the
@@ -356,10 +358,12 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
     let shared = Arc::new(Mutex::new(Shared::default()));
     let shared_thread = shared.clone();
     std::thread::spawn(move || {
-        // Tracks whether the most recent active tick had a non-empty
-        // blocklist. Used to fire exactly one "restore" pass when a
-        // block ends, instead of scripting browsers forever while idle.
-        let mut had_active_block = false;
+        // When true, the next idle ticks run a full restore sweep for
+        // tabs still parked on blocked.html. Set while website
+        // enforcement is active; cleared only after a full pass that
+        // planned no restores (so a failed apply retries). Starting
+        // true clears leftovers from a previous session.
+        let mut needs_restore = true;
         // When the last full pass (all running browsers, not just the
         // frontmost one) was scripted — drives BACKGROUND_BROWSER_TICK.
         let mut last_full_pass: Option<Instant> = None;
@@ -379,7 +383,7 @@ pub fn start(app: AppHandle, block_page_url: String) -> WebAutomationHandle {
                 &app,
                 &shared_thread,
                 &block_page_url,
-                &mut had_active_block,
+                &mut needs_restore,
                 &mut last_full_pass,
             );
         }
@@ -391,7 +395,7 @@ fn tick(
     app: &AppHandle,
     shared: &Arc<Mutex<Shared>>,
     block_page_url: &str,
-    had_active_block: &mut bool,
+    needs_restore: &mut bool,
     last_full_pass: &mut Option<Instant>,
 ) {
     let path = match crate::commands::canonical_data_path(app) {
@@ -401,16 +405,16 @@ fn tick(
     let (_domains, blocks) = native_host::derive_payload(&path);
     let blocking_active = web_enforcement_active(&blocks);
 
-    // No website blocking right now. If a block *just* ended, do one
-    // restore pass so tabs parked on the block page return to their
-    // original site; otherwise stay completely idle (no Apple Events).
-    if !blocking_active && !*had_active_block {
+    // While enforcement is on, keep the idle-restore latch armed so a
+    // later pause/stop/expiry sweeps parked tabs. When enforcement is
+    // off and the latch is clear, stay completely idle (no Apple Events).
+    if blocking_active {
+        *needs_restore = true;
+    } else if !*needs_restore {
         return;
     }
-    // The restore pass must reach every running browser, regardless of
-    // the frontmost-only cadence below — computed before the flag flips.
-    let restore_pass = !blocking_active && *had_active_block;
-    *had_active_block = blocking_active;
+    // Idle restore must script every running browser (not just frontmost).
+    let restore_pass = !blocking_active && *needs_restore;
 
     // Frontmost-aware cadence. The browser the user is looking at is
     // scripted every tick; the rest ride BACKGROUND_BROWSER_TICK. When
@@ -462,6 +466,9 @@ fn tick(
             crate::blocking_method::uses_automation(app, key)
         })
         .collect::<Vec<_>>();
+    let no_automation_browsers = running.is_empty();
+    let mut restore_actions = 0usize;
+    let mut scanned = 0usize;
     for browser in running {
         // Respect the denial backoff so we don't spawn osascript every
         // second only to get -1743 back. While a block is active, retry
@@ -479,9 +486,12 @@ fn tick(
 
         match read_tabs(browser) {
             Ok(tabs) => {
+                scanned += 1;
                 set_perm(app, shared, browser, PermState::Granted);
-                let actions =
-                    plan_actions(&tabs, &blocks, block_page_url, blocking_active);
+                let actions = plan_actions(&tabs, &blocks, block_page_url);
+                if restore_pass {
+                    restore_actions += actions.len();
+                }
                 if actions.is_empty() {
                     log::debug!(
                         "web_automation: {} — {} tab(s), {} blocked domain(s), nothing to do",
@@ -529,6 +539,15 @@ fn tick(
             }
         }
     }
+
+    // Idle restore latch: clear only after a full pass that found
+    // nothing left to restore (and we actually scanned, or there were
+    // no automation browsers to scan). Denial-backoff skips must not
+    // clear the latch — retry next tick. Matches the extension's
+    // restoreUnblockedTabs retry-until-clean behavior.
+    if restore_pass && full_pass && restore_actions == 0 && (scanned > 0 || no_automation_browsers) {
+        *needs_restore = false;
+    }
 }
 
 /// True when any active block enforces website restrictions (blocklist
@@ -546,23 +565,21 @@ pub fn web_enforcement_active(blocks: &[BlockInfo]) -> bool {
 /// Decide what to do with each tab: redirect blocked sites to the block
 /// page, restore block-page tabs whose original URL is no longer
 /// blocked. Returns (window_index, tab_index, new_url) triples.
+///
+/// Restore matches the extension's `restoreUnblockedTabs`: any parked
+/// tab whose original URL is no longer blocked is restored, even when
+/// other website enforcement is still active.
 fn plan_actions(
     tabs: &[Tab],
     blocks: &[BlockInfo],
     block_page_url: &str,
-    blocking_active: bool,
 ) -> Vec<(u32, u32, String)> {
     let mut actions = Vec::new();
     for tab in tabs {
         if is_block_page_url(&tab.url, block_page_url) {
-            // Only restore parked tabs once blocking has ended — never
-            // while a block is still active (even if domain matching
-            // glitches on the decoded original URL).
-            if !blocking_active {
-                if let Some(original) = original_url_from_block_page(&tab.url) {
-                    if is_http_url(&original) && !url_is_blocked(&original, blocks) {
-                        actions.push((tab.window_index, tab.tab_index, original));
-                    }
+            if let Some(original) = original_url_from_block_page(&tab.url) {
+                if is_http_url(&original) && !url_is_blocked(&original, blocks) {
+                    actions.push((tab.window_index, tab.tab_index, original));
                 }
             }
             continue;
@@ -1494,6 +1511,32 @@ mod tests {
         let built = build_blocked_url(base, original, &[]);
         assert!(is_block_page_url(&built, base));
         assert_eq!(original_url_from_block_page(&built).as_deref(), Some(original));
+    }
+
+    #[test]
+    fn plan_actions_restores_parked_tab_when_original_no_longer_blocked() {
+        let base = "file:///Applications/ReDD%20Blocker.app/Contents/Resources/blocked/blocked.html";
+        let original = "https://www.youtube.com/watch?v=1";
+        let parked = build_blocked_url(base, original, &[]);
+        let tabs = vec![Tab {
+            window_index: 1,
+            tab_index: 1,
+            url: parked,
+        }];
+
+        // No active website enforcement → restore.
+        let actions = plan_actions(&tabs, &[], base);
+        assert_eq!(actions, vec![(1, 1, original.to_string())]);
+
+        // Another blocklist still active for a different site → still restore youtube.
+        let other = vec![block("other", "blocklist", &["reddit.com"], 10, 500)];
+        let actions = plan_actions(&tabs, &other, base);
+        assert_eq!(actions, vec![(1, 1, original.to_string())]);
+
+        // Youtube itself still blocked → do not restore.
+        let still = vec![block("yt", "blocklist", &["youtube.com"], 10, 500)];
+        let actions = plan_actions(&tabs, &still, base);
+        assert!(actions.is_empty());
     }
 
     #[test]
