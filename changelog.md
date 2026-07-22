@@ -10,6 +10,24 @@ SCHEDULES), then platform-specific notes under nested headings:
 `#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
 description.` Legacy flat lists still work.
 
+## v3.8.1
+
+### BY PLATFORM
+
+#### DESKTOP
+
+- **Lighter background work.** Blocking uses less CPU and battery
+
+##### macOS
+
+- **Smarter app and website enforcement.** App blocking reacts to launches
+  and app switches instead of constant polling, and website Automation focuses on the frontmost browser while backing off when the display is asleep — same protection, lower power use.
+- **Blocked pages clear when a focus space ends.** When you stop or pause a
+  focus space (including Allow mode), tabs sitting on the blocked page return
+  to their original site under Automation, matching the ReDD Focus extension.
+
+- **Version:** 3.8.1 (macOS, Windows, and iOS).
+
 ## v3.8.0
 
 ### FOCUS SPACES & SCHEDULES
