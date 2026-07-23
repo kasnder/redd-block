@@ -2,6 +2,160 @@
 // Extracted verbatim from app.js.
 import { state } from './state.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage } from './i18n.js';
+import { escapeHtml } from './utils.js';
+
+/**
+ * Scroll `container` so a vertical position in its content sits ~35% from
+ * the top. Uses scrollTop directly: scrollIntoView is unreliable for nested
+ * overflow boxes inside the Tauri/WKWebView modal.
+ *
+ * Snaps to whole line-heights / integer pixels — fractional scrollTop plus
+ * rewriting text during scroll was producing a smeared/half-height line in
+ * WKWebView until the next keystroke forced a repaint.
+ */
+function scrollChallengeContentToY(container, contentY) {
+    if (!container) return;
+    const viewH = container.clientHeight;
+    if (viewH <= 0) return;
+
+    const lineHeight = (() => {
+        const raw = getComputedStyle(container).lineHeight;
+        const parsed = parseFloat(raw);
+        if (Number.isFinite(parsed) && parsed > 0) return parsed;
+        const fontSize = parseFloat(getComputedStyle(container).fontSize) || 15;
+        return fontSize * 1.6;
+    })();
+
+    const desired = contentY - viewH * 0.35;
+    const snapped = Math.round(desired / lineHeight) * lineHeight;
+    const maxScroll = Math.max(0, container.scrollHeight - viewH);
+    const next = Math.max(0, Math.min(maxScroll, snapped));
+    if (Math.abs(container.scrollTop - next) < 0.5) return;
+    container.scrollTop = next;
+}
+
+/** Scroll so character `index` in a plain-text challenge box stays in view. */
+function scrollChallengeToCharIndex(container, index) {
+    if (!container) return;
+    const textNode = container.firstChild;
+    if (!textNode || textNode.nodeType !== Node.TEXT_NODE || textNode.length === 0) return;
+
+    const safeIndex = Math.min(Math.max(0, index), textNode.length);
+    const range = document.createRange();
+    if (safeIndex >= textNode.length) {
+        range.setStart(textNode, textNode.length);
+        range.collapse(true);
+    } else {
+        range.setStart(textNode, safeIndex);
+        range.setEnd(textNode, safeIndex + 1);
+    }
+
+    const cRect = container.getBoundingClientRect();
+    const mRect = range.getBoundingClientRect();
+    // Collapsed end-of-text ranges can report an empty rect — fall back.
+    if (!mRect || (mRect.height === 0 && mRect.width === 0 && safeIndex >= textNode.length)) {
+        scrollChallengeContentToY(container, container.scrollHeight);
+        return;
+    }
+    scrollChallengeContentToY(container, container.scrollTop + (mRect.top - cRect.top));
+}
+
+function scrollChallengeToElement(container, marker) {
+    if (!container || !marker) return;
+    const cRect = container.getBoundingClientRect();
+    const mRect = marker.getBoundingClientRect();
+    scrollChallengeContentToY(container, container.scrollTop + (mRect.top - cRect.top));
+}
+
+function scheduleChallengeScroll(scrollFn) {
+    requestAnimationFrame(scrollFn);
+}
+
+/**
+ * Render challenge reference text and auto-scroll so the current typing
+ * position (or first error) stays in view with upcoming words visible.
+ * While typing correctly we keep plain text (no span) so kerning/spacing
+ * isn't disturbed; errors still use .error-char.
+ * @param {HTMLElement|null} el
+ * @param {string} text
+ * @param {{ cursorIndex?: number, errorIndex?: number }} [opts]
+ */
+export function renderChallengeReferenceText(el, text, { cursorIndex = 0, errorIndex = -1 } = {}) {
+    if (!el) return;
+    const target = typeof text === 'string' ? text : '';
+    const hasError = errorIndex >= 0 && errorIndex < target.length;
+    const markIndex = hasError
+        ? errorIndex
+        : Math.min(Math.max(0, Number(cursorIndex) || 0), target.length);
+
+    if (target.length === 0) {
+        el.textContent = '';
+        el.removeAttribute('data-challenge-render');
+        return;
+    }
+
+    if (hasError) {
+        const before = escapeHtml(target.slice(0, markIndex));
+        const rawMark = target[markIndex];
+        const isSpace = /\s/.test(rawMark);
+        const markChar = isSpace ? ' ' : escapeHtml(rawMark);
+        const after = escapeHtml(target.slice(markIndex + 1));
+        const markClass = isSpace ? 'error-char error-char-space' : 'error-char';
+        el.innerHTML = `${before}<span class="${markClass}">${markChar}</span>${after}`;
+        el.setAttribute('data-challenge-render', 'error');
+        const marker = el.querySelector('.error-char');
+        scheduleChallengeScroll(() => scrollChallengeToElement(el, marker));
+        return;
+    }
+
+    // Avoid rewriting the text node on every keystroke — that + scroll was
+    // painting a smeared line in WKWebView until the next input forced a repaint.
+    if (el.getAttribute('data-challenge-render') !== 'plain' || el.textContent !== target) {
+        el.textContent = target;
+        el.setAttribute('data-challenge-render', 'plain');
+    }
+
+    if (markIndex >= target.length) {
+        el.scrollTop = el.scrollHeight;
+        return;
+    }
+    scheduleChallengeScroll(() => scrollChallengeToCharIndex(el, markIndex));
+}
+
+/** Challenge text is single-spaced — collapse runs of whitespace to one space. */
+export function sanitizeChallengeTypedInput(value) {
+    return String(value ?? '').replace(/^\s+/, '').replace(/\s{2,}/g, ' ');
+}
+
+/**
+ * Apply single-space sanitization to a challenge textarea, preserving the
+ * caret as much as possible. Returns the sanitized value.
+ * @param {HTMLInputElement|HTMLTextAreaElement|null} inputEl
+ */
+export function applyChallengeTypedInputSanitization(inputEl) {
+    if (!inputEl) return '';
+    const raw = inputEl.value;
+    const sanitized = sanitizeChallengeTypedInput(raw);
+    if (raw === sanitized) return sanitized;
+    const sel = inputEl.selectionStart ?? sanitized.length;
+    const newSel = sanitizeChallengeTypedInput(raw.slice(0, sel)).length;
+    inputEl.value = sanitized;
+    try {
+        inputEl.setSelectionRange(newSel, newSel);
+    } catch {
+        // Some platforms reject setSelectionRange on briefly-detached nodes.
+    }
+    return sanitized;
+}
+
+/** Block Space when it would create a leading or doubled space. */
+export function shouldBlockChallengeSpaceKey(inputEl, event) {
+    if (!inputEl || (event.key !== ' ' && event.code !== 'Space')) return false;
+    if (event.metaKey || event.ctrlKey || event.altKey) return false;
+    const start = inputEl.selectionStart ?? 0;
+    if (start === 0) return true;
+    return /\s/.test(inputEl.value[start - 1] || '');
+}
 
 // Word list for random word challenges
 export const MIN_OVERRIDE_CHARS = 5;

@@ -114,7 +114,7 @@ import {
 import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, scheduleSelectionPromptLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
 import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
-import { getWordList5, getIOSRandomWordsCharCount, generateRandomWordsByCount, generateRandomWords, generateOverrideChallengeText, generateGibberish, normalizeOverrideCount, normalizeCustomOverrideText, getTypingCharsPerMinuteForType, getMaxOverrideCharsForType, getOverrideGeneratedCharCount, getDifficultyTypingCharCount, getOverridePreviewText, getOverrideEstimatedMinutes, formatOverrideMaxDifficultyHint, usesMobileWordCountForOverrideType, isMobileOverrideChallengePlatform, formatIOSGibberishChallenge, MIN_OVERRIDE_CHARS, DEFAULT_OVERRIDE_COUNT, TARGET_MAX_OVERRIDE_MINUTES, MAX_IOS_OVERRIDE_WORD_COUNT, IOS_OVERRIDE_WORDS_PER_MINUTE, OVERRIDE_PREVIEW_TRUNCATE_AT } from './override-challenge.js';
+import { getWordList5, getIOSRandomWordsCharCount, generateRandomWordsByCount, generateRandomWords, generateOverrideChallengeText, generateGibberish, normalizeOverrideCount, normalizeCustomOverrideText, getTypingCharsPerMinuteForType, getMaxOverrideCharsForType, getOverrideGeneratedCharCount, getDifficultyTypingCharCount, getOverridePreviewText, getOverrideEstimatedMinutes, formatOverrideMaxDifficultyHint, usesMobileWordCountForOverrideType, isMobileOverrideChallengePlatform, formatIOSGibberishChallenge, renderChallengeReferenceText, applyChallengeTypedInputSanitization, shouldBlockChallengeSpaceKey, MIN_OVERRIDE_CHARS, DEFAULT_OVERRIDE_COUNT, TARGET_MAX_OVERRIDE_MINUTES, MAX_IOS_OVERRIDE_WORD_COUNT, IOS_OVERRIDE_WORDS_PER_MINUTE, OVERRIDE_PREVIEW_TRUNCATE_AT } from './override-challenge.js';
 import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
 import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, LANGUAGE_NATIVE_LABELS, languageNativeLabel, SUPPORTED_LANGUAGE_CODES } from './i18n.js';
 /** Windows Settings → Apps → Installed apps (Apps & features). */
@@ -1884,17 +1884,8 @@ function setupOverrideModalListeners() {
         return state.overrideWordChallengeState?.typedText ?? challengeInput.value;
     }
 
-    // Helper to render challenge text with optional error highlight
-    function renderChallengeText(errorIndex = -1) {
-        if (errorIndex < 0 || errorIndex >= state.challengeText.length) {
-            challengeTextEl.textContent = state.challengeText;
-        } else {
-            // Highlight the error character
-            const before = escapeHtml(state.challengeText.slice(0, errorIndex));
-            const errorChar = escapeHtml(state.challengeText[errorIndex]);
-            const after = escapeHtml(state.challengeText.slice(errorIndex + 1));
-            challengeTextEl.innerHTML = `${before}<span class="error-char">${errorChar}</span>${after}`;
-        }
+    function renderChallengeText(errorIndex = -1, cursorIndex = 0) {
+        renderChallengeReferenceText(challengeTextEl, state.challengeText, { errorIndex, cursorIndex });
     }
 
     // Prevent paste - users must type manually
@@ -1906,7 +1897,7 @@ function setupOverrideModalListeners() {
     });
 
     challengeInput.addEventListener('input', () => {
-        const typed = challengeInput.value;
+        const typed = applyChallengeTypedInputSanitization(challengeInput);
         const target = state.challengeText;
 
         // Calculate progress and find first error
@@ -1924,8 +1915,8 @@ function setupOverrideModalListeners() {
         const progress = (correctChars / target.length) * 100;
         progressBar.style.width = `${progress}%`;
 
-        // Show red highlight on the reference text at the first mismatch (-1 clears)
-        renderChallengeText(firstErrorIndex);
+        // Highlight mismatch (if any) and keep the current typing position in view
+        renderChallengeText(firstErrorIndex, correctChars);
     });
 
     challengeWordInput.addEventListener('input', () => {
@@ -1935,6 +1926,10 @@ function setupOverrideModalListeners() {
 
     // Enter key submits the override
     challengeInput.addEventListener('keydown', (e) => {
+        if (shouldBlockChallengeSpaceKey(challengeInput, e)) {
+            e.preventDefault();
+            return;
+        }
         if (e.key === 'Enter') {
             e.preventDefault(); // Prevent newline in textarea
             document.getElementById('confirm-override-btn').click();
@@ -1998,7 +1993,7 @@ function setupOverrideModalListeners() {
         e.preventDefault();
     });
     pauseChallengeInput.addEventListener('input', () => {
-        const typed = pauseChallengeInput.value;
+        const typed = applyChallengeTypedInputSanitization(pauseChallengeInput);
         const target = state.pauseChallengeText;
 
         let correctChars = 0;
@@ -2014,7 +2009,7 @@ function setupOverrideModalListeners() {
 
         const progress = target.length > 0 ? (correctChars / target.length) * 100 : 0;
         pauseProgressBar.style.width = `${progress}%`;
-        renderPauseChallengeText(firstErrorIndex);
+        renderPauseChallengeText(firstErrorIndex, correctChars);
     });
     pauseChallengeWordInput.addEventListener('paste', (e) => {
         e.preventDefault();
@@ -2025,6 +2020,10 @@ function setupOverrideModalListeners() {
     });
 
     pauseChallengeInput.addEventListener('keydown', (e) => {
+        if (shouldBlockChallengeSpaceKey(pauseChallengeInput, e)) {
+            e.preventDefault();
+            return;
+        }
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             proceedWithPause();
@@ -2397,18 +2396,12 @@ export function setPauseWordChallengeMode(enabled) {
     document.getElementById('pause-challenge-input')?.classList.toggle('hidden', enabled);
 }
 
-export function renderPauseChallengeText(errorIndex = -1) {
-    const challengeTextEl = document.getElementById('pause-challenge-text');
-    if (!challengeTextEl) return;
-    const target = state.pauseChallengeText;
-    if (errorIndex < 0 || errorIndex >= target.length) {
-        challengeTextEl.textContent = target;
-    } else {
-        const before = escapeHtml(target.slice(0, errorIndex));
-        const errorChar = escapeHtml(target[errorIndex]);
-        const after = escapeHtml(target.slice(errorIndex + 1));
-        challengeTextEl.innerHTML = `${before}<span class="error-char">${errorChar}</span>${after}`;
-    }
+export function renderPauseChallengeText(errorIndex = -1, cursorIndex = 0) {
+    renderChallengeReferenceText(
+        document.getElementById('pause-challenge-text'),
+        state.pauseChallengeText,
+        { errorIndex, cursorIndex }
+    );
 }
 
 export function renderPauseWordChallengeState() {

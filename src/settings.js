@@ -14,7 +14,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import { escapeHtml } from './utils.js';
-import { generateOverrideChallengeText, getDifficultyTypingCharCount, getMaxOverrideCharsForType } from './override-challenge.js';
+import { generateOverrideChallengeText, getDifficultyTypingCharCount, getMaxOverrideCharsForType, renderChallengeReferenceText, applyChallengeTypedInputSanitization, shouldBlockChallengeSpaceKey } from './override-challenge.js';
 import {
     buildWordChallengeState,
     isMobileWordByWordChallenge,
@@ -997,16 +997,11 @@ export function setupOverrideAll() {
         return overrideAllWordChallengeState?.typedText ?? overrideAllChallengeInput.value;
     }
 
-    function renderOverrideAllChallengeText(errorIndex = -1) {
-        if (!overrideAllChallengeTextEl) return;
-        if (errorIndex < 0 || errorIndex >= overrideAllChallengeText.length) {
-            overrideAllChallengeTextEl.textContent = overrideAllChallengeText;
-        } else {
-            const before = escapeHtml(overrideAllChallengeText.slice(0, errorIndex));
-            const errorChar = escapeHtml(overrideAllChallengeText[errorIndex]);
-            const after = escapeHtml(overrideAllChallengeText.slice(errorIndex + 1));
-            overrideAllChallengeTextEl.innerHTML = `${before}<span class="error-char">${errorChar}</span>${after}`;
-        }
+    function renderOverrideAllChallengeText(errorIndex = -1, cursorIndex = 0) {
+        renderChallengeReferenceText(overrideAllChallengeTextEl, overrideAllChallengeText, {
+            errorIndex,
+            cursorIndex,
+        });
     }
 
     // Open override all modal
@@ -1115,7 +1110,7 @@ export function setupOverrideAll() {
 
         // Update progress as user types
         overrideAllChallengeInput.addEventListener('input', () => {
-            const typed = overrideAllChallengeInput.value;
+            const typed = applyChallengeTypedInputSanitization(overrideAllChallengeInput);
             const target = overrideAllChallengeText;
 
             let correctChars = 0;
@@ -1132,11 +1127,15 @@ export function setupOverrideAll() {
             const progress = (correctChars / target.length) * 100;
             overrideAllProgressBar.style.width = `${progress}%`;
 
-            renderOverrideAllChallengeText(firstErrorIndex);
+            renderOverrideAllChallengeText(firstErrorIndex, correctChars);
         });
 
         // Enter key submits
         overrideAllChallengeInput.addEventListener('keydown', (e) => {
+            if (shouldBlockChallengeSpaceKey(overrideAllChallengeInput, e)) {
+                e.preventDefault();
+                return;
+            }
             if (e.key === 'Enter') {
                 e.preventDefault();
                 confirmOverrideAllBtn.click();

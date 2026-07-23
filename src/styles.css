@@ -13837,8 +13837,14 @@ body.dark-mode .modal-btn.black-btn:hover{
 /* Error character highlighting — avoid bold (can shift monospace glyph width). */
 .challenge-text .error-char{
     color: #ef4444;
-    background: rgba(239, 68, 68, 0.12);
+    background: rgba(239, 68, 68, 0.18);
     border-radius: 2px;
+    white-space: pre;
+}
+
+/* Spaces have no ink — give the error highlight a visible box. */
+.challenge-text .error-char-space{
+    padding: 0 0.3em;
 }
 
 /* Override Challenge */
@@ -13870,8 +13876,7 @@ body.dark-mode .modal-btn.black-btn:hover{
 }
 
 /* Shared metrics so reference text and typed text wrap on the same words.
-   Mismatched padding/border/line-height (and a scrollbar stealing width from
-   only one box) was shifting wrap points by a word or two. */
+   Both boxes MUST use identical white-space/font/box model. */
 .override-challenge .challenge-text,
 .override-challenge .challenge-input{
     width: 100%;
@@ -13881,12 +13886,19 @@ body.dark-mode .modal-btn.black-btn:hover{
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
     font-size: 15px;
     font-weight: 400;
+    font-style: normal;
+    font-variant: normal;
     line-height: 1.6;
     letter-spacing: normal;
     word-spacing: normal;
+    /* pre-wrap on BOTH boxes (identical wrapping). Not break-spaces: WKWebView
+       smears/scrambles break-spaces text during programmatic scrolls. Extra
+       spaces can't become invisible anyway — typing collapses them to one
+       (see applyChallengeTypedInputSanitization). */
     white-space: pre-wrap;
     overflow-wrap: break-word;
     word-break: normal;
+    tab-size: 4;
     scrollbar-gutter: stable;
 }
 
@@ -13900,6 +13912,8 @@ body.dark-mode .modal-btn.black-btn:hover{
     overflow-y: auto;
     user-select: none;
     -webkit-user-select: none;
+    /* Isolate scrolling paints from the rest of the modal */
+    transform: translateZ(0);
 }
 
 .override-challenge .challenge-current-word{
@@ -13928,6 +13942,10 @@ body.dark-mode .modal-btn.black-btn:hover{
     min-height: 80px;
     resize: none;
     overflow-y: auto;
+    /* Kill UA textarea styling that can pick a different mono face/weight */
+    appearance: none;
+    -webkit-appearance: none;
+    field-sizing: fixed;
 }
 
 .override-challenge .challenge-word-input{
