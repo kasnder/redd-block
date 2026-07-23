@@ -2818,13 +2818,17 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
         margin-bottom: calc(16px * var(--ipad-s));
     }
 
-    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-text{
-        padding: calc(16px * var(--ipad-s));
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-text,
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-input{
+        padding: calc(14px * var(--ipad-s));
         font-size: calc(15px * var(--ipad-s));
         line-height: 1.6;
+        border-radius: calc(8px * var(--ipad-s));
+    }
+
+    body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-text{
         margin: calc(16px * var(--ipad-s)) 0;
         max-height: calc(120px * var(--ipad-s));
-        border-radius: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-current-word{
@@ -2840,10 +2844,7 @@ body.ios:not(.ios-phone) .start-confirm-header-room h3{
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-input{
-        padding: calc(12px * var(--ipad-s));
-        font-size: calc(15px * var(--ipad-s));
         min-height: calc(80px * var(--ipad-s));
-        border-radius: calc(8px * var(--ipad-s));
     }
 
     body.ios:not(.ios-phone) .modal-overlay .override-challenge .challenge-word-input{
@@ -13833,10 +13834,11 @@ body.dark-mode .modal-btn.black-btn:hover{
     animation: wiggle 0.5s ease-out;
 }
 
-/* Error character highlighting */
+/* Error character highlighting — avoid bold (can shift monospace glyph width). */
 .challenge-text .error-char{
     color: #ef4444;
-    font-weight: 700;
+    background: rgba(239, 68, 68, 0.12);
+    border-radius: 2px;
 }
 
 /* Override Challenge */
@@ -13867,18 +13869,35 @@ body.dark-mode .modal-btn.black-btn:hover{
     margin-top: 12px;
 }
 
+/* Shared metrics so reference text and typed text wrap on the same words.
+   Mismatched padding/border/line-height (and a scrollbar stealing width from
+   only one box) was shifting wrap points by a word or two. */
+.override-challenge .challenge-text,
+.override-challenge .challenge-input{
+    width: 100%;
+    padding: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+    font-size: 15px;
+    font-weight: 400;
+    line-height: 1.6;
+    letter-spacing: normal;
+    word-spacing: normal;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: normal;
+    scrollbar-gutter: stable;
+}
+
 .override-challenge .challenge-text{
     background: var(--redd-warm-grey);
+    /* Match input border width without a visible edge on the warm fill */
+    border-color: transparent;
     color: var(--text-primary);
-    padding: 16px;
-    border-radius: 8px;
-    font-family: monospace;
-    font-size: 15px;
-    line-height: 1.6;
     margin: 16px 0;
     max-height: 120px;
     overflow-y: auto;
-    overflow-wrap: break-word;
     user-select: none;
     -webkit-user-select: none;
 }
@@ -13891,7 +13910,7 @@ body.dark-mode .modal-btn.black-btn:hover{
     padding: 14px 16px;
     margin: -4px 0 16px;
     text-align: center;
-    font-family: monospace;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
     font-size: 20px;
     font-weight: 700;
     letter-spacing: 0.02em;
@@ -13906,14 +13925,9 @@ body.dark-mode .modal-btn.black-btn:hover{
 }
 
 .override-challenge .challenge-input{
-    width: 100%;
-    padding: 12px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    font-family: monospace;
-    font-size: 15px;
     min-height: 80px;
     resize: none;
+    overflow-y: auto;
 }
 
 .override-challenge .challenge-word-input{
