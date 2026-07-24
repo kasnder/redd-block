@@ -56,69 +56,75 @@ export function isScheduleSegmentMutationBlocked(segmentIndex) {
 }
 
 export function syncAllowEditsBetweenBlocksToggle() {
-    const toggle = document.getElementById('allow-edits-between-blocks-toggle');
-    const row = document.getElementById('allow-edits-between-blocks-row');
-    if (!toggle) return;
+    const btn = document.getElementById('schedule-strictness-dropdown-btn');
+    if (!btn) return;
     const flexible = isAllowEditsBetweenBlocksOn();
-    // Checked = strict (right position); unchecked = flexible (left position).
-    toggle.checked = !flexible;
-    // Switching to strict is always allowed; switching back to flexible only
-    // before the schedule is started or after it is fully stopped.
+    const btnText = document.getElementById('schedule-strictness-dropdown-text');
+    if (btnText) btnText.textContent = tSettings(flexible ? 'allowEditsFlexibleLabel' : 'allowEditsStrictLabel');
+    const menu = document.getElementById('schedule-strictness-dropdown-menu');
+    menu?.querySelectorAll('.strictness-option').forEach(opt => {
+        opt.classList.toggle('active', (opt.dataset.value === 'flexible') === flexible);
+    });
+    // Committed + schedule running: switching to flexible needs a full stop first,
+    // and "committed" is already selected — so the whole dropdown is locked.
     const locked = !flexible && !canEnableAllowEditsBetweenBlocks();
-    toggle.disabled = locked;
-    row?.classList.toggle('is-locked', locked);
-    row?.querySelector('.allow-edits-side-flexible')?.classList.toggle('is-active', flexible);
-    row?.querySelector('.allow-edits-side-strict')?.classList.toggle('is-active', !flexible);
-    const lockTitle = locked ? tSettings('allowEditsBetweenBlocksLockedTooltip') : '';
-    if (row) row.title = lockTitle;
-    toggle.title = lockTitle;
-}
-
-export function setScheduleStrictnessExpanded(expanded) {
-    const toggle = document.getElementById('schedule-strictness-toggle');
-    const content = document.getElementById('schedule-strictness-content');
-    if (!toggle || !content) return;
-    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-    content.classList.toggle('hidden', !expanded);
+    // Class-only greying (no native `disabled`), mirroring disableScheduleControls.
+    btn.classList.toggle('repeat-dropdown-disabled', locked);
+    if (locked) menu?.classList.add('hidden');
+    const wrapper = document.getElementById('schedule-strictness-dropdown-wrapper');
+    if (wrapper) wrapper.title = locked ? tSettings('allowEditsBetweenBlocksLockedTooltip') : '';
 }
 
 export function setupAllowEditsBetweenBlocksToggle() {
-    const strictnessToggle = document.getElementById('schedule-strictness-toggle');
-    if (strictnessToggle && strictnessToggle.dataset.bound !== '1') {
-        strictnessToggle.dataset.bound = '1';
-        strictnessToggle.addEventListener('click', () => {
-            const isOpen = strictnessToggle.getAttribute('aria-expanded') === 'true';
-            setScheduleStrictnessExpanded(!isOpen);
-            setTimeout(() => updateWindowHeight(), 50);
-        });
-    }
+    const btn = document.getElementById('schedule-strictness-dropdown-btn');
+    const menu = document.getElementById('schedule-strictness-dropdown-menu');
+    if (!btn || !menu || btn.dataset.bound === '1') return;
+    btn.dataset.bound = '1';
 
-    const toggle = document.getElementById('allow-edits-between-blocks-toggle');
-    if (!toggle || toggle.dataset.bound === '1') return;
-    toggle.dataset.bound = '1';
-    toggle.addEventListener('change', async () => {
-        // Checked = strict, so the desired allow-edits (flexible) flag is the inverse.
-        const desired = !toggle.checked;
-        if (desired && !canEnableAllowEditsBetweenBlocks()) {
-            toggle.checked = true;
-            syncAllowEditsBetweenBlocksToggle();
-            return;
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (btn.classList.contains('repeat-dropdown-disabled')) return;
+        const isHidden = menu.classList.contains('hidden');
+        if (isHidden) closeSchedulePanelDropdownMenus('schedule-strictness-dropdown-menu');
+        menu.classList.toggle('hidden');
+        if (isHidden) {
+            setTimeout(() => {
+                document.addEventListener('click', function closeMenu(evt) {
+                    if (!menu.contains(evt.target)) {
+                        menu.classList.add('hidden');
+                        document.removeEventListener('click', closeMenu);
+                    }
+                });
+            }, 10);
         }
-        const schedule = getSelectedSchedule();
-        if (schedule) {
-            schedule.allowEditsBetweenBlocks = desired;
-            await saveData();
-        } else {
-            state.draftAllowEditsBetweenBlocks = desired;
-        }
-        // Turning off: collapse any open segment — once locked, there's no Done
-        // control to close it and an expanded locked editor is just noise.
-        if (!desired && state.expandedScheduleSegmentIndex >= 0) {
-            state.expandedScheduleSegmentIndex = -1;
-            rebuildScheduleSegments();
-        }
-        updateScheduleButtonState();
-        if (desired) void syncUnlockedScheduleEditsToData();
+    });
+
+    menu.querySelectorAll('.strictness-option').forEach(opt => {
+        opt.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            menu.classList.add('hidden');
+            const desired = opt.dataset.value === 'flexible';
+            if (desired === isAllowEditsBetweenBlocksOn()) return;
+            if (desired && !canEnableAllowEditsBetweenBlocks()) {
+                syncAllowEditsBetweenBlocksToggle();
+                return;
+            }
+            const schedule = getSelectedSchedule();
+            if (schedule) {
+                schedule.allowEditsBetweenBlocks = desired;
+                await saveData();
+            } else {
+                state.draftAllowEditsBetweenBlocks = desired;
+            }
+            // Switching to committed: collapse any open segment — once locked, there's
+            // no Done control to close it and an expanded locked editor is just noise.
+            if (!desired && state.expandedScheduleSegmentIndex >= 0) {
+                state.expandedScheduleSegmentIndex = -1;
+                rebuildScheduleSegments();
+            }
+            updateScheduleButtonState();
+            if (desired) void syncUnlockedScheduleEditsToData();
+        });
     });
 }
 
@@ -355,7 +361,7 @@ export function setScheduleMode(isSchedule) {
 
 // Toggle Repeat dropdown visibility
 export function closeSchedulePanelDropdownMenus(exceptMenuId = null) {
-    for (const menuId of ['repeat-dropdown-menu', 'schedule-panel-overlay-dropdown-menu']) {
+    for (const menuId of ['repeat-dropdown-menu', 'schedule-panel-overlay-dropdown-menu', 'schedule-strictness-dropdown-menu']) {
         if (menuId !== exceptMenuId) {
             document.getElementById(menuId)?.classList.add('hidden');
         }

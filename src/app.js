@@ -3154,12 +3154,11 @@ export function applySettingsLanguage() {
     setText('schedule-end-label', tSettings('end'));
     setText('schedule-days-label', tSettings('days'));
     setText('add-segment-label', tSettings('add'));
-    setText('schedule-strictness-label', tSettings('scheduleStrictnessLabel'));
-    setText('allow-edits-heading', tSettings('allowEditsHeading'));
-    setText('allow-edits-flexible-label', tSettings('allowEditsFlexibleLabel'));
-    setText('allow-edits-flexible-desc', tSettings('allowEditsFlexibleDesc'));
-    setText('allow-edits-strict-label', tSettings('allowEditsStrictLabel'));
-    setText('allow-edits-strict-desc', tSettings('allowEditsStrictDesc'));
+    setText('schedule-strictness-label', `${tSettings('scheduleStrictnessLabel')}${tSettings('stopScheduleMetaColon')}`);
+    setText('strictness-option-committed-title', tSettings('allowEditsStrictLabel'));
+    setText('strictness-option-committed-desc', tSettings('allowEditsStrictDesc'));
+    setText('strictness-option-flexible-title', tSettings('allowEditsFlexibleLabel'));
+    setText('strictness-option-flexible-desc', tSettings('allowEditsFlexibleDesc'));
     setText('schedule-segments-heading', tSettings('scheduleWhenHeading'));
     setText('repeat-label', tSettings('repeat'));
     setText('schedule-panel-overlay-label', tSettings('scheduleActiveOverlayLabel'));
