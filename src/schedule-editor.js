@@ -33,12 +33,12 @@ export function isAllowEditsBetweenBlocksOn(schedule = getSelectedSchedule()) {
 }
 
 /**
- * Turning the opt-in ON is only allowed before the schedule is started, or while
- * it is paused/stopped. Turning OFF is always allowed (including mid-enforcement).
+ * Turning the opt-in ON is only allowed before the schedule is started, or after
+ * it is fully stopped. Pausing is not enough. Turning OFF is always allowed
+ * (including mid-enforcement).
  */
 export function canEnableAllowEditsBetweenBlocks(schedule = getSelectedSchedule()) {
-    if (!schedule) return true;
-    return isSchedulePausedNow(schedule);
+    return !schedule;
 }
 
 /**
@@ -59,22 +59,48 @@ export function syncAllowEditsBetweenBlocksToggle() {
     const toggle = document.getElementById('allow-edits-between-blocks-toggle');
     const row = document.getElementById('allow-edits-between-blocks-row');
     if (!toggle) return;
-    const on = isAllowEditsBetweenBlocksOn();
-    toggle.checked = on;
-    // Keep interactive when on so the user can always turn it off.
-    const locked = !on && !canEnableAllowEditsBetweenBlocks();
+    const flexible = isAllowEditsBetweenBlocksOn();
+    // Checked = strict (right position); unchecked = flexible (left position).
+    toggle.checked = !flexible;
+    // Switching to strict is always allowed; switching back to flexible only
+    // before the schedule is started or after it is fully stopped.
+    const locked = !flexible && !canEnableAllowEditsBetweenBlocks();
     toggle.disabled = locked;
     row?.classList.toggle('is-locked', locked);
+    row?.querySelector('.allow-edits-side-flexible')?.classList.toggle('is-active', flexible);
+    row?.querySelector('.allow-edits-side-strict')?.classList.toggle('is-active', !flexible);
+    const lockTitle = locked ? tSettings('allowEditsBetweenBlocksLockedTooltip') : '';
+    if (row) row.title = lockTitle;
+    toggle.title = lockTitle;
+}
+
+export function setScheduleStrictnessExpanded(expanded) {
+    const toggle = document.getElementById('schedule-strictness-toggle');
+    const content = document.getElementById('schedule-strictness-content');
+    if (!toggle || !content) return;
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    content.classList.toggle('hidden', !expanded);
 }
 
 export function setupAllowEditsBetweenBlocksToggle() {
+    const strictnessToggle = document.getElementById('schedule-strictness-toggle');
+    if (strictnessToggle && strictnessToggle.dataset.bound !== '1') {
+        strictnessToggle.dataset.bound = '1';
+        strictnessToggle.addEventListener('click', () => {
+            const isOpen = strictnessToggle.getAttribute('aria-expanded') === 'true';
+            setScheduleStrictnessExpanded(!isOpen);
+            setTimeout(() => updateWindowHeight(), 50);
+        });
+    }
+
     const toggle = document.getElementById('allow-edits-between-blocks-toggle');
     if (!toggle || toggle.dataset.bound === '1') return;
     toggle.dataset.bound = '1';
     toggle.addEventListener('change', async () => {
-        const desired = !!toggle.checked;
+        // Checked = strict, so the desired allow-edits (flexible) flag is the inverse.
+        const desired = !toggle.checked;
         if (desired && !canEnableAllowEditsBetweenBlocks()) {
-            toggle.checked = false;
+            toggle.checked = true;
             syncAllowEditsBetweenBlocksToggle();
             return;
         }

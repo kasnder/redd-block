@@ -718,7 +718,11 @@
                                         </div>
                                         <span class="time-separator" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M13 6l6 6-6 6"></path></svg></span>
                                         <div class="time-picker-group">
-                                            <label class="time-label" id="end-label">End</label>
+                                            <div class="time-label-row">
+                                                <label class="time-label" id="end-label">End</label>
+                                                <span id="next-day-indicator" class="next-day-inline hidden">+1
+                                                    day</span>
+                                            </div>
                                             <div class="time-picker-row">
                                                 <div class="time-display" id="end-time-display">
                                                     <div class="time-part-wrapper">
@@ -741,8 +745,6 @@
                                                         </div>
                                                     </div>
                                                 </div>
-                                                <span id="next-day-indicator" class="next-day-badge hidden">+1
-                                                    day</span>
                                             </div>
                                         </div>
                                     </div>
@@ -899,15 +901,37 @@
                                     </div>
                                 </div>
 
-                                <div id="allow-edits-between-blocks-row" class="allow-edits-between-blocks-row">
-                                    <div class="allow-edits-between-blocks-copy">
-                                        <span id="allow-edits-between-blocks-label" class="allow-edits-between-blocks-label">Allow edits between blocks</span>
-                                        <span id="allow-edits-between-blocks-hint" class="allow-edits-between-blocks-hint">If you turn this on, you can pause or change this schedule when it is not actively blocking.</span>
+                                <div id="schedule-strictness-section" class="schedule-strictness-section">
+                                    <button type="button" id="schedule-strictness-toggle"
+                                        class="schedule-strictness-toggle"
+                                        aria-expanded="false"
+                                        aria-controls="schedule-strictness-content">
+                                        <span id="schedule-strictness-label" class="repeat-label schedule-strictness-label">Strictness</span>
+                                        <svg class="schedule-strictness-chevron" width="14" height="14" viewBox="0 0 24 24"
+                                            fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                            stroke-linejoin="round" aria-hidden="true">
+                                            <polyline points="9 6 15 12 9 18"></polyline>
+                                        </svg>
+                                    </button>
+                                    <div id="schedule-strictness-content" class="schedule-strictness-content hidden">
+                                        <div id="allow-edits-between-blocks-row" class="allow-edits-between-blocks-row">
+                                            <span id="allow-edits-heading" class="allow-edits-heading">Editing while the schedule runs</span>
+                                            <div class="allow-edits-switch-grid">
+                                                <div class="allow-edits-side allow-edits-side-flexible">
+                                                    <span id="allow-edits-flexible-label" class="allow-edits-side-label">Flexible</span>
+                                                    <span id="allow-edits-flexible-desc" class="allow-edits-side-desc">When the schedule isn't actively blocking, you can edit or pause it however you like.</span>
+                                                </div>
+                                                <label class="enforcement-switch" for="allow-edits-between-blocks-toggle">
+                                                    <input type="checkbox" id="allow-edits-between-blocks-toggle" />
+                                                    <span class="enforcement-slider"></span>
+                                                </label>
+                                                <div class="allow-edits-side allow-edits-side-strict">
+                                                    <span id="allow-edits-strict-label" class="allow-edits-side-label">Committed</span>
+                                                    <span id="allow-edits-strict-desc" class="allow-edits-side-desc">Until you fully stop the schedule, the only changes you can make are ones that make it more restrictive.</span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <label class="enforcement-switch" for="allow-edits-between-blocks-toggle">
-                                        <input type="checkbox" id="allow-edits-between-blocks-toggle" />
-                                        <span class="enforcement-slider"></span>
-                                    </label>
                                 </div>
                             </div>
 

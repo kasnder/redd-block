@@ -3154,8 +3154,12 @@ export function applySettingsLanguage() {
     setText('schedule-end-label', tSettings('end'));
     setText('schedule-days-label', tSettings('days'));
     setText('add-segment-label', tSettings('add'));
-    setText('allow-edits-between-blocks-label', tSettings('allowEditsBetweenBlocksLabel'));
-    setText('allow-edits-between-blocks-hint', tSettings('allowEditsBetweenBlocksHint'));
+    setText('schedule-strictness-label', tSettings('scheduleStrictnessLabel'));
+    setText('allow-edits-heading', tSettings('allowEditsHeading'));
+    setText('allow-edits-flexible-label', tSettings('allowEditsFlexibleLabel'));
+    setText('allow-edits-flexible-desc', tSettings('allowEditsFlexibleDesc'));
+    setText('allow-edits-strict-label', tSettings('allowEditsStrictLabel'));
+    setText('allow-edits-strict-desc', tSettings('allowEditsStrictDesc'));
     setText('schedule-segments-heading', tSettings('scheduleWhenHeading'));
     setText('repeat-label', tSettings('repeat'));
     setText('schedule-panel-overlay-label', tSettings('scheduleActiveOverlayLabel'));
