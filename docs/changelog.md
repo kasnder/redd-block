@@ -10,6 +10,23 @@ SCHEDULES), then platform-specific notes under nested headings:
 `#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
 description.` Legacy flat lists still work.
 
+## v3.8.3
+
+### FOCUS SPACES & SCHEDULES
+
+- **Schedule Strictness.** The between-blocks editing opt-in is now a
+  Strictness dropdown (Committed / Flexible) alongside Repeat and Start alert.
+  Committed is the default: once a schedule is started you can only make it
+  stricter until you stop it entirely. Flexible lets you edit or pause when
+  the schedule isn't actively blocking — and switching back to Flexible
+  requires a full stop, not just a pause.
+
+### BY PLATFORM
+
+#### DESKTOP
+
+- **Version:** 3.8.3 (macOS, Windows, and iOS).
+
 ## v3.8.2
 
 ### FOCUS SPACES & SCHEDULES
