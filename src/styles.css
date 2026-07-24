@@ -6852,6 +6852,46 @@ body.android .day-toggle {
     display: none;
 }
 
+.allow-edits-between-blocks-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-top: 14px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    background: var(--redd-warm-grey);
+}
+
+.allow-edits-between-blocks-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+    flex: 1;
+}
+
+.allow-edits-between-blocks-label {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text-primary);
+}
+
+.allow-edits-between-blocks-hint {
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+body.dark-mode .allow-edits-between-blocks-row {
+    background: var(--settings-panel-bg);
+}
+
+#pause-modal.pause-frictionless .pause-challenge-friction-only {
+    display: none;
+}
+
 .schedule-pending-label{
     color: var(--text-color);
     font-weight: 500;

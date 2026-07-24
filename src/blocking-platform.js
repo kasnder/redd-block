@@ -13,7 +13,7 @@ import { isSchedulePausedNow, refreshDesktopHelperStatus, scheduleHasFutureSingl
 import { saveData, updateHostsFile, createDefaultBlocklist } from './persistence.js';
 import { render } from './render.js';
 import { renderBlocklists } from './blocklists.js';
-import { isScheduleSegmentActiveNow } from './schedule-editor.js';
+import { canEditScheduleBetweenBlocks, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { applyScheduleStartOverlayPresentation, getScheduleStartOverlayForWarningApps, playAppBlockingLetsGoVoice } from './schedule-overlay.js';
 import { closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, initializeOverrideModalChallenge, openPauseModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
 import { isModalVisible } from './modal-manager.js';
@@ -1213,7 +1213,8 @@ export function openAndroidFrictionGateModal(event) {
 
     state.pauseScheduleData = {
         blocklistId: target.schedule.blocklistId,
-        isActiveNow: isScheduleSegmentActiveNow(target.schedule)
+        isActiveNow: isScheduleSegmentActiveNow(target.schedule),
+        frictionless: canEditScheduleBetweenBlocks(target.schedule),
     };
     openPauseModal(null);
 }

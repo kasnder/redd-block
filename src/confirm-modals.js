@@ -10,7 +10,7 @@ import { isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelpe
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
 import { clearPendingScheduleDraft, renderBlocklists, truncateBlocklistName } from './blocklists.js';
-import { getCommittedScheduleSegmentCount, getInitialExpandedScheduleSegmentIndex, isScheduleSegmentActiveNow, rebuildScheduleSegments, setAlwaysOnMode, setScheduleMode, updateScheduleButtonState } from './schedule-editor.js';
+import { getCommittedScheduleSegmentCount, getInitialExpandedScheduleSegmentIndex, isScheduleSegmentActiveNow, rebuildScheduleSegments, setAlwaysOnMode, setScheduleMode, updateScheduleButtonState, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { getEffectiveScheduleStartOverlayId, rememberLastScheduleStartOverlayId, syncScheduleConfirmOverlaySummary } from './schedule-overlay.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, initializeTimeInputs, pad, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
 import { resetModalScrollPosition, updateBlockedApps, updateOnboardingVisibility, updateWindowHeight, requestScreentimeAuth, isHelperConnectionError } from './blocking-platform.js';
@@ -641,6 +641,7 @@ export async function proceedWithSchedule() {
         repeatDate: state.scheduleRepeatType === 'date' ? state.scheduleRepeatDate : null,
         createdAt: Date.now(),
         startOverlayId,
+        allowEditsBetweenBlocks: !!state.draftAllowEditsBetweenBlocks,
     };
 
     // Save to state.appData
@@ -2548,10 +2549,13 @@ export function openBlocklistModal(blocklist = null) {
     const hasActiveBlock = blocklist?.id && state.appData.activeBlocks.some(
         b => b.blocklistId === blocklist.id && b.startTime <= now && b.endTime > now
     );
-    const hasActiveSchedule = blocklist?.id && state.appData.schedules?.some(
-        s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0
-    );
-    const isActive = hasActiveBlock || hasActiveSchedule;
+    const scheduleForBlocklist = blocklist?.id && state.appData.schedules
+        ? state.appData.schedules.find(s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0)
+        : null;
+    const hasActiveSchedule = !!scheduleForBlocklist;
+    const betweenBlocksEditable = canEditScheduleBetweenBlocks(scheduleForBlocklist);
+    // Hard lock when a one-off is running, or a schedule is running without between-blocks editing.
+    const isActive = hasActiveBlock || (hasActiveSchedule && !betweenBlocksEditable);
 
     const warningEl = document.getElementById('active-blocklist-warning');
     const modeInputs = document.getElementById('blocklist-modal').querySelectorAll('.radio-option');
@@ -2571,9 +2575,15 @@ export function openBlocklistModal(blocklist = null) {
     const overridePreviewBlockEl = document.getElementById('override-preview-block');
     const overrideTimeEstimateEl = document.getElementById('override-count-time-estimate');
 
+    // Mode stays locked whenever any block/schedule is running.
+    if (hasActiveBlock || hasActiveSchedule) {
+        modeInputs.forEach(el => el.classList.add('disabled'));
+    } else {
+        modeInputs.forEach(el => el.classList.remove('disabled'));
+    }
+
     if (isActive) {
         warningEl.classList.remove('hidden');
-        modeInputs.forEach(el => el.classList.add('disabled'));
         overrideInputs.forEach(el => el.disabled = true);
 
         // Style override type dropdown (like repeat dropdown)
@@ -2606,7 +2616,6 @@ export function openBlocklistModal(blocklist = null) {
         );
     } else {
         warningEl.classList.add('hidden');
-        modeInputs.forEach(el => el.classList.remove('disabled'));
         overrideInputs.forEach(el => el.disabled = false);
 
         // Remove disabled styling
@@ -2864,6 +2873,7 @@ export function handlePauseBlockButtonClick() {
     state.pauseScheduleData = {
         blocklistId: target.blocklistId,
         isActiveNow: isScheduleSegmentActiveNow(target.schedule),
+        frictionless: canEditScheduleBetweenBlocks(target.schedule),
     };
     openPauseModal(null);
 }
@@ -3032,6 +3042,9 @@ export function openPauseModal(blockId) {
 
     const isSchedule = !blockId && !!state.pauseScheduleData;
     const isScheduleInactive = isSchedule && !state.pauseScheduleData.isActiveNow;
+    const frictionless = isSchedule && !!state.pauseScheduleData.frictionless;
+    const pauseModal = document.getElementById('pause-modal');
+    pauseModal?.classList.toggle('pause-frictionless', frictionless);
 
     populatePauseConfirmModalContent(blocklist, {
         block,
@@ -3079,24 +3092,37 @@ export function openPauseModal(blockId) {
     initPauseRestartPopovers();
     updatePauseRestartTime();
 
-    // Generate challenge text
-    const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-    state.pauseChallengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
-
-    state.pauseChallengeText = state.pauseChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
-
-    document.getElementById('pause-challenge-text').textContent = state.pauseChallengeText;
-    document.getElementById('pause-challenge-input').value = '';
-    document.getElementById('pause-challenge-word-input').value = '';
-    state.pauseWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(state.pauseChallengeText) : null;
-    setPauseWordChallengeMode(!!state.pauseWordChallengeState);
-
-    const progressBar = document.getElementById('pause-challenge-progress-bar');
-    progressBar.style.width = '0%';
-    if (blocklist.color) {
-        progressBar.style.background = blocklist.color;
+    const instructionEl = document.getElementById('pause-modal-instruction');
+    if (frictionless) {
+        if (instructionEl) instructionEl.textContent = tSettings('pauseDifficultyLiftedByAllowEdits');
+        state.pauseChallengeText = '';
+        state.pauseWordChallengeState = null;
+        setPauseWordChallengeMode(false);
+        document.getElementById('pause-challenge-text').textContent = '';
+        document.getElementById('pause-challenge-input').value = '';
+        document.getElementById('pause-challenge-word-input').value = '';
+        document.getElementById('confirm-pause-btn').disabled = false;
     } else {
-        progressBar.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
+        if (instructionEl) instructionEl.textContent = tSettings('pauseInstruction');
+        // Generate challenge text
+        const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
+        state.pauseChallengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
+
+        state.pauseChallengeText = state.pauseChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+
+        document.getElementById('pause-challenge-text').textContent = state.pauseChallengeText;
+        document.getElementById('pause-challenge-input').value = '';
+        document.getElementById('pause-challenge-word-input').value = '';
+        state.pauseWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(state.pauseChallengeText) : null;
+        setPauseWordChallengeMode(!!state.pauseWordChallengeState);
+
+        const progressBar = document.getElementById('pause-challenge-progress-bar');
+        progressBar.style.width = '0%';
+        if (blocklist.color) {
+            progressBar.style.background = blocklist.color;
+        } else {
+            progressBar.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
+        }
     }
 
     // Reset wiggle
@@ -3105,6 +3131,10 @@ export function openPauseModal(blockId) {
     document.getElementById('pause-modal').classList.remove('hidden');
     requestAnimationFrame(() => {
         syncPauseDurationRowLayout();
+        if (frictionless) {
+            document.getElementById('confirm-pause-btn').disabled = false;
+            return;
+        }
         if (state.pauseWordChallengeState) {
             renderPauseWordChallengeState();
             document.getElementById('pause-challenge-word-input')?.focus();
@@ -3129,7 +3159,9 @@ export function syncPauseDurationRowLayout() {
 }
 
 export function closePauseModal() {
-    document.getElementById('pause-modal').classList.add('hidden');
+    const pauseModal = document.getElementById('pause-modal');
+    pauseModal?.classList.add('hidden');
+    pauseModal?.classList.remove('pause-frictionless');
     state.pauseBlockId = null;
     state.pauseScheduleData = null;
     state.pauseChallengeText = '';
@@ -3315,47 +3347,49 @@ function wigglePauseModal() {
 export async function proceedWithPause() {
     if (!state.pauseBlockId && !state.pauseScheduleData) return;
 
-    if (state.pauseWordChallengeState) {
-        const typedWord = document.getElementById('pause-challenge-word-input').value.trim();
-        const expectedWord = getCurrentChallengeWord(state.pauseWordChallengeState);
-        if (typedWord === expectedWord) {
-            state.pauseWordChallengeState.currentIndex++;
-            if (state.pauseWordChallengeState.currentIndex < state.pauseWordChallengeState.words.length) {
-                renderPauseWordChallengeState();
-                document.getElementById('pause-challenge-word-input')?.focus();
+    if (!state.pauseScheduleData?.frictionless) {
+        if (state.pauseWordChallengeState) {
+            const typedWord = document.getElementById('pause-challenge-word-input').value.trim();
+            const expectedWord = getCurrentChallengeWord(state.pauseWordChallengeState);
+            if (typedWord === expectedWord) {
+                state.pauseWordChallengeState.currentIndex++;
+                if (state.pauseWordChallengeState.currentIndex < state.pauseWordChallengeState.words.length) {
+                    renderPauseWordChallengeState();
+                    document.getElementById('pause-challenge-word-input')?.focus();
+                    return;
+                }
+                state.pauseWordChallengeState.typedText = state.pauseChallengeText;
+            } else {
+                wigglePauseModal();
+                document.getElementById('pause-current-word').textContent = expectedWord;
                 return;
             }
-            state.pauseWordChallengeState.typedText = state.pauseChallengeText;
-        } else {
+        }
+
+        const typed = state.pauseWordChallengeState
+            ? (state.pauseWordChallengeState.typedText || '')
+            : document.getElementById('pause-challenge-input').value;
+        const target = state.pauseChallengeText;
+        if (typed !== target) {
+            let firstErrorIndex = -1;
+            for (let i = 0; i < Math.max(typed.length, target.length); i++) {
+                if (typed[i] !== target[i]) {
+                    firstErrorIndex = i;
+                    break;
+                }
+            }
+            if (firstErrorIndex === -1 && typed.length < target.length) {
+                firstErrorIndex = typed.length;
+            }
             wigglePauseModal();
-            document.getElementById('pause-current-word').textContent = expectedWord;
+            if (state.pauseWordChallengeState) {
+                document.getElementById('pause-current-word').textContent =
+                    getCurrentChallengeWord(state.pauseWordChallengeState);
+            } else {
+                renderPauseChallengeText(firstErrorIndex);
+            }
             return;
         }
-    }
-
-    const typed = state.pauseWordChallengeState
-        ? (state.pauseWordChallengeState.typedText || '')
-        : document.getElementById('pause-challenge-input').value;
-    const target = state.pauseChallengeText;
-    if (typed !== target) {
-        let firstErrorIndex = -1;
-        for (let i = 0; i < Math.max(typed.length, target.length); i++) {
-            if (typed[i] !== target[i]) {
-                firstErrorIndex = i;
-                break;
-            }
-        }
-        if (firstErrorIndex === -1 && typed.length < target.length) {
-            firstErrorIndex = typed.length;
-        }
-        wigglePauseModal();
-        if (state.pauseWordChallengeState) {
-            document.getElementById('pause-current-word').textContent =
-                getCurrentChallengeWord(state.pauseWordChallengeState);
-        } else {
-            renderPauseChallengeText(firstErrorIndex);
-        }
-        return;
     }
 
     const days = parseInt(document.getElementById('pause-days').value) || 0;

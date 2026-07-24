@@ -898,6 +898,17 @@
                                         <button type="button" class="schedule-pending-save" id="schedule-pending-save">Save changes</button>
                                     </div>
                                 </div>
+
+                                <div id="allow-edits-between-blocks-row" class="allow-edits-between-blocks-row">
+                                    <div class="allow-edits-between-blocks-copy">
+                                        <span id="allow-edits-between-blocks-label" class="allow-edits-between-blocks-label">Allow edits between blocks</span>
+                                        <span id="allow-edits-between-blocks-hint" class="allow-edits-between-blocks-hint">If you turn this on, you can pause or change this schedule when it is not actively blocking.</span>
+                                    </div>
+                                    <label class="enforcement-switch" for="allow-edits-between-blocks-toggle">
+                                        <input type="checkbox" id="allow-edits-between-blocks-toggle" />
+                                        <span class="enforcement-slider"></span>
+                                    </label>
+                                </div>
                             </div>
 
                             <!-- Block action buttons wrapper (footer of the card) -->
@@ -1722,15 +1733,15 @@
                 <div id="pause-remaining-info" class="pause-remaining-info hidden"></div>
 
                 <p id="pause-modal-instruction" class="override-challenge-instruction">To pause this focus space, type the following:</p>
-                <div id="pause-challenge-text" class="challenge-text"></div>
-                <div id="pause-word-progress" class="challenge-word-progress hidden"></div>
-                <div id="pause-current-word" class="challenge-current-word hidden"></div>
-                <input id="pause-challenge-word-input" class="challenge-input challenge-word-input hidden"
+                <div id="pause-challenge-text" class="challenge-text pause-challenge-friction-only"></div>
+                <div id="pause-word-progress" class="challenge-word-progress hidden pause-challenge-friction-only"></div>
+                <div id="pause-current-word" class="challenge-current-word hidden pause-challenge-friction-only"></div>
+                <input id="pause-challenge-word-input" class="challenge-input challenge-word-input hidden pause-challenge-friction-only"
                     placeholder="Type current word..." autocomplete="off" autocorrect="off" autocapitalize="off"
                     spellcheck="false">
-                <textarea id="pause-challenge-input" class="challenge-input" placeholder="Type here..."
+                <textarea id="pause-challenge-input" class="challenge-input pause-challenge-friction-only" placeholder="Type here..."
                     autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
-                <div class="challenge-progress">
+                <div class="challenge-progress pause-challenge-friction-only">
                     <div id="pause-challenge-progress-bar" class="challenge-progress-bar"></div>
                 </div>
 

@@ -47,6 +47,8 @@ export const state = {
     isAlwaysOnMode: false, // false = timed block, true = always-on (permanent) block
     scheduleRepeatType: 'forever', // 'forever', 'date', or 'no'
     activeScheduleSegmentCount: 0, // Number of segments locked in the active schedule (new segments can be added)
+    /** Draft for allowEditsBetweenBlocks before a schedule is started (opt-in, default off). */
+    draftAllowEditsBetweenBlocks: false,
     selectedEndHour: 20,
     selectedEndMinute: 30,
     targetDurationMinutes: 60, // Default 60-minute block

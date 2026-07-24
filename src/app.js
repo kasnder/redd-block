@@ -77,8 +77,8 @@ import {
     addScheduleSegment, discardSchedulePendingChanges, getCommittedScheduleSegmentCount,
     getDefaultScheduleSegments, getInitialExpandedScheduleSegmentIndex, handleRepeatDateChange,
     handleRepeatOptionClick, handleSegmentDayToggle, rebuildScheduleSegments,
-    saveSchedulePendingChanges, setAlwaysOnMode, setScheduleMode, startSchedule,
-    toggleRepeatDropdown, updateScheduleButtonState, isScheduleSegmentActiveNow,
+    saveSchedulePendingChanges, setAlwaysOnMode, setScheduleMode, setupAllowEditsBetweenBlocksToggle,
+    startSchedule, toggleRepeatDropdown, updateScheduleButtonState, isScheduleSegmentActiveNow,
     formatDateForDisplay,
 } from './schedule-editor.js';
 import {
@@ -745,6 +745,7 @@ function setupEventListeners() {
 
     // Add segment button
     document.getElementById('add-segment-btn')?.addEventListener('click', addScheduleSegment);
+    setupAllowEditsBetweenBlocksToggle();
 
     // Start schedule button
     document.getElementById('start-schedule-btn')?.addEventListener('click', startSchedule);
@@ -3153,6 +3154,8 @@ export function applySettingsLanguage() {
     setText('schedule-end-label', tSettings('end'));
     setText('schedule-days-label', tSettings('days'));
     setText('add-segment-label', tSettings('add'));
+    setText('allow-edits-between-blocks-label', tSettings('allowEditsBetweenBlocksLabel'));
+    setText('allow-edits-between-blocks-hint', tSettings('allowEditsBetweenBlocksHint'));
     setText('schedule-segments-heading', tSettings('scheduleWhenHeading'));
     setText('repeat-label', tSettings('repeat'));
     setText('schedule-panel-overlay-label', tSettings('scheduleActiveOverlayLabel'));

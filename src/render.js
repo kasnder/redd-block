@@ -565,7 +565,9 @@ export function handleNowBlockingPause(entry) {
     if (entry.kind === 'schedule') {
         state.pauseScheduleData = {
             blocklistId: entry.blocklistId,
-            isActiveNow: true
+            isActiveNow: true,
+            // Now-blocking chip only appears while enforcing — keep friction.
+            frictionless: false,
         };
         openPauseModal(null);
     }
