@@ -10,6 +10,27 @@ SCHEDULES), then platform-specific notes under nested headings:
 `#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
 description.` Legacy flat lists still work.
 
+## v3.8.2
+
+### FOCUS SPACES & SCHEDULES
+
+- **Allow edits between blocks.** A new toggle that applies independently to 
+  every schedule that lets you change websites/apps, time segments, and other 
+  settings when there are no active time segments. It also removes all 
+  friction when pausing under the same conditions. Off-by-default - can only
+  be turned on before starting a schedule or if you pause/stop a schedule.
+
+### BY PLATFORM
+
+#### DESKTOP
+
+- **Clearer typing challenges.** Long override, pause, and stop challenges
+  auto-scroll so the next words stay visible, highlight the first mismatch
+  (including spaces), and block doubled or leading spaces that used to cause
+  invisible mismatches. Reference and input text wrapping stay aligned.
+
+- **Version:** 3.8.2 (macOS, Windows, and iOS).
+
 ## v3.8.1
 
 ### BY PLATFORM
