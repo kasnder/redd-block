@@ -6868,6 +6868,19 @@ body.android .day-toggle {
     background: var(--redd-warm-grey);
 }
 
+.allow-edits-between-blocks-row.is-locked {
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.allow-edits-between-blocks-row.is-locked .allow-edits-between-blocks-label {
+    color: var(--text-muted);
+}
+
+.allow-edits-between-blocks-row.is-locked .enforcement-switch input:disabled + .enforcement-slider {
+    opacity: 1;
+}
+
 .allow-edits-between-blocks-copy {
     display: flex;
     flex-direction: column;

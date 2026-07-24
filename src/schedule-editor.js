@@ -33,6 +33,15 @@ export function isAllowEditsBetweenBlocksOn(schedule = getSelectedSchedule()) {
 }
 
 /**
+ * Turning the opt-in ON is only allowed before the schedule is started, or while
+ * it is paused/stopped. Turning OFF is always allowed (including mid-enforcement).
+ */
+export function canEnableAllowEditsBetweenBlocks(schedule = getSelectedSchedule()) {
+    if (!schedule) return true;
+    return isSchedulePausedNow(schedule);
+}
+
+/**
  * Active schedule with the opt-in on, and not currently enforcing a time segment
  * (paused schedules count as not enforcing).
  */
@@ -48,8 +57,14 @@ export function isScheduleSegmentMutationBlocked(segmentIndex) {
 
 export function syncAllowEditsBetweenBlocksToggle() {
     const toggle = document.getElementById('allow-edits-between-blocks-toggle');
+    const row = document.getElementById('allow-edits-between-blocks-row');
     if (!toggle) return;
-    toggle.checked = isAllowEditsBetweenBlocksOn();
+    const on = isAllowEditsBetweenBlocksOn();
+    toggle.checked = on;
+    // Keep interactive when on so the user can always turn it off.
+    const locked = !on && !canEnableAllowEditsBetweenBlocks();
+    toggle.disabled = locked;
+    row?.classList.toggle('is-locked', locked);
 }
 
 export function setupAllowEditsBetweenBlocksToggle() {
@@ -58,6 +73,11 @@ export function setupAllowEditsBetweenBlocksToggle() {
     toggle.dataset.bound = '1';
     toggle.addEventListener('change', async () => {
         const desired = !!toggle.checked;
+        if (desired && !canEnableAllowEditsBetweenBlocks()) {
+            toggle.checked = false;
+            syncAllowEditsBetweenBlocksToggle();
+            return;
+        }
         const schedule = getSelectedSchedule();
         if (schedule) {
             schedule.allowEditsBetweenBlocks = desired;
