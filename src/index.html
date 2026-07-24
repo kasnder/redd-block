@@ -839,26 +839,52 @@
                                 <!-- Repeat Section -->
                                 <div class="schedule-repeat-section" id="schedule-repeat-section">
                                     <span class="repeat-label" id="repeat-label">Repeat:</span>
-                                    <div class="repeat-dropdown-wrapper">
-                                        <button type="button" class="repeat-dropdown-btn" id="repeat-dropdown-btn">
-                                            <span id="repeat-dropdown-text">Forever</span>
+                                    <div class="repeat-control-stack">
+                                        <div class="repeat-dropdown-wrapper">
+                                            <button type="button" class="repeat-dropdown-btn" id="repeat-dropdown-btn">
+                                                <span id="repeat-dropdown-text">Forever</span>
+                                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                                                    stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                                    stroke-linejoin="round">
+                                                    <polyline points="6 9 12 15 18 9"></polyline>
+                                                </svg>
+                                            </button>
+                                            <div class="repeat-dropdown-menu hidden" id="repeat-dropdown-menu">
+                                                <button type="button" class="repeat-option active"
+                                                    data-value="forever">Forever</button>
+                                                <button type="button" class="repeat-option" data-value="date">Until
+                                                    date</button>
+                                                <button type="button" class="repeat-option" data-value="no">No</button>
+                                            </div>
+                                        </div>
+                                        <div class="repeat-date-wrapper hidden" id="repeat-date-wrapper">
+                                            <input type="date" class="repeat-date-input" id="repeat-date-input">
+                                            <span class="repeat-date-overlay" id="repeat-date-overlay"></span>
+                                        </div>
+                                    </div>
+
+                                    <span class="repeat-label" id="schedule-strictness-label">Strictness:</span>
+                                    <div class="repeat-dropdown-wrapper" id="schedule-strictness-dropdown-wrapper">
+                                        <button type="button" class="repeat-dropdown-btn"
+                                            id="schedule-strictness-dropdown-btn">
+                                            <span id="schedule-strictness-dropdown-text">Committed</span>
                                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
                                                 stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                stroke-linejoin="round">
+                                                stroke-linejoin="round" aria-hidden="true">
                                                 <polyline points="6 9 12 15 18 9"></polyline>
                                             </svg>
                                         </button>
-                                        <div class="repeat-dropdown-menu hidden" id="repeat-dropdown-menu">
-                                            <button type="button" class="repeat-option active"
-                                                data-value="forever">Forever</button>
-                                            <button type="button" class="repeat-option" data-value="date">Until
-                                                date</button>
-                                            <button type="button" class="repeat-option" data-value="no">No</button>
+                                        <div class="repeat-dropdown-menu strictness-dropdown-menu hidden"
+                                            id="schedule-strictness-dropdown-menu">
+                                            <button type="button" class="strictness-option active" data-value="committed">
+                                                <span class="strictness-option-title" id="strictness-option-committed-title">Committed</span>
+                                                <span class="strictness-option-desc" id="strictness-option-committed-desc">Once started, you can only make this schedule stricter, until you stop it entirely.</span>
+                                            </button>
+                                            <button type="button" class="strictness-option" data-value="flexible">
+                                                <span class="strictness-option-title" id="strictness-option-flexible-title">Flexible</span>
+                                                <span class="strictness-option-desc" id="strictness-option-flexible-desc">You can edit or pause this schedule whenever it isn't actively blocking.</span>
+                                            </button>
                                         </div>
-                                    </div>
-                                    <div class="repeat-date-wrapper hidden" id="repeat-date-wrapper">
-                                        <input type="date" class="repeat-date-input" id="repeat-date-input">
-                                        <span class="repeat-date-overlay" id="repeat-date-overlay"></span>
                                     </div>
 
                                     <div class="schedule-panel-overlay-group" id="schedule-panel-overlay-section">
@@ -887,30 +913,6 @@
                                                         d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
                                                     <path d="m15 5 4 4" />
                                                 </svg>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <span class="repeat-label" id="schedule-strictness-label">Strictness:</span>
-                                    <div class="repeat-dropdown-wrapper" id="schedule-strictness-dropdown-wrapper">
-                                        <button type="button" class="repeat-dropdown-btn"
-                                            id="schedule-strictness-dropdown-btn">
-                                            <span id="schedule-strictness-dropdown-text">Committed</span>
-                                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
-                                                stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                                stroke-linejoin="round" aria-hidden="true">
-                                                <polyline points="6 9 12 15 18 9"></polyline>
-                                            </svg>
-                                        </button>
-                                        <div class="repeat-dropdown-menu strictness-dropdown-menu hidden"
-                                            id="schedule-strictness-dropdown-menu">
-                                            <button type="button" class="strictness-option active" data-value="committed">
-                                                <span class="strictness-option-title" id="strictness-option-committed-title">Committed</span>
-                                                <span class="strictness-option-desc" id="strictness-option-committed-desc">Until you fully stop the schedule, the only changes you can make are ones that make it more restrictive.</span>
-                                            </button>
-                                            <button type="button" class="strictness-option" data-value="flexible">
-                                                <span class="strictness-option-title" id="strictness-option-flexible-title">Flexible</span>
-                                                <span class="strictness-option-desc" id="strictness-option-flexible-desc">When the schedule isn't actively blocking, you can edit or pause it however you like.</span>
                                             </button>
                                         </div>
                                     </div>
