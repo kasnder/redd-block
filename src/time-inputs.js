@@ -62,25 +62,21 @@ export function disableScheduleControls(disabled) {
     const overlayLabel = document.getElementById('schedule-panel-overlay-label');
     const overlayDropdownBtn = document.getElementById('schedule-panel-overlay-dropdown-btn');
 
-    // Disable repeat dropdown button and label
+    // Grey-out repeat dropdown via class only — toggling the native `disabled`
+    // attribute steals/shows focus and the old border:none rule made the pill jump.
     if (repeatDropdownBtn) {
-        repeatDropdownBtn.disabled = disabled;
-        repeatDropdownBtn.style.pointerEvents = disabled ? 'none' : 'auto';
-        repeatDropdownBtn.style.cursor = disabled ? 'default' : 'pointer';
-        if (disabled) {
-            repeatDropdownBtn.classList.add('repeat-dropdown-disabled');
-        } else {
-            repeatDropdownBtn.classList.remove('repeat-dropdown-disabled');
+        if (disabled && document.activeElement === repeatDropdownBtn) {
+            repeatDropdownBtn.blur();
         }
+        repeatDropdownBtn.classList.toggle('repeat-dropdown-disabled', disabled);
+        repeatDropdownBtn.removeAttribute('disabled');
+        repeatDropdownBtn.style.removeProperty('pointer-events');
+        repeatDropdownBtn.style.removeProperty('cursor');
     }
 
     // Style repeat label
     if (repeatLabel) {
-        if (disabled) {
-            repeatLabel.classList.add('repeat-label-disabled');
-        } else {
-            repeatLabel.classList.remove('repeat-label-disabled');
-        }
+        repeatLabel.classList.toggle('repeat-label-disabled', disabled);
     }
 
     if (overlayLabel) {
@@ -89,10 +85,15 @@ export function disableScheduleControls(disabled) {
 
     if (overlayDropdownBtn) {
         const noPresets = getGlobalStartOverlays().length === 0;
-        overlayDropdownBtn.disabled = noPresets;
-        overlayDropdownBtn.style.pointerEvents = noPresets ? 'none' : 'auto';
-        overlayDropdownBtn.style.cursor = noPresets ? 'default' : 'pointer';
+        if (noPresets && document.activeElement === overlayDropdownBtn) {
+            overlayDropdownBtn.blur();
+        }
         overlayDropdownBtn.classList.toggle('repeat-dropdown-disabled', noPresets);
+        if (!noPresets) {
+            overlayDropdownBtn.removeAttribute('disabled');
+            overlayDropdownBtn.style.removeProperty('pointer-events');
+            overlayDropdownBtn.style.removeProperty('cursor');
+        }
     }
 
     // When schedule is active and repeat is "until date", grey out the date selector.

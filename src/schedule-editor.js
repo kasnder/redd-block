@@ -319,12 +319,11 @@ export function closeSchedulePanelDropdownMenus(exceptMenuId = null) {
 export function toggleRepeatDropdown(e) {
     e.stopPropagation();
 
-    // Don't allow opening dropdown when schedule is active
-    if (state.activeScheduleSegmentCount > 0) return;
+    // Don't allow opening dropdown when schedule is active (unless between-blocks editing)
+    if (state.activeScheduleSegmentCount > 0 && !canEditScheduleBetweenBlocks()) return;
 
-    // Also check if button is disabled
     const repeatDropdownBtn = document.getElementById('repeat-dropdown-btn');
-    if (repeatDropdownBtn && repeatDropdownBtn.disabled) {
+    if (repeatDropdownBtn?.classList.contains('repeat-dropdown-disabled')) {
         return;
     }
 
