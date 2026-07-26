@@ -304,10 +304,7 @@ jobs:
             $missing += $name
           }
           if ($missing.Count -gt 0) {
-            throw @"
-Missing GitHub secrets for Store submit: $($missing -join ', ').
-See docs/microsoft-store-ci.md — set these once, or uncheck submit_microsoft_store on manual runs.
-"@
+            throw "Missing GitHub secrets for Store submit: $($missing -join ', '). See docs/microsoft-store-ci.md — set these once, or uncheck submit_microsoft_store on manual runs."
           }
 
       - name: Download Windows Store artifacts
