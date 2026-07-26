@@ -64,8 +64,10 @@ Flow inside [`scripts/submit-microsoft-store.ps1`](../scripts/submit-microsoft-s
    ([`scripts/changelog-to-store-whats-new.js`](../scripts/changelog-to-store-whats-new.js)).
 3. `msstore submission get` → patch `releaseNotes` on every listing →
    `updateMetadata`.
-4. `msstore publish` the bundle (submits for certification). Live availability
-   follows the app’s Partner Center publishing schedule after certification.
+4. `msstore publish <bundle.msixbundle> -id <productId>` (path is the package
+   file — do not pass `-i` with a file; that flag is for a directory). Live
+   availability follows the app’s Partner Center publishing schedule after
+   certification.
 
 If What’s new stamping fails, the script still publishes the package and warns
 loudly (previous release notes would carry forward — fix in Partner Center).
@@ -84,6 +86,15 @@ msstore reconfigure `
 msstore apps list
 msstore submission get $env:MS_STORE_PRODUCT_ID
 ```
+
+## Retry submit without rebuilding
+
+If Partner Center submit fails but the GitHub Release already has `.msix`
+assets, use Actions → **Store submit only** → Run workflow with the release tag
+(e.g. `v3.8.4`). That checks out current `main` (so script fixes apply),
+downloads the Release packages, and re-runs submit — no macOS/Windows rebuild.
+
+Workflow: [`.github/workflows/store-submit.yml`](../.github/workflows/store-submit.yml).
 
 ## Manual fallback
 

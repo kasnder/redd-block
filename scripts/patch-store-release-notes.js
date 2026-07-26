@@ -42,18 +42,71 @@ function patch(submission, notes) {
   return stamped;
 }
 
+/**
+ * Repair `msstore submission get` stdout for JSON.parse.
+ *
+ * Spectre.Console wraps long lines at ~80 cols when stdout is redirected, which
+ * inserts *literal* newlines inside JSON string values. Real newlines in those
+ * strings were already escaped as `\n` by System.Text.Json — so any raw CR/LF
+ * inside a string is a wrap artifact and must be removed (not turned into `\n`),
+ * or we'd corrupt listing Description text on updateMetadata.
+ */
+function repairWrappedJsonStrings(text) {
+  let out = '';
+  let inString = false;
+  let escape = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (escape) {
+      out += c;
+      escape = false;
+      continue;
+    }
+    if (inString && c === '\\') {
+      out += c;
+      escape = true;
+      continue;
+    }
+    if (c === '"') {
+      inString = !inString;
+      out += c;
+      continue;
+    }
+    if (inString) {
+      if (c === '\r') {
+        if (text[i + 1] === '\n') i += 1;
+        continue;
+      }
+      if (c === '\n') continue;
+      const code = c.charCodeAt(0);
+      if (code < 0x20) continue;
+    }
+    out += c;
+  }
+  return out;
+}
+
 function extractJson(raw) {
   const cleaned = raw.replace(ANSI_RE, '');
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    const start = cleaned.indexOf('{');
-    const end = cleaned.lastIndexOf('}');
-    if (start === -1 || end <= start) {
-      throw new Error('no JSON object found in the CLI output');
-    }
-    return JSON.parse(cleaned.slice(start, end + 1));
+  const candidates = [];
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    candidates.push(cleaned.slice(start, end + 1));
   }
+  candidates.push(cleaned);
+
+  let lastErr;
+  for (const candidate of candidates) {
+    for (const text of [candidate, repairWrappedJsonStrings(candidate)]) {
+      try {
+        return JSON.parse(text);
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+  }
+  throw lastErr || new Error('no JSON object found in the CLI output');
 }
 
 function main() {

@@ -114,6 +114,18 @@ if ($Reconfigure) {
 $env:NO_COLOR = '1'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
+# Widen the console so Spectre is less likely to wrap JSON mid-string (patch
+# script also strips residual wrap artifacts inside string values).
+try {
+    $rawUi = $Host.UI.RawUI
+    $buf = $rawUi.BufferSize
+    if ($buf.Width -lt 4096) {
+        $buf.Width = 4096
+        $rawUi.BufferSize = $buf
+    }
+} catch {
+    # Non-interactive CI hosts may reject buffer resize — repair handles wraps.
+}
 
 $submissionJson = Join-Path $env:RUNNER_TEMP 'store-submission.json'
 $patchedJson = Join-Path $env:RUNNER_TEMP 'store-submission-patched.json'
@@ -125,8 +137,16 @@ if (-not $env:RUNNER_TEMP) {
 $notesStamped = $false
 try {
     Write-Host "Fetching pending submission for $ProductId…" -ForegroundColor Cyan
-    msstore submission get $ProductId | Set-Content -LiteralPath $submissionJson -Encoding utf8
-    Assert-CommandOk 'msstore submission get'
+    # Redirected capture (not the pipeline) — still may wrap; Node repairs it.
+    $getErr = "$submissionJson.err"
+    $proc = Start-Process -FilePath 'msstore' `
+        -ArgumentList @('submission', 'get', $ProductId) `
+        -NoNewWindow -Wait -PassThru `
+        -RedirectStandardOutput $submissionJson `
+        -RedirectStandardError $getErr
+    if ($proc.ExitCode -ne 0) {
+        throw "msstore submission get exited with code $($proc.ExitCode)"
+    }
 
     $patchScript = Join-Path $ProjectRoot 'scripts\patch-store-release-notes.js'
     node $patchScript $submissionJson $WhatsNewFile $patchedJson
@@ -146,8 +166,11 @@ try {
     }
 }
 
+# pathOrUrl must be the package file (.msix / .msixbundle / .msixupload).
+# -i/--inputDirectory is a DIRECTORY of packages — passing a file yields
+# "Input directory does not exist."
 Write-Host "Publishing $bundleOut to Store product $ProductId…" -ForegroundColor Cyan
-msstore publish -i $bundleOut -id $ProductId
+msstore publish $bundleOut -id $ProductId
 Assert-CommandOk 'msstore publish'
 
 Write-Host "Submitted to Partner Center (certification). notesStamped=$notesStamped" -ForegroundColor Green
