@@ -1,29 +1,20 @@
 #!/usr/bin/env node
 /**
  * Stamp What's new text into a Microsoft Store submission JSON from
- * `msstore submission get`, for `msstore submission updateMetadata`.
+ * `msstore submission get`, for `msstore submission update` / `updateMetadata`.
  *
  * Usage:
- *   node scripts/patch-store-release-notes.js submission.json whats_new.txt patched.json
+ *   node scripts/patch-store-release-notes.js submission.json whats_new.txt patched.json [keepPackageFileName]
  *
- * Walks listings case-insensitively (CLI may round-trip PascalCase or camelCase).
+ * When keepPackageFileName is set, every ApplicationPackages entry whose
+ * FileName is not that package is marked FileStatus=PendingDelete (best
+ * practice: drop superseded .msix / older bundles when uploading a new one).
  */
 
 const fs = require('fs');
+const { keyOf, extractJson } = require('./store-submission-json.js');
 
-const ANSI_RE =
-  /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|[\x00-\x08\x0b-\x1f]/g;
-
-function keyOf(obj, name) {
-  if (!obj || typeof obj !== 'object') return null;
-  const lower = name.toLowerCase();
-  for (const k of Object.keys(obj)) {
-    if (k.toLowerCase() === lower) return k;
-  }
-  return null;
-}
-
-function patch(submission, notes) {
+function patchReleaseNotes(submission, notes) {
   const listingsKey = keyOf(submission, 'listings');
   if (!listingsKey || typeof submission[listingsKey] !== 'object') return 0;
 
@@ -42,78 +33,39 @@ function patch(submission, notes) {
   return stamped;
 }
 
-/**
- * Repair `msstore submission get` stdout for JSON.parse.
- *
- * Spectre.Console wraps long lines at ~80 cols when stdout is redirected, which
- * inserts *literal* newlines inside JSON string values. Real newlines in those
- * strings were already escaped as `\n` by System.Text.Json — so any raw CR/LF
- * inside a string is a wrap artifact and must be removed (not turned into `\n`),
- * or we'd corrupt listing Description text on updateMetadata.
- */
-function repairWrappedJsonStrings(text) {
-  let out = '';
-  let inString = false;
-  let escape = false;
-  for (let i = 0; i < text.length; i += 1) {
-    const c = text[i];
-    if (escape) {
-      out += c;
-      escape = false;
-      continue;
-    }
-    if (inString && c === '\\') {
-      out += c;
-      escape = true;
-      continue;
-    }
-    if (c === '"') {
-      inString = !inString;
-      out += c;
-      continue;
-    }
-    if (inString) {
-      if (c === '\r') {
-        if (text[i + 1] === '\n') i += 1;
-        continue;
-      }
-      if (c === '\n') continue;
-      const code = c.charCodeAt(0);
-      if (code < 0x20) continue;
-    }
-    out += c;
+function markSupersededPackagesPendingDelete(submission, keepFileName) {
+  const packagesKey = keyOf(submission, 'applicationPackages');
+  if (!packagesKey || !Array.isArray(submission[packagesKey])) {
+    return { marked: 0, kept: 0, names: [] };
   }
-  return out;
-}
 
-function extractJson(raw) {
-  const cleaned = raw.replace(ANSI_RE, '');
-  const candidates = [];
-  const start = cleaned.indexOf('{');
-  const end = cleaned.lastIndexOf('}');
-  if (start !== -1 && end > start) {
-    candidates.push(cleaned.slice(start, end + 1));
-  }
-  candidates.push(cleaned);
+  const keepLower = keepFileName.toLowerCase();
+  const markedNames = [];
+  let kept = 0;
 
-  let lastErr;
-  for (const candidate of candidates) {
-    for (const text of [candidate, repairWrappedJsonStrings(candidate)]) {
-      try {
-        return JSON.parse(text);
-      } catch (err) {
-        lastErr = err;
-      }
+  for (const pkg of submission[packagesKey]) {
+    if (!pkg || typeof pkg !== 'object') continue;
+    const nameKey = keyOf(pkg, 'fileName');
+    const name = nameKey ? String(pkg[nameKey] || '') : '';
+    const statusKey = keyOf(pkg, 'fileStatus') || 'FileStatus';
+
+    if (name && name.toLowerCase() === keepLower) {
+      kept += 1;
+      continue;
     }
+
+    pkg[statusKey] = 'PendingDelete';
+    markedNames.push(name || '(unnamed)');
   }
-  throw lastErr || new Error('no JSON object found in the CLI output');
+
+  return { marked: markedNames.length, kept, names: markedNames };
 }
 
 function main() {
-  const [subPath, notesPath, outPath] = process.argv.slice(2);
+  const [subPath, notesPath, outPath, keepPackageFileName] = process.argv.slice(2);
   if (!subPath || !notesPath || !outPath) {
     console.error(
-      'usage: node scripts/patch-store-release-notes.js submission.json whats_new.txt patched.json',
+      'usage: node scripts/patch-store-release-notes.js submission.json whats_new.txt patched.json [keepPackageFileName]',
     );
     process.exit(1);
   }
@@ -125,16 +77,34 @@ function main() {
     process.exit(1);
   }
 
-  const stamped = patch(submission, notes);
+  const stamped = patchReleaseNotes(submission, notes);
   if (!stamped) {
     console.error(
       'error: no listings structure in the submission JSON — dump it and adjust this script.',
     );
     process.exit(1);
   }
+  console.log(`stamped releaseNotes on ${stamped} listing(s)`);
+
+  if (keepPackageFileName) {
+    const result = markSupersededPackagesPendingDelete(
+      submission,
+      keepPackageFileName,
+    );
+    console.log(
+      `marked ${result.marked} package(s) PendingDelete; kept ${result.kept} matching ${keepPackageFileName}`,
+    );
+    for (const name of result.names) {
+      console.log(`  PendingDelete: ${name}`);
+    }
+    if (result.kept === 0) {
+      console.warn(
+        `warning: keep package "${keepPackageFileName}" not found in ApplicationPackages — all existing packages marked PendingDelete (expected right after upload if names differ; verify after update).`,
+      );
+    }
+  }
 
   fs.writeFileSync(outPath, `${JSON.stringify(submission, null, 2)}\n`, 'utf8');
-  console.log(`stamped releaseNotes on ${stamped} listing(s)`);
 }
 
 main();

@@ -62,15 +62,18 @@ Flow inside [`scripts/submit-microsoft-store.ps1`](../scripts/submit-microsoft-s
 1. Bundle x64 + ARM64 `.msix` into one `.msixbundle` (`makeappx`).
 2. Build What’s new from the changelog section
    ([`scripts/changelog-to-store-whats-new.js`](../scripts/changelog-to-store-whats-new.js)).
-3. `msstore submission get` → patch `releaseNotes` on every listing →
-   `updateMetadata`.
-4. `msstore publish <bundle.msixbundle> -id <productId>` (path is the package
-   file — do not pass `-i` with a file; that flag is for a directory). Live
-   availability follows the app’s Partner Center publishing schedule after
-   certification.
+3. `msstore publish <bundle.msixbundle> -id <productId> -nc` — upload only.
+   (`publish` recreates the pending draft, so metadata must come *after* this.
+   Pass the package **file** as the path; do not use `-i` with a file.)
+4. `msstore submission get` → stamp `releaseNotes` and mark every existing
+   package except the new bundle as `PendingDelete` (Partner Center best
+   practice: drop superseded `.msix` / older bundles) →
+   `msstore submission update`.
+5. `msstore submission publish` — commit for certification. Live availability
+   follows the app’s Partner Center publishing schedule after certification.
 
-If What’s new stamping fails, the script still publishes the package and warns
-loudly (previous release notes would carry forward — fix in Partner Center).
+If What’s new / package cleanup fails after upload, the script still commits
+and warns loudly (fix listings/packages in Partner Center if needed).
 
 ## Local dry-run (credentials)
 

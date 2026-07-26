@@ -15,8 +15,11 @@
 #
 # Flow:
 #   1. Bundle x64 + ARM64 .msix into one .msixbundle (makeappx)
-#   2. Stamp What's new onto every listing (submission get → patch → updateMetadata)
-#   3. msstore publish the bundle (submits for certification)
+#   2. msstore publish -nc  (upload only; publish recreates the draft, so
+#      metadata must be applied *after* this step)
+#   3. submission get → stamp What's new + mark superseded packages
+#      PendingDelete → submission update
+#   4. msstore submission publish  (commit for certification)
 
 param(
     [Parameter(Mandatory = $true)]
@@ -48,6 +51,18 @@ function Find-MakeAppx {
 function Assert-CommandOk([string]$Label) {
     if ($LASTEXITCODE -ne 0) {
         throw "$Label exited with code $LASTEXITCODE"
+    }
+}
+
+function Get-StoreSubmissionJson([string]$OutPath) {
+    $getErr = "$OutPath.err"
+    $proc = Start-Process -FilePath 'msstore' `
+        -ArgumentList @('submission', 'get', $ProductId) `
+        -NoNewWindow -Wait -PassThru `
+        -RedirectStandardOutput $OutPath `
+        -RedirectStandardError $getErr
+    if ($proc.ExitCode -ne 0) {
+        throw "msstore submission get exited with code $($proc.ExitCode)"
     }
 }
 
@@ -85,6 +100,7 @@ $pkgJsonPath = Join-Path $ProjectRoot 'package.json'
 $version = (Get-Content -LiteralPath $pkgJsonPath -Raw | ConvertFrom-Json).version
 if (-not $version) { throw "Could not read version from $pkgJsonPath" }
 $bundleOut = Join-Path $PackagesDir "redd-blocker_${version}_store.msixbundle"
+$bundleFileName = [System.IO.Path]::GetFileName($bundleOut)
 $makeappx = Find-MakeAppx
 Write-Host "Bundling with $makeappx → $bundleOut" -ForegroundColor Cyan
 & $makeappx bundle /d $bundleDir /p $bundleOut /o
@@ -114,8 +130,6 @@ if ($Reconfigure) {
 $env:NO_COLOR = '1'
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
-# Widen the console so Spectre is less likely to wrap JSON mid-string (patch
-# script also strips residual wrap artifacts inside string values).
 try {
     $rawUi = $Host.UI.RawUI
     $buf = $rawUi.BufferSize
@@ -134,43 +148,42 @@ if (-not $env:RUNNER_TEMP) {
     $patchedJson = Join-Path ([System.IO.Path]::GetTempPath()) "store-submission-patched-$PID.json"
 }
 
+# pathOrUrl must be the package file (.msix / .msixbundle / .msixupload).
+# -nc keeps the draft so we can strip superseded packages + stamp What's new
+# before committing. (msstore publish recreates the pending submission, so
+# metadata applied *before* upload would be discarded.)
+Write-Host "Uploading $bundleOut to Store product $ProductId (no commit)…" -ForegroundColor Cyan
+msstore publish $bundleOut -id $ProductId -nc
+Assert-CommandOk 'msstore publish -nc'
+
 $notesStamped = $false
+$packagesCleaned = $false
 try {
-    Write-Host "Fetching pending submission for $ProductId…" -ForegroundColor Cyan
-    # Redirected capture (not the pipeline) — still may wrap; Node repairs it.
-    $getErr = "$submissionJson.err"
-    $proc = Start-Process -FilePath 'msstore' `
-        -ArgumentList @('submission', 'get', $ProductId) `
-        -NoNewWindow -Wait -PassThru `
-        -RedirectStandardOutput $submissionJson `
-        -RedirectStandardError $getErr
-    if ($proc.ExitCode -ne 0) {
-        throw "msstore submission get exited with code $($proc.ExitCode)"
-    }
+    Write-Host "Fetching draft submission for $ProductId…" -ForegroundColor Cyan
+    Get-StoreSubmissionJson $submissionJson
 
     $patchScript = Join-Path $ProjectRoot 'scripts\patch-store-release-notes.js'
-    node $patchScript $submissionJson $WhatsNewFile $patchedJson
+    node $patchScript $submissionJson $WhatsNewFile $patchedJson $bundleFileName
     Assert-CommandOk 'patch-store-release-notes.js'
 
     $meta = Get-Content -LiteralPath $patchedJson -Raw -Encoding utf8
-    Write-Host 'Updating submission metadata (What''s new)…' -ForegroundColor Cyan
-    msstore submission updateMetadata $ProductId $meta
-    Assert-CommandOk 'msstore submission updateMetadata'
+    Write-Host 'Updating submission (What''s new + PendingDelete superseded packages)…' -ForegroundColor Cyan
+    # Full update (not updateMetadata) so ApplicationPackages FileStatus is applied.
+    msstore submission update $ProductId $meta
+    Assert-CommandOk 'msstore submission update'
     $notesStamped = $true
-    Write-Host 'Release notes stamped on the pending submission.' -ForegroundColor Green
+    $packagesCleaned = $true
+    Write-Host 'Draft updated: release notes stamped; superseded packages PendingDelete.' -ForegroundColor Green
 } catch {
-    Write-Warning "What's-new stamping failed ($_). Publishing package with carried-forward notes — fix in Partner Center if needed."
+    Write-Warning "Draft metadata/package cleanup failed ($_). Committing upload as-is — remove old packages in Partner Center if needed."
     if (Test-Path -LiteralPath $submissionJson) {
         Write-Host '--- head of submission.json ---' -ForegroundColor Yellow
         Get-Content -LiteralPath $submissionJson -TotalCount 30 | Write-Host
     }
 }
 
-# pathOrUrl must be the package file (.msix / .msixbundle / .msixupload).
-# -i/--inputDirectory is a DIRECTORY of packages — passing a file yields
-# "Input directory does not exist."
-Write-Host "Publishing $bundleOut to Store product $ProductId…" -ForegroundColor Cyan
-msstore publish $bundleOut -id $ProductId
-Assert-CommandOk 'msstore publish'
+Write-Host "Committing submission for $ProductId…" -ForegroundColor Cyan
+msstore submission publish $ProductId
+Assert-CommandOk 'msstore submission publish'
 
-Write-Host "Submitted to Partner Center (certification). notesStamped=$notesStamped" -ForegroundColor Green
+Write-Host "Submitted to Partner Center (certification). notesStamped=$notesStamped packagesCleaned=$packagesCleaned" -ForegroundColor Green
