@@ -29,6 +29,7 @@ import {
 } from './app.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import { setBlocklistModalMode, setConfirmModalBlockingLabel, isBlocklistAllowlistMode } from './list-mode.js';
+import { discardPendingQuickStart, settlePendingQuickStart } from './quick-start.js';
 
 export const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
 export const START_CONFIRM_ICON_APP = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M10 4v4"></path><path d="M2 8h20"></path><path d="M6 4v4"></path></svg>`;
@@ -2042,13 +2043,18 @@ export function startBlock() {
 }
 
 // Close start block confirmation modal
-export function closeStartBlockConfirmModal() {
+export function closeStartBlockConfirmModal({ keepPendingQuickStart = false } = {}) {
     document.getElementById('start-block-confirm-modal').classList.add('hidden');
     // Reset resume state and restore default text
     if (resumeData) {
         resumeData = null;
         document.getElementById('start-block-confirm-title').textContent = tSettings('startThisBlock');
         setStartConfirmPrimaryLabel('proceed-start-confirm-btn', tSettings('startBlock'));
+    }
+    // Cancel/backdrop/Escape: drop a Quick start draft that never started.
+    // proceedWithBlock passes keepPendingQuickStart so it can settle after start.
+    if (!keepPendingQuickStart) {
+        void discardPendingQuickStart();
     }
 }
 
@@ -2060,9 +2066,17 @@ export async function proceedWithBlock() {
         return;
     }
 
-    // Close confirmation modal
-    closeStartBlockConfirmModal();
+    // Close confirmation modal (keep Quick start draft until we know if start succeeded)
+    closeStartBlockConfirmModal({ keepPendingQuickStart: true });
 
+    try {
+        await runProceedWithBlock();
+    } finally {
+        await settlePendingQuickStart();
+    }
+}
+
+async function runProceedWithBlock() {
     const startBtn = document.getElementById('start-block-btn');
 
     if (!state.selectedBlocklistId) return;

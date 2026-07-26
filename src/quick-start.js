@@ -1,6 +1,7 @@
 // Quick start: one-off block/allow without naming or permanently saving a
-// focus space. Creates a hidden isQuickStart blocklist, starts it via the
-// same proceedWithBlock path, then restores the previous selection.
+// focus space. Creates a hidden isQuickStart blocklist, opens the same
+// start-confirm modal (effort barrier) as a normal block, then restores
+// the previous selection after confirm or cancel.
 import { state } from './state.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { tauriAPI } from './tauri-api.js';
@@ -35,7 +36,7 @@ import {
     deselectBlocklist,
     handleBlocklistSelect,
     openBlocklistModal,
-    proceedWithBlock,
+    startBlock,
 } from './confirm-modals.js';
 import { setBlocklistModalMode } from './list-mode.js';
 
@@ -377,6 +378,58 @@ function buildQuickStartBlocklist() {
     };
 }
 
+/** Set while the start-confirm modal is open for a Quick start draft. */
+let pendingQuickStart = null;
+
+function restorePreviousSelection(previous) {
+    if (!previous) return;
+    const previousStillExists = previous.id
+        && state.appData.blocklists.some((bl) => bl.id === previous.id && !isQuickStartBlocklist(bl));
+    if (previousStillExists) {
+        state.selectedBlocklistId = previous.id;
+        state.isAlwaysOnMode = previous.alwaysOn;
+        state.targetDurationMinutes = previous.duration;
+        state.selectedEndHour = previous.endHour;
+        state.selectedEndMinute = previous.endMinute;
+        state.userEditedEndTime = previous.userEditedEnd;
+        const dropdown = document.getElementById('blocklist-select');
+        if (dropdown) {
+            dropdown.value = previous.id;
+            handleBlocklistSelect({ target: dropdown });
+        }
+    } else {
+        deselectBlocklist();
+    }
+}
+
+async function clearPendingQuickStart({ keepIfStarted }) {
+    if (!pendingQuickStart) return;
+    const { blocklistId, previous } = pendingQuickStart;
+    pendingQuickStart = null;
+
+    const now = Date.now();
+    const started = state.appData.activeBlocks.some(
+        (b) => b.blocklistId === blocklistId && b.endTime > now,
+    );
+    if (!(keepIfStarted && started)) {
+        state.appData.blocklists = state.appData.blocklists.filter((bl) => bl.id !== blocklistId);
+        await saveData();
+    }
+
+    // Restore prior selection so the hidden Quick start space is not left selected.
+    restorePreviousSelection(previous);
+}
+
+/** Cancel path: discard the unsaved Quick start draft. */
+export async function discardPendingQuickStart() {
+    await clearPendingQuickStart({ keepIfStarted: false });
+}
+
+/** After proceedWithBlock: keep the draft only if the block actually started. */
+export async function settlePendingQuickStart() {
+    await clearPendingQuickStart({ keepIfStarted: true });
+}
+
 async function startQuickStart() {
     confirmWebsiteInput();
     confirmAppInput();
@@ -389,61 +442,38 @@ async function startQuickStart() {
     const startBtn = document.getElementById('quick-start-start-btn');
     if (startBtn) startBtn.disabled = true;
 
-    const blocklist = buildQuickStartBlocklist();
-    state.appData.blocklists.unshift(blocklist);
-    await saveData();
-
-    const previousId = state.selectedBlocklistId;
-    const previousAlwaysOn = state.isAlwaysOnMode;
-    const previousDuration = state.targetDurationMinutes;
-    const previousEndHour = state.selectedEndHour;
-    const previousEndMinute = state.selectedEndMinute;
-    const previousUserEditedEnd = state.userEditedEndTime;
-
-    state.selectedBlocklistId = blocklist.id;
-    state.isAlwaysOnMode = qsAlwaysOn;
-    state.userEditedEndTime = false;
-    if (!qsAlwaysOn) {
-        state.targetDurationMinutes = qsDurationMins;
-        const end = new Date(Date.now() + qsDurationMins * 60 * 1000);
-        state.selectedEndHour = end.getHours();
-        state.selectedEndMinute = end.getMinutes();
-    }
-
-    closeQuickStartModal();
-
     try {
-        await proceedWithBlock();
+        const blocklist = buildQuickStartBlocklist();
+        state.appData.blocklists.unshift(blocklist);
+        await saveData();
+
+        pendingQuickStart = {
+            blocklistId: blocklist.id,
+            previous: {
+                id: state.selectedBlocklistId,
+                alwaysOn: state.isAlwaysOnMode,
+                duration: state.targetDurationMinutes,
+                endHour: state.selectedEndHour,
+                endMinute: state.selectedEndMinute,
+                userEditedEnd: state.userEditedEndTime,
+            },
+        };
+
+        state.selectedBlocklistId = blocklist.id;
+        state.isAlwaysOnMode = qsAlwaysOn;
+        state.userEditedEndTime = false;
+        if (!qsAlwaysOn) {
+            state.targetDurationMinutes = qsDurationMins;
+            const end = new Date(Date.now() + qsDurationMins * 60 * 1000);
+            state.selectedEndHour = end.getHours();
+            state.selectedEndMinute = end.getMinutes();
+        }
+
+        closeQuickStartModal();
+        // Same effort-barrier confirm as starting a normal focus space.
+        startBlock();
     } finally {
         if (startBtn) startBtn.disabled = false;
-    }
-
-    const now = Date.now();
-    const started = state.appData.activeBlocks.some(
-        (b) => b.blocklistId === blocklist.id && b.endTime > now,
-    );
-    if (!started) {
-        state.appData.blocklists = state.appData.blocklists.filter((bl) => bl.id !== blocklist.id);
-        await saveData();
-    }
-
-    // Restore prior selection so the hidden Quick start space is not left selected.
-    const previousStillExists = previousId
-        && state.appData.blocklists.some((bl) => bl.id === previousId && !isQuickStartBlocklist(bl));
-    if (previousStillExists) {
-        state.selectedBlocklistId = previousId;
-        state.isAlwaysOnMode = previousAlwaysOn;
-        state.targetDurationMinutes = previousDuration;
-        state.selectedEndHour = previousEndHour;
-        state.selectedEndMinute = previousEndMinute;
-        state.userEditedEndTime = previousUserEditedEnd;
-        const dropdown = document.getElementById('blocklist-select');
-        if (dropdown) {
-            dropdown.value = previousId;
-            handleBlocklistSelect({ target: dropdown });
-        }
-    } else {
-        deselectBlocklist();
     }
 }
 
