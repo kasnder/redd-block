@@ -2,18 +2,33 @@
 /**
  * Build Partner Center "What's new" plain text from changelog.md.
  *
+ * User-facing Store notes (App Store–style): friendly intro, bullet list of
+ * product changes only, then a fixed sign-off. Skips Version lines, empty
+ * platform scaffolding, and release-engineering notes (CI / Store submit / …).
+ *
  * Usage:
  *   node scripts/changelog-to-store-whats-new.js <version> [changelog.md] > whats_new.txt
- *   node scripts/changelog-to-store-whats-new.js 3.8.3 --out whats_new.txt
+ *   node scripts/changelog-to-store-whats-new.js 3.8.4 --out whats_new.txt
  *
- * Partner Center What's new limit is 10,000 characters; we truncate with an
- * ellipsis note if needed.
+ * Partner Center What's new limit is 10,000 characters; we truncate the
+ * bullet list (keeping intro + sign-off) if needed.
  */
 
 const fs = require('fs');
 const path = require('path');
 
 const MAX_CHARS = 10000;
+
+const INTRO = `Hi folks,
+
+This update comes with some helpful improvements!`;
+
+const SIGNOFF = `Please keep suggesting improvements to the app - you can do so at https://github.com/ulyngs/redd-block
+
+We hope you're enjoying ReDD Blocker!
+
+- Ulrik, Tiago, & the Centre for Digital Habits Team
+(digitalhabits.org)`;
 
 function usage() {
   console.error(
@@ -40,77 +55,107 @@ function extractSection(changelog, version) {
   if (!found || section.every((l) => !l.trim())) {
     throw new Error(`No changelog section for ${tag} — add ## ${tag} first.`);
   }
-  return section.join('\n');
+  return section;
 }
 
-function toStorePlainText(markdown) {
-  const out = [];
-  for (const raw of markdown.split(/\r?\n/)) {
-    let line = raw.replace(/\s+$/, '');
+function stripMdInline(text) {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .trim();
+}
 
-    if (!line.trim()) {
-      if (out.length && out[out.length - 1] !== '') out.push('');
-      continue;
-    }
+/** True for bullets that belong in the engineering changelog, not Store notes. */
+function isInternalBullet(plain) {
+  if (/^version:\s*/i.test(plain)) return true;
+  if (
+    /\b(store submit|partner center|github release|github actions|msstore|release workflow)\b/i.test(
+      plain,
+    )
+  ) {
+    return true;
+  }
+  if (/\bci\b.*\b(submit|publish|release)\b/i.test(plain)) return true;
+  return false;
+}
 
-    if (/^>\s*/.test(line)) {
-      line = line.replace(/^>\s*/, '').replace(/\*\*/g, '').trim();
-      if (line) out.push(line);
-      continue;
-    }
+/**
+ * Format a changelog bullet for Store notes.
+ * `**Title.** Body` → `- "Title": Body`
+ */
+function formatStoreBullet(rawBody) {
+  const plain = stripMdInline(rawBody);
+  if (!plain || isInternalBullet(plain)) return null;
 
-    const heading = line.match(/^(#{2,6})\s+(.*)$/);
-    if (heading) {
-      const title = heading[2].replace(/\*\*/g, '').trim();
-      if (title) {
-        if (out.length && out[out.length - 1] !== '') out.push('');
-        out.push(title);
-      }
-      continue;
-    }
+  const titled = plain.match(/^(.+?)\.\s+(.+)$/s);
+  if (titled) {
+    const title = titled[1].trim();
+    const body = titled[2].trim();
+    if (title && body) return `- "${title}": ${body}`;
+  }
+  return `- ${plain}`;
+}
+
+function collectStoreBullets(sectionLines) {
+  const bullets = [];
+  for (let i = 0; i < sectionLines.length; i += 1) {
+    const raw = sectionLines[i];
+    const line = raw.replace(/\s+$/, '');
+
+    if (/^>\s*/.test(line)) continue; // summary blockquote — intro covers this
+    if (/^#{2,6}\s+/.test(line)) continue; // drop section scaffolding
 
     const bullet = line.match(/^\s*[-*]\s+(.*)$/);
-    if (bullet) {
-      const body = bullet[1]
-        .replace(/\*\*([^*]+)\*\*/g, '$1')
-        .replace(/`([^`]+)`/g, '$1')
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-        .trim();
-      out.push(`• ${body}`);
-      continue;
+    if (!bullet) continue;
+
+    let body = bullet[1];
+    while (i + 1 < sectionLines.length) {
+      const next = sectionLines[i + 1];
+      if (/^\s{2,}\S/.test(next) && !/^\s*[-*]\s+/.test(next) && !/^#{2,6}\s+/.test(next.trim())) {
+        body = `${body} ${next.trim()}`;
+        i += 1;
+        continue;
+      }
+      break;
     }
 
-    // Indented continuation of the previous bullet
-    if (/^\s{2,}\S/.test(raw) && out.length && out[out.length - 1].startsWith('• ')) {
-      const cont = line
-        .replace(/\*\*([^*]+)\*\*/g, '$1')
-        .replace(/`([^`]+)`/g, '$1')
-        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-        .trim();
-      if (cont) out[out.length - 1] = `${out[out.length - 1]} ${cont}`;
-      continue;
-    }
-
-    line = line
-      .replace(/\*\*([^*]+)\*\*/g, '$1')
-      .replace(/`([^`]+)`/g, '$1')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .trim();
-    if (line) out.push(line);
+    const formatted = formatStoreBullet(body);
+    if (formatted) bullets.push(formatted);
   }
-
-  while (out.length && out[out.length - 1] === '') out.pop();
-  return out.join('\n').trim();
+  return bullets;
 }
 
-function truncate(text) {
-  if (text.length <= MAX_CHARS) return text;
-  const note = '\n\n…(truncated for Store listing length)';
-  const budget = MAX_CHARS - note.length;
-  let cut = text.slice(0, budget);
-  const lastNewline = cut.lastIndexOf('\n');
-  if (lastNewline > budget * 0.6) cut = cut.slice(0, lastNewline);
-  return `${cut.trimEnd()}${note}`;
+function buildWhatsNew(bullets) {
+  if (!bullets.length) {
+    throw new Error(
+      'No user-facing changelog bullets for Store notes (only Version / internal lines?).',
+    );
+  }
+
+  const intro = INTRO;
+  const signoff = SIGNOFF;
+  const joiner = '\n\n';
+  const fixedLen = intro.length + signoff.length + joiner.length * 2;
+
+  let list = bullets.join('\n');
+  if (fixedLen + list.length > MAX_CHARS) {
+    const budget = MAX_CHARS - fixedLen - '\n\n…'.length;
+    const kept = [];
+    let used = 0;
+    for (const b of bullets) {
+      const add = (kept.length ? 1 : 0) + b.length;
+      if (used + add > budget) break;
+      kept.push(b);
+      used += add;
+    }
+    if (!kept.length) {
+      kept.push(`${bullets[0].slice(0, Math.max(40, budget - 1))}…`);
+    }
+    list = `${kept.join('\n')}\n…`;
+  }
+
+  return `${intro}${joiner}${list}${joiner}${signoff}`.trim();
 }
 
 function main() {
@@ -133,12 +178,9 @@ function main() {
   const changelogPath = path.resolve(positional[1] || 'changelog.md');
 
   const markdown = fs.readFileSync(changelogPath, 'utf8');
-  const section = extractSection(markdown, version);
-  const text = truncate(toStorePlainText(section));
-  if (!text) {
-    console.error('error: empty What\'s new after converting changelog section');
-    process.exit(1);
-  }
+  const sectionLines = extractSection(markdown, version);
+  const bullets = collectStoreBullets(sectionLines);
+  const text = buildWhatsNew(bullets);
 
   if (outPath) {
     fs.writeFileSync(outPath, `${text}\n`, 'utf8');

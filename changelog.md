@@ -30,12 +30,6 @@ description.` Legacy flat lists still work.
 
 - **Version:** 3.8.4 (macOS, Windows, and iOS).
 
-##### Windows
-
-- **Store submit from GitHub Release.** Tagging a release now builds the
-  Microsoft Store packages and submits them to Partner Center with What’s new
-  from this changelog.
-
 ## v3.8.3
 
 ### FOCUS SPACES & SCHEDULES
