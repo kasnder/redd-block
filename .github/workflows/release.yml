@@ -2,6 +2,7 @@
 #
 # One workflow run builds once; the publish job uploads those exact files to
 # S3 and/or attaches them to a GitHub Release (optional checkboxes on manual runs).
+# A separate job submits Store MSIX to Partner Center (independent of S3/GitHub).
 #
 # S3 layout matches redd-next download links (ReDDBlockClient.tsx):
 #   s3://redd-website-assets/reddblock/redd-blocker-{version}.pkg
@@ -11,10 +12,12 @@
 # Trigger: Actions → "Release build" → Run workflow, or push tag v* (e.g. v3.1.10).
 # Manual inputs:
 #   upload_to_s3            — push installers to S3 (default: true)
-#   create_github_release — create GitHub Release from changelog.md (default: false)
-# Tag pushes always upload to S3 and create a GitHub Release.
+#   create_github_release   — create GitHub Release from changelog.md (default: false)
+#   submit_microsoft_store  — submit MSIX to Partner Center (default: true)
+# Tag pushes always upload to S3, create a GitHub Release, and submit to the Store.
 #
 # Before shipping: bump version, add ## vX.Y.Z to changelog.md, commit to main.
+# Store CI setup: docs/microsoft-store-ci.md
 #
 # ── GitHub secrets (same AWS names as redd-api) ──
 #   AWS_ACCESS_KEY_ID
@@ -35,10 +38,17 @@
 # ── Windows signing (same as local .env) ──
 #   AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID
 #
-# ── Windows Store identity (same as local .env) ──
+# ── Windows Store package identity (same as local .env) ──
 #   WINDOWS_IDENTITY_NAME
 #   WINDOWS_PUBLISHER
 #   WINDOWS_PUBLISHER_DISPLAY_NAME
+#
+# ── Microsoft Store Partner Center submit (see docs/microsoft-store-ci.md) ──
+#   AZURE_AD_TENANT_ID
+#   AZURE_AD_APPLICATION_CLIENT_ID
+#   AZURE_AD_APPLICATION_SECRET
+#   SELLER_ID
+#   MS_STORE_PRODUCT_ID
 
 name: Release build
 
@@ -53,6 +63,10 @@ on:
         description: Create a GitHub Release (notes from changelog.md)
         type: boolean
         default: false
+      submit_microsoft_store:
+        description: Submit Store MSIX to Partner Center (What's new from changelog)
+        type: boolean
+        default: true
   push:
     tags:
       - 'v*'
@@ -246,6 +260,94 @@ jobs:
             for-distribution/aarch64-pc-windows-msvc/*.msix
           if-no-files-found: error
           retention-days: 30
+
+  # Partner Center submit — independent of S3 / GitHub Release so a Store API
+  # outage does not block desktop distribution.
+  publish-microsoft-store:
+    name: Publish (Microsoft Store)
+    needs: [build-windows-store]
+    runs-on: windows-latest
+    timeout-minutes: 60
+    if: >-
+      needs.build-windows-store.result == 'success' &&
+      (
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
+        (github.event_name == 'workflow_dispatch' && inputs.submit_microsoft_store)
+      )
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Require Partner Center secrets
+        shell: pwsh
+        env:
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+          MS_STORE_PRODUCT_ID: ${{ secrets.MS_STORE_PRODUCT_ID }}
+        run: |
+          $missing = @()
+          foreach ($name in @(
+            'AZURE_AD_TENANT_ID',
+            'AZURE_AD_APPLICATION_CLIENT_ID',
+            'AZURE_AD_APPLICATION_SECRET',
+            'SELLER_ID',
+            'MS_STORE_PRODUCT_ID'
+          )) {
+            if (-not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) { continue }
+            $missing += $name
+          }
+          if ($missing.Count -gt 0) {
+            throw @"
+Missing GitHub secrets for Store submit: $($missing -join ', ').
+See docs/microsoft-store-ci.md — set these once, or uncheck submit_microsoft_store on manual runs.
+"@
+          }
+
+      - name: Download Windows Store artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-store-packages
+          path: store-packages
+
+      - name: Resolve version
+        id: meta
+        shell: bash
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build What's new from changelog
+        shell: bash
+        run: |
+          node scripts/changelog-to-store-whats-new.js "${{ steps.meta.outputs.version }}" --out whats_new.txt
+          echo "=== What's new ==="
+          cat whats_new.txt
+
+      - name: Setup Microsoft Store CLI
+        uses: microsoft/microsoft-store-apppublisher@v1.3
+
+      - name: Submit to Partner Center
+        shell: pwsh
+        env:
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+          MS_STORE_PRODUCT_ID: ${{ secrets.MS_STORE_PRODUCT_ID }}
+          PYTHONUTF8: '1'
+        run: |
+          ./scripts/submit-microsoft-store.ps1 `
+            -PackagesDir store-packages `
+            -WhatsNewFile whats_new.txt `
+            -ProductId $env:MS_STORE_PRODUCT_ID `
+            -Reconfigure
 
   publish:
     name: Publish (S3 / GitHub Release)
