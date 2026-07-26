@@ -56,6 +56,18 @@ function appWord(count) {
     return count === 1 ? 'app' : 'apps';
 }
 
+function getBlocklistCardItemCounts(blocklist) {
+    const isAllow = isBlocklistAllowlistMode(blocklist);
+    const siteCount = blocklist?.websites?.length || 0;
+    const regularApps = getBlocklistRegularApps(blocklist);
+    const screenTimeCount = countIOSScreenTimeSelectionItems(
+        getBlocklistIOSScreenTimeSelection(blocklist),
+        isAllow,
+    );
+    const appCount = regularApps.length + screenTimeCount;
+    return { siteCount, appCount };
+}
+
 function buildBlocklistCardCountsSummary(siteCount, appCount) {
     const parts = [];
     if (siteCount > 0) {
@@ -69,16 +81,10 @@ function buildBlocklistCardCountsSummary(siteCount, appCount) {
     return parts.join(` ${tSettings('blocklistCardCountsJoin')} `);
 }
 
+/** Expandable only when there is more than one item to inspect. */
 export function blocklistCardHasExpandableSummary(blocklist) {
-    const isAllow = isBlocklistAllowlistMode(blocklist);
-    const siteCount = blocklist?.websites?.length || 0;
-    const regularApps = getBlocklistRegularApps(blocklist);
-    const screenTimeCount = countIOSScreenTimeSelectionItems(
-        getBlocklistIOSScreenTimeSelection(blocklist),
-        isAllow,
-    );
-    const appCount = regularApps.length + screenTimeCount;
-    return siteCount > 0 || appCount > 0;
+    const { siteCount, appCount } = getBlocklistCardItemCounts(blocklist);
+    return siteCount + appCount > 1;
 }
 
 /** Short label from a blocked domain, e.g. instagram.com → instagram. */
@@ -116,23 +122,29 @@ export function collectBlocklistCardSummaryLabels(blocklist) {
     return labels;
 }
 
-/** Room card line, e.g. "Blocks · 4 sites & 2 apps". */
+/** Room card line, e.g. "Blocks · 4 sites & 2 apps" (or just the name when only one item). */
 export function buildBlocklistCardMetaHtml(blocklist) {
     const isAllow = isBlocklistAllowlistMode(blocklist);
     const prefixKey = isAllow ? 'blocklistCardAllowsFmt' : 'blocklistCardBlocksFmt';
     const prefix = escapeHtml(tSettings(prefixKey));
 
-    const siteCount = blocklist?.websites?.length || 0;
-    const regularApps = getBlocklistRegularApps(blocklist);
-    const screenTimeSelection = getBlocklistIOSScreenTimeSelection(blocklist);
-    const screenTimeCount = countIOSScreenTimeSelectionItems(screenTimeSelection, isAllow);
-    const appCount = regularApps.length + screenTimeCount;
-    const summary = buildBlocklistCardCountsSummary(siteCount, appCount);
+    const { siteCount, appCount } = getBlocklistCardItemCounts(blocklist);
+    const total = siteCount + appCount;
 
-    if (!summary) {
+    if (total === 0) {
         return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span></span>`;
     }
 
+    // Single site/app: show its name directly — no "1 site" expandable.
+    // Keep the full domain for websites (not the registrable short label).
+    if (total === 1) {
+        const name = siteCount === 1
+            ? cleanUrlForDisplay(blocklist.websites[0])
+            : (getBlocklistDisplayApps(blocklist)[0] || '');
+        return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span><span class="blocklist-meta-sep">·</span><span class="blocklist-meta-items">${escapeHtml(name)}</span></span>`;
+    }
+
+    const summary = buildBlocklistCardCountsSummary(siteCount, appCount);
     return `<span class="blocklist-meta-line"><span class="blocklist-meta-prefix">${prefix}</span><span class="blocklist-meta-sep">·</span><button type="button" class="blocklist-meta-items-btn" aria-expanded="false">${escapeHtml(summary)}</button></span>`;
 }
 

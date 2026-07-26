@@ -7493,6 +7493,7 @@ body.android .selection-prompt {
     box-sizing: border-box;
 }
 
+.blocklist-meta-items,
 .blocklist-meta-items-btn{
     flex: 0 0 auto;
     width: auto;
@@ -7501,9 +7502,12 @@ body.android .selection-prompt {
     text-overflow: ellipsis;
     white-space: nowrap;
     font: inherit;
-    font-weight: var(--blocklist-meta-prefix-weight);
+    font-weight: 400;
     font-size: inherit;
     color: var(--blocklist-meta-items-color);
+}
+
+.blocklist-meta-items-btn{
     text-decoration: underline dashed;
     text-decoration-thickness: 1px;
     -webkit-text-decoration-thickness: 1px;
