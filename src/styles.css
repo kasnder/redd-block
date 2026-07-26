@@ -12803,7 +12803,8 @@ body:not(.handset-device) .start-confirm-modal{
     color: var(--text-primary);
 }
 
-.start-confirm-repeat-copy{
+.start-confirm-repeat-copy,
+.start-confirm-strictness-copy{
     font-size: var(--start-confirm-content-size);
     line-height: var(--start-confirm-content-line-height);
     font-weight: 400;
@@ -13158,6 +13159,8 @@ svg.start-confirm-primary-icon{
 .start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-times-divider,
 .start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-repeat-row,
 .start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-repeat-divider,
+.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-strictness-row,
+.start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-strictness-divider,
 .start-confirm-modal.schedule-confirm-edit-layout #schedule-confirm-overlay-row{
     display: none;
 }
@@ -14814,9 +14817,9 @@ body.android #settings-latest-version-wrap {
     margin-top: 0;
 }
 
-/* Tighten the gap above Advanced options (Stop Difficulty form-group sits above). */
+/* Gap above Advanced options (Stop Difficulty form-group sits above). */
 #blocklist-modal .form-group:has(+ .blocklist-advanced-toggle){
-    margin-bottom: 8px;
+    margin-bottom: 12px;
 }
 
 .blocklist-advanced-toggle:hover{
@@ -16250,6 +16253,9 @@ body.ios.handset-device .modal-overlay .websites-import-menu-section-label{
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+    /* Room for focus rings on edge swatches (modal overflow clips outlines). */
+    padding: 3px;
+    margin: -3px;
 }
 
 .color-swatches .color-swatch{
@@ -16326,6 +16332,9 @@ body.ios.handset-device .modal-overlay .websites-import-menu-section-label{
     display: flex;
     gap: 8px;
     flex-wrap: wrap;
+    /* Room for focus rings on edge swatches (modal overflow clips outlines). */
+    padding: 3px;
+    margin: -3px;
 }
 
 .emoji-swatch{

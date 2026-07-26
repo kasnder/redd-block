@@ -160,6 +160,17 @@ export function formatScheduleConfirmRepeatText() {
     return tSettings('startConfirmRepeatNone');
 }
 
+/** Flexible / Committed — mirrors schedule-editor without importing it (cycle-safe). */
+export function formatScheduleConfirmStrictnessText() {
+    const schedule = state.selectedBlocklistId && state.appData?.schedules
+        ? state.appData.schedules.find((s) => s.blocklistId === state.selectedBlocklistId)
+        : null;
+    const flexible = schedule
+        ? !!schedule.allowEditsBetweenBlocks
+        : !!state.draftAllowEditsBetweenBlocks;
+    return tSettings(flexible ? 'allowEditsFlexibleLabel' : 'allowEditsStrictLabel');
+}
+
 export function formatStartBlockDurationCopy(isAlwaysOn, blockStart, blockEnd) {
     if (isAlwaysOn) {
         return `<strong>${escapeHtml(tSettings('alwaysUntilOff'))}</strong>`;
@@ -394,7 +405,7 @@ export function showScheduleConfirmModal(blocklist) {
     state.pendingScheduleStartOverlayId = getEffectiveScheduleStartOverlayId();
     syncScheduleConfirmOverlaySummary();
     document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
-    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
+    document.getElementById('schedule-confirm-strictness-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
 
     renderStartConfirmBlockingDetails(
         blocklist,
@@ -407,6 +418,9 @@ export function showScheduleConfirmModal(blocklist) {
 
     const repeatEl = document.getElementById('schedule-confirm-repeat');
     if (repeatEl) repeatEl.innerHTML = formatScheduleConfirmRepeatText();
+
+    const strictnessEl = document.getElementById('schedule-confirm-strictness');
+    if (strictnessEl) strictnessEl.textContent = formatScheduleConfirmStrictnessText();
 
     // Override info
     const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
@@ -446,7 +460,7 @@ export function resetScheduleConfirmModalToStartLayout() {
     const overrideHeader = document.getElementById('schedule-confirm-override-header');
     if (overrideHeader) overrideHeader.textContent = tSettings('startScheduleHoldHeader');
     document.getElementById('schedule-confirm-overlay-row')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
-    document.getElementById('schedule-confirm-repeat-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
+    document.getElementById('schedule-confirm-strictness-divider')?.classList.toggle('hidden', isMobileOverrideChallengePlatform());
 }
 
 export function closeScheduleConfirmModal() {

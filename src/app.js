@@ -3284,6 +3284,7 @@ export function applySettingsLanguage() {
     setText('schedule-confirm-show-all-blocking', tSettings('showAll'));
     setText('schedule-confirm-times-label', tSettings('startConfirmTimesLabel'));
     setText('schedule-confirm-repeat-label', tSettings('startConfirmRepeatsLabel'));
+    setText('schedule-confirm-strictness-label', tSettings('scheduleStrictnessLabel'));
     setText('schedule-confirm-overlay-label', tSettings('scheduleConfirmOverlayLabel'));
     const confirmOverlayCustomiseBtn = document.getElementById('schedule-confirm-overlay-customise-btn');
     if (confirmOverlayCustomiseBtn) {
