@@ -10,6 +10,32 @@ SCHEDULES), then platform-specific notes under nested headings:
 `#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
 description.` Legacy flat lists still work.
 
+## v3.8.4
+
+### FOCUS SPACES & SCHEDULES
+
+- **Quick start confirms effort to leave.** Starting a Quick start now shows
+  the same effort-barrier confirmation as a normal focus space, so the typing
+  cost to exit early is clear up front.
+- **Single site or app on cards.** When a focus space blocks or allows only
+  one website or app, the card shows that name (full domain for sites) instead
+  of an expandable “1 site” / “1 app”.
+- **Schedule start shows Strictness.** The start-schedule confirmation lists
+  Flexible or Committed under Repeats. Flexible pause copy now says you can
+  pause without typing because Strictness is Flexible.
+
+### BY PLATFORM
+
+#### DESKTOP
+
+- **Version:** 3.8.4 (macOS, Windows, and iOS).
+
+##### Windows
+
+- **Store submit from GitHub Release.** Tagging a release now builds the
+  Microsoft Store packages and submits them to Partner Center with What’s new
+  from this changelog.
+
 ## v3.8.3
 
 ### FOCUS SPACES & SCHEDULES
