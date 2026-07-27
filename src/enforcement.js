@@ -516,6 +516,14 @@ export async function onBlockingMethodChange(key, select) {
         if (!state.appData.settings) state.appData.settings = {};
         state.appData.settings.blockingMethods = methods;
         syncBlockingMethodSelects(methods);
+        if (desired === 'extension') {
+            // Automation permission is irrelevant on the extension path,
+            // and the watcher stops probing this browser — so a pending
+            // "Allow ReDD Blocker to control your browser" banner would
+            // otherwise persist forever (permission-resolved can no
+            // longer fire for it).
+            clearPendingAutomationWarning(key);
+        }
         await refreshAutomationPermissionStatus({ force: true });
         if (state.migrationOnboardingActive || isModalVisible('migration-onboarding')) {
             const fresh = await invoke('onboarding_state');
@@ -2212,6 +2220,24 @@ export const WEB_AUTOMATION_BANNER_ID = 'web-automation-permission-banner';
 export const webAutomationPendingBrowsers = new Map(); // label -> true
 let webAutomationUiAlertsAttached = false;
 
+// Drop any pending "Allow Automation" warning for a browser key and
+// re-render the soft banner. Used when the browser's blocking method
+// switches to the extension path, where the Automation grant no longer
+// matters — the watcher stops probing it, so the resolved event that
+// would normally retire the banner can never arrive.
+export function clearPendingAutomationWarning(key) {
+    if (__ANDROID_BUILD__) return;
+    if (!key) return;
+    let removed = false;
+    for (const label of [...webAutomationPendingBrowsers.keys()]) {
+        if (browserKeyFromLabel(label) === key) {
+            webAutomationPendingBrowsers.delete(label);
+            removed = true;
+        }
+    }
+    if (removed) renderWebAutomationPermissionBanner();
+}
+
 export async function startWebAutomationWatcher() {
     if (__ANDROID_BUILD__) return;
     if (!state.isMacOSDesktop) return;
@@ -2230,6 +2256,13 @@ export function setupWebAutomationUiAlerts() {
         const label = event?.payload?.label || event?.payload?.browser;
         if (!label) return;
         const key = browserKeyFromLabel(label);
+        // Ignore events for browsers on the extension path. The watcher
+        // reads the blocking method at the start of its tick, but an
+        // osascript call already in flight when the user switches a
+        // browser to extension mode can still emit permission-needed
+        // after the switch — acting on it would show a stale/untruthful
+        // Automation warning.
+        if (key && !browserUsesAutomation(key)) return;
         if (key) lastAutomationPermissionByKey[key] = 'denied';
         if (state.migrationOnboardingActive && state.lastMigrationBrowserState) {
             renderBrowserInstallButtons(state.lastMigrationBrowserState, { force: true });
