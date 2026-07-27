@@ -63,10 +63,11 @@ Flow inside [`scripts/submit-microsoft-store.ps1`](../scripts/submit-microsoft-s
 
 1. Bundle x64 + ARM64 `.msix` into one `.msixbundle` (`makeappx`).
 2. Build What’s new from the changelog section
-   ([`scripts/changelog-to-store-whats-new.js`](../scripts/changelog-to-store-whats-new.js))
-   — friendly App Store–style notes (intro + product bullets + sign-off).
-   Skips `Version:` lines, platform scaffolding, and release-engineering
-   bullets (CI / Store submit / Partner Center).
+   ([`scripts/changelog-to-store-whats-new.js`](../scripts/changelog-to-store-whats-new.js)
+   `--platform windows`) — friendly App Store–style notes (intro + product
+   bullets + sign-off). Includes shared sections and `#### DESKTOP` /
+   `##### Windows` bullets; skips `##### macOS`, `#### iOS`, `Version:`
+   lines, and release-engineering bullets (CI / Store submit / Partner Center).
 3. `msstore publish <bundle.msixbundle> -id <productId> -nc` — upload only.
    (`publish` recreates the pending draft, so metadata must come *after* this.
    Pass the package **file** as the path; do not use `-i` with a file.)

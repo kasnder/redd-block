@@ -96,7 +96,7 @@ jobs:
       - name: Build What's new from changelog
         shell: bash
         run: |
-          node scripts/changelog-to-store-whats-new.js "${{ steps.meta.outputs.version }}" --out whats_new.txt
+          node scripts/changelog-to-store-whats-new.js "${{ steps.meta.outputs.version }}" --platform windows --out whats_new.txt
           echo "=== What's new ==="
           cat whats_new.txt
 

@@ -17,11 +17,14 @@ is run with `--platform ios`. It keeps:
   e.g. `### FOCUS SPACES & SCHEDULES`), and
 - Bullets under `#### iOS` inside `### BY PLATFORM`.
 
-It drops `#### DESKTOP` (including `##### macOS` / `##### Windows`),
-`#### ANDROID`, `Version:` lines, and release-engineering bullets — same
-filters as the Microsoft Store notes, plus the platform scoping. Output uses
-the same intro + bullets + sign-off format, capped at the App Store's 4,000
-character limit.
+It drops `#### DESKTOP` (including desktop-shared bullets and
+`##### macOS` / `##### Windows`), `#### ANDROID`, `Version:` lines, and
+release-engineering bullets. Output uses the same intro + bullets + sign-off
+format, capped at the App Store's 4,000 character limit.
+
+Other stores use the same script with different filters:
+`--platform windows` → shared + desktop-shared + `##### Windows`;
+`--platform macos` → shared + desktop-shared + `##### macOS`.
 
 If a release has **no** iOS-facing bullets (desktop-only release), the
 Publish (App Store) job logs a notice and skips submission instead of

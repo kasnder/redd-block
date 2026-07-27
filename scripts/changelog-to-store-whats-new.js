@@ -7,26 +7,32 @@
  * platform scaffolding, and release-engineering notes (CI / Store submit / …).
  *
  * Usage:
- *   node scripts/changelog-to-store-whats-new.js <version> [changelog.md] > whats_new.txt
- *   node scripts/changelog-to-store-whats-new.js 3.8.4 --out whats_new.txt
- *   node scripts/changelog-to-store-whats-new.js 3.8.4 --platform ios --out whats_new_ios.txt
+ *   node scripts/changelog-to-store-whats-new.js <version> --platform windows --out whats_new.txt
+ *   node scripts/changelog-to-store-whats-new.js <version> --platform macos --out whats_new.txt
+ *   node scripts/changelog-to-store-whats-new.js <version> --platform ios --out whats_new_ios.txt
  *
- * Without --platform, every bullet is included (existing Microsoft Store
- * behaviour). With --platform ios, only bullets that apply to iOS are kept:
- * shared sections (anything outside `### BY PLATFORM`) plus `#### iOS`
- * subsections; `#### DESKTOP` (and `##### macOS` / `##### Windows`) and
- * `#### ANDROID` bullets are dropped.
+ * Platform filters (required for correct Store listings):
+ *   windows — shared sections + #### DESKTOP (desktop-shared) + ##### Windows
+ *   macos   — shared sections + #### DESKTOP (desktop-shared) + ##### macOS
+ *   ios     — shared sections + #### iOS
  *
- * Character limits: Partner Center allows 10,000 chars; the App Store
- * "What's New" field allows 4,000. We truncate the bullet list (keeping
- * intro + sign-off) if needed.
+ * Shared = any `###` section that is not `### BY PLATFORM` (e.g. FOCUS SPACES).
+ * Desktop-shared = bullets directly under `#### DESKTOP` before a `#####`
+ * macOS/Windows subheading.
+ *
+ * Character limits: Partner Center 10,000; App Store "What's New" 4,000.
+ * We truncate the bullet list (keeping intro + sign-off) if needed.
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const MAX_CHARS_DEFAULT = 10000;
-const MAX_CHARS_APP_STORE = 4000;
+const PLATFORMS = {
+  windows: { maxChars: 10000 },
+  macos: { maxChars: 10000 },
+  mac: { maxChars: 10000 }, // alias
+  ios: { maxChars: 4000 },
+};
 
 const INTRO = `Hi folks,
 
@@ -41,9 +47,17 @@ We hope you're enjoying ReDD Blocker!
 
 function usage() {
   console.error(
-    'usage: node scripts/changelog-to-store-whats-new.js <version> [changelog.md] [--platform ios] [--out file]',
+    'usage: node scripts/changelog-to-store-whats-new.js <version> [changelog.md] --platform windows|macos|ios [--empty-ok] [--out file]',
   );
   process.exit(1);
+}
+
+function normalizePlatform(raw) {
+  const p = (raw || '').toLowerCase();
+  if (p === 'mac' || p === 'macos' || p === 'osx') return 'macos';
+  if (p === 'win' || p === 'windows') return 'windows';
+  if (p === 'ios') return 'ios';
+  return null;
 }
 
 function extractSection(changelog, version) {
@@ -108,9 +122,14 @@ function formatStoreBullet(rawBody) {
 
 /**
  * Track which platform the current changelog subsection applies to.
- * `### <ANY>` headings are shared unless they are `### BY PLATFORM`;
- * under BY PLATFORM, `#### iOS` / `#### DESKTOP` / `#### ANDROID` scope
- * bullets to a platform (`##### macOS` / `##### Windows` stay desktop).
+ *
+ *   ### FOCUS …          → shared (all stores)
+ *   ### BY PLATFORM      → by-platform (scaffold; no bullets expected)
+ *   #### DESKTOP         → desktop (mac + windows shared)
+ *   ##### macOS          → macos
+ *   ##### Windows        → windows
+ *   #### iOS             → ios
+ *   #### ANDROID         → android
  */
 function scopeForHeading(level, title, current) {
   if (level === 3) {
@@ -118,19 +137,27 @@ function scopeForHeading(level, title, current) {
   }
   if (level === 4) {
     if (/\bios\b/i.test(title)) return 'ios';
-    if (/desktop|macos|windows|\bmac\b|\bwin\b/i.test(title)) return 'desktop';
     if (/android/i.test(title)) return 'android';
+    if (/desktop/i.test(title)) return 'desktop';
+    // Rare: #### macOS / #### Windows at h4
+    if (/macos|\bmac\b/i.test(title)) return 'macos';
+    if (/windows|\bwin\b/i.test(title)) return 'windows';
     return current === 'by-platform' ? 'by-platform' : 'shared';
   }
-  // h5+ refine the current platform (e.g. macOS/Windows under DESKTOP).
+  // h5+ under DESKTOP (or mis-nested): refine to a specific OS
+  if (/\bios\b/i.test(title)) return 'ios';
+  if (/android/i.test(title)) return 'android';
+  if (/macos|\bmac\b/i.test(title)) return 'macos';
+  if (/windows|\bwin\b/i.test(title)) return 'windows';
   return current;
 }
 
 function scopeMatchesPlatform(scope, platform) {
-  if (!platform) return true;
   if (scope === 'shared') return true;
   if (platform === 'ios') return scope === 'ios';
-  return true;
+  if (platform === 'windows') return scope === 'desktop' || scope === 'windows';
+  if (platform === 'macos') return scope === 'desktop' || scope === 'macos';
+  return false;
 }
 
 function collectStoreBullets(sectionLines, platform) {
@@ -175,7 +202,7 @@ function buildWhatsNew(bullets, maxChars, emptyOk) {
   if (!bullets.length) {
     if (emptyOk) return '';
     throw new Error(
-      'No user-facing changelog bullets for Store notes (only Version / internal lines?).',
+      'No user-facing changelog bullets for Store notes (only Version / other-platform / internal lines?).',
     );
   }
 
@@ -219,17 +246,20 @@ function main() {
     } else if (args[i] === '--empty-ok') {
       emptyOk = true;
     } else if (args[i] === '--platform') {
-      platform = (args[++i] || '').toLowerCase();
-      if (platform !== 'ios') usage();
+      platform = normalizePlatform(args[++i]);
+      if (!platform) usage();
     } else {
       positional.push(args[i]);
     }
   }
 
+  // Default to windows so Partner Center never silently picks up macOS/iOS bullets.
+  if (!platform) platform = 'windows';
+
   const version = positional[0];
   if (!version) usage();
   const changelogPath = path.resolve(positional[1] || 'changelog.md');
-  const maxChars = platform === 'ios' ? MAX_CHARS_APP_STORE : MAX_CHARS_DEFAULT;
+  const maxChars = PLATFORMS[platform].maxChars;
 
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const sectionLines = extractSection(markdown, version);
@@ -240,8 +270,8 @@ function main() {
     fs.writeFileSync(outPath, text ? `${text}\n` : '', 'utf8');
     console.error(
       text
-        ? `Wrote ${outPath} (${text.length} chars)`
-        : `Wrote ${outPath} (empty — no ${platform || 'store'}-facing changes)`,
+        ? `Wrote ${outPath} (${text.length} chars, platform=${platform})`
+        : `Wrote ${outPath} (empty — no ${platform}-facing changes)`,
     );
   } else {
     process.stdout.write(text ? `${text}\n` : '');
