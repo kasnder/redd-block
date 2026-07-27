@@ -10,6 +10,26 @@ SCHEDULES), then platform-specific notes under nested headings:
 `#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
 description.` Legacy flat lists still work.
 
+## v3.8.5
+
+### FOCUS SPACES & SCHEDULES
+
+- **Strictness dropdown fits smaller screens.** The Strictness dropdown in
+  the schedule editor no longer gets cut off on smaller screens.
+
+### BY PLATFORM
+
+#### DESKTOP
+
+##### macOS
+
+- **Stale Automation warning clears after switching to extension blocking.**
+  When a browser's blocking method switches to the ReDD Focus extension, the
+  leftover "Allow ReDD Blocker to control your browser" warning now clears
+  instead of staying up indefinitely.
+
+- **Version:** 3.8.5 (macOS, Windows, and iOS).
+
 ## v3.8.4
 
 ### FOCUS SPACES & SCHEDULES

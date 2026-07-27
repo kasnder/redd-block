@@ -6,6 +6,7 @@
 # - package.json
 # - src-tauri/tauri.conf.json (single source of truth for builds)
 # - src-tauri/Cargo.toml
+# - iOS project files (via scripts/sync-ios-version.mjs)
 
 set -e
 
@@ -46,6 +47,10 @@ else
     sed -i "s/^version = \"[^\"]*\"/version = \"$NEW_VERSION\"/" "$PROJECT_ROOT/src-tauri/Cargo.toml"
 fi
 
+# Update iOS project files (tauri.ios.conf.json, gen/apple project + Info.plists)
+echo "  Updating iOS project files..."
+node "$SCRIPT_DIR/sync-ios-version.mjs" --version "$NEW_VERSION"
+
 echo ""
 echo "✅ Version bumped to $NEW_VERSION in all files!"
 echo ""
@@ -53,6 +58,7 @@ echo "Files updated:"
 echo "  - package.json"
 echo "  - src-tauri/tauri.conf.json"
 echo "  - src-tauri/Cargo.toml"
+echo "  - src-tauri/tauri.ios.conf.json + src-tauri/gen/apple (version/build stamps)"
 echo ""
 echo "Note: Build scripts (build-mac.sh, build-win.ps1) read from"
 echo "      tauri.conf.json automatically - no manual update needed."
