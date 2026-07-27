@@ -27,8 +27,20 @@ platform :ios do
       is_key_content_base64: true
     )
 
+    # fastlane runs lanes from the fastlane/ directory, so paths passed from
+    # the repo root won't resolve as-is — fall back to the parent directory.
+    resolve_path = lambda do |raw|
+      p = raw.to_s.strip
+      return nil if p.empty?
+      return p if File.exist?(p)
+      from_root = File.expand_path(p, "..")
+      File.exist?(from_root) ? from_root : p
+    end
+
     version = options.fetch(:version)
-    notes = File.read(options.fetch(:notes)).strip
+    notes_path = resolve_path.call(options.fetch(:notes))
+    UI.user_error!("What's new file not found: #{options[:notes]}") unless notes_path && File.exist?(notes_path)
+    notes = File.read(notes_path).strip
     UI.user_error!("What's new file is empty — nothing iOS-facing to submit") if notes.empty?
 
     # Promotional text does not reliably persist across new versions, so we
@@ -38,8 +50,8 @@ platform :ios do
       "websites — backed by 10+ years of our award-winning research at the " \
       "University of Oxford."
 
-    ipa = options[:ipa].to_s.strip
-    ipa = nil if ipa.empty?
+    ipa = resolve_path.call(options[:ipa])
+    UI.user_error!("IPA not found: #{options[:ipa]}") if !options[:ipa].to_s.strip.empty? && !File.exist?(ipa.to_s)
     build_number = options[:build_number].to_s.strip
     build_number = nil if build_number.empty?
 
