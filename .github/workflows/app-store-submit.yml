@@ -73,18 +73,34 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # Trim accidental whitespace from the workflow_dispatch input.
+          TAG="$(echo -n "$RELEASE_TAG" | tr -d '[:space:]')"
+          if [[ -z "$TAG" ]]; then
+            echo "release_tag input is empty" >&2
+            exit 1
+          fi
+          if [[ "$TAG" != v* ]]; then
+            echo "Hint: tag should look like v3.8.5 (got: $TAG)" >&2
+          fi
+          echo "Downloading .ipa from release tag: [$TAG] repo: $GH_REPO"
           mkdir -p store-packages-ios
-          gh release download "$RELEASE_TAG" \
+          if ! gh release download "$TAG" \
+            --repo "$GH_REPO" \
             --pattern '*.ipa' \
             --dir store-packages-ios \
-            --clobber
+            --clobber; then
+            echo "Failed to download release $TAG. Recent releases:" >&2
+            gh release list --repo "$GH_REPO" --limit 8 >&2 || true
+            exit 1
+          fi
           echo "Downloaded:"
           find store-packages-ios -type f -name '*.ipa' -print
           count="$(find store-packages-ios -type f -name '*.ipa' | wc -l | tr -d ' ')"
           if [[ "$count" -lt 1 ]]; then
-            echo "No .ipa assets on release $RELEASE_TAG" >&2
+            echo "No .ipa assets on release $TAG" >&2
             exit 1
           fi
 
