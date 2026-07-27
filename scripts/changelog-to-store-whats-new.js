@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Build Partner Center "What's new" plain text from changelog.md.
+ * Build store "What's new" plain text from changelog.md.
  *
  * User-facing Store notes (App Store–style): friendly intro, bullet list of
  * product changes only, then a fixed sign-off. Skips Version lines, empty
@@ -9,15 +9,24 @@
  * Usage:
  *   node scripts/changelog-to-store-whats-new.js <version> [changelog.md] > whats_new.txt
  *   node scripts/changelog-to-store-whats-new.js 3.8.4 --out whats_new.txt
+ *   node scripts/changelog-to-store-whats-new.js 3.8.4 --platform ios --out whats_new_ios.txt
  *
- * Partner Center What's new limit is 10,000 characters; we truncate the
- * bullet list (keeping intro + sign-off) if needed.
+ * Without --platform, every bullet is included (existing Microsoft Store
+ * behaviour). With --platform ios, only bullets that apply to iOS are kept:
+ * shared sections (anything outside `### BY PLATFORM`) plus `#### iOS`
+ * subsections; `#### DESKTOP` (and `##### macOS` / `##### Windows`) and
+ * `#### ANDROID` bullets are dropped.
+ *
+ * Character limits: Partner Center allows 10,000 chars; the App Store
+ * "What's New" field allows 4,000. We truncate the bullet list (keeping
+ * intro + sign-off) if needed.
  */
 
 const fs = require('fs');
 const path = require('path');
 
-const MAX_CHARS = 10000;
+const MAX_CHARS_DEFAULT = 10000;
+const MAX_CHARS_APP_STORE = 4000;
 
 const INTRO = `Hi folks,
 
@@ -32,7 +41,7 @@ We hope you're enjoying ReDD Blocker!
 
 function usage() {
   console.error(
-    'usage: node scripts/changelog-to-store-whats-new.js <version> [changelog.md] [--out file]',
+    'usage: node scripts/changelog-to-store-whats-new.js <version> [changelog.md] [--platform ios] [--out file]',
   );
   process.exit(1);
 }
@@ -97,14 +106,50 @@ function formatStoreBullet(rawBody) {
   return `- ${plain}`;
 }
 
-function collectStoreBullets(sectionLines) {
+/**
+ * Track which platform the current changelog subsection applies to.
+ * `### <ANY>` headings are shared unless they are `### BY PLATFORM`;
+ * under BY PLATFORM, `#### iOS` / `#### DESKTOP` / `#### ANDROID` scope
+ * bullets to a platform (`##### macOS` / `##### Windows` stay desktop).
+ */
+function scopeForHeading(level, title, current) {
+  if (level === 3) {
+    return /by platform/i.test(title) ? 'by-platform' : 'shared';
+  }
+  if (level === 4) {
+    if (/\bios\b/i.test(title)) return 'ios';
+    if (/desktop|macos|windows|\bmac\b|\bwin\b/i.test(title)) return 'desktop';
+    if (/android/i.test(title)) return 'android';
+    return current === 'by-platform' ? 'by-platform' : 'shared';
+  }
+  // h5+ refine the current platform (e.g. macOS/Windows under DESKTOP).
+  return current;
+}
+
+function scopeMatchesPlatform(scope, platform) {
+  if (!platform) return true;
+  if (scope === 'shared') return true;
+  if (platform === 'ios') return scope === 'ios';
+  return true;
+}
+
+function collectStoreBullets(sectionLines, platform) {
   const bullets = [];
+  let scope = 'shared';
   for (let i = 0; i < sectionLines.length; i += 1) {
     const raw = sectionLines[i];
     const line = raw.replace(/\s+$/, '');
 
     if (/^>\s*/.test(line)) continue; // summary blockquote — intro covers this
-    if (/^#{2,6}\s+/.test(line)) continue; // drop section scaffolding
+
+    const heading = line.match(/^(#{3,6})\s+(.*)$/);
+    if (heading) {
+      scope = scopeForHeading(heading[1].length, heading[2], scope);
+      continue;
+    }
+    if (/^#{2,6}\s+/.test(line)) continue; // drop remaining scaffolding
+
+    if (!scopeMatchesPlatform(scope, platform)) continue;
 
     const bullet = line.match(/^\s*[-*]\s+(.*)$/);
     if (!bullet) continue;
@@ -126,8 +171,9 @@ function collectStoreBullets(sectionLines) {
   return bullets;
 }
 
-function buildWhatsNew(bullets) {
+function buildWhatsNew(bullets, maxChars, emptyOk) {
   if (!bullets.length) {
+    if (emptyOk) return '';
     throw new Error(
       'No user-facing changelog bullets for Store notes (only Version / internal lines?).',
     );
@@ -139,8 +185,8 @@ function buildWhatsNew(bullets) {
   const fixedLen = intro.length + signoff.length + joiner.length * 2;
 
   let list = bullets.join('\n');
-  if (fixedLen + list.length > MAX_CHARS) {
-    const budget = MAX_CHARS - fixedLen - '\n\n…'.length;
+  if (fixedLen + list.length > maxChars) {
+    const budget = maxChars - fixedLen - '\n\n…'.length;
     const kept = [];
     let used = 0;
     for (const b of bullets) {
@@ -163,11 +209,18 @@ function main() {
   if (args.length < 1) usage();
 
   let outPath = null;
+  let platform = null;
+  let emptyOk = false;
   const positional = [];
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--out') {
       outPath = args[++i];
       if (!outPath) usage();
+    } else if (args[i] === '--empty-ok') {
+      emptyOk = true;
+    } else if (args[i] === '--platform') {
+      platform = (args[++i] || '').toLowerCase();
+      if (platform !== 'ios') usage();
     } else {
       positional.push(args[i]);
     }
@@ -176,17 +229,22 @@ function main() {
   const version = positional[0];
   if (!version) usage();
   const changelogPath = path.resolve(positional[1] || 'changelog.md');
+  const maxChars = platform === 'ios' ? MAX_CHARS_APP_STORE : MAX_CHARS_DEFAULT;
 
   const markdown = fs.readFileSync(changelogPath, 'utf8');
   const sectionLines = extractSection(markdown, version);
-  const bullets = collectStoreBullets(sectionLines);
-  const text = buildWhatsNew(bullets);
+  const bullets = collectStoreBullets(sectionLines, platform);
+  const text = buildWhatsNew(bullets, maxChars, emptyOk);
 
   if (outPath) {
-    fs.writeFileSync(outPath, `${text}\n`, 'utf8');
-    console.error(`Wrote ${outPath} (${text.length} chars)`);
+    fs.writeFileSync(outPath, text ? `${text}\n` : '', 'utf8');
+    console.error(
+      text
+        ? `Wrote ${outPath} (${text.length} chars)`
+        : `Wrote ${outPath} (empty — no ${platform || 'store'}-facing changes)`,
+    );
   } else {
-    process.stdout.write(`${text}\n`);
+    process.stdout.write(text ? `${text}\n` : '');
   }
 }
 

@@ -124,7 +124,7 @@ if ($Reconfigure) {
 SELLER_ID must be the numeric Partner Center Seller ID (digits only).
 Got length=$($seller.Length) (value redacted).
 Open Partner Center → Account settings → Identifiers → Seller ID, update the
-GitHub secret, then re-run Actions → Store submit only with this release tag.
+GitHub secret, then re-run Actions → Microsoft store submission with this release tag.
 "@
     }
     Write-Host 'Configuring msstore credentials…' -ForegroundColor Cyan

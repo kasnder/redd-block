@@ -98,7 +98,7 @@ msstore submission get $env:MS_STORE_PRODUCT_ID
 ## Retry submit without rebuilding
 
 If Partner Center submit fails but the GitHub Release already has `.msix`
-assets, use Actions → **Store submit only** → Run workflow with the release tag
+assets, use Actions → **Microsoft store submission** → Run workflow with the release tag
 (e.g. `v3.8.4`). That checks out current `main` (so script fixes apply),
 downloads the Release packages, and re-runs submit — no macOS/Windows rebuild.
 

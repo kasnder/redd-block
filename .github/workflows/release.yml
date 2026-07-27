@@ -1,8 +1,10 @@
-# Build signed macOS + Windows installers, then publish from the same artifacts.
+# Build signed macOS + Windows installers + iOS IPA, then publish from the same artifacts.
 #
 # One workflow run builds once; the publish job uploads those exact files to
 # S3 and/or attaches them to a GitHub Release (optional checkboxes on manual runs).
-# A separate job submits Store MSIX to Partner Center (independent of S3/GitHub).
+# A separate job submits Store MSIX to Partner Center (independent of S3/GitHub),
+# and another submits the iOS IPA to App Store Connect (What's new from the
+# iOS-facing changelog bullets — see docs/app-store-ci.md).
 #
 # S3 layout matches redd-next download links (ReDDBlockClient.tsx):
 #   s3://redd-website-assets/reddblock/redd-blocker-{version}.pkg
@@ -14,7 +16,10 @@
 #   upload_to_s3            — push installers to S3 (default: true)
 #   create_github_release   — create GitHub Release from changelog.md (default: false)
 #   submit_microsoft_store  — submit MSIX to Partner Center (default: true)
-# Tag pushes always upload to S3, create a GitHub Release, and submit to the Store.
+#   submit_app_store        — submit IPA to App Store Connect (default: true)
+#   ios_build_number        — override CFBundleVersion (only for re-uploading the
+#                             same version after a failed App Store run)
+# Tag pushes always upload to S3, create a GitHub Release, and submit to both Stores.
 #
 # Before shipping: bump version, add ## vX.Y.Z to changelog.md, commit to main.
 # Store CI setup: docs/microsoft-store-ci.md
@@ -49,6 +54,11 @@
 #   AZURE_AD_APPLICATION_SECRET
 #   SELLER_ID
 #   MS_STORE_PRODUCT_ID
+#
+# ── App Store Connect submit (see docs/app-store-ci.md) ──
+#   APP_STORE_CONNECT_API_KEY_ID          API Key ID (Users and Access → Integrations)
+#   APP_STORE_CONNECT_API_ISSUER_ID       Issuer ID
+#   APP_STORE_CONNECT_API_KEY_P8          base64 of the AuthKey_*.p8 private key
 
 name: Release build
 
@@ -67,6 +77,14 @@ on:
         description: Submit Store MSIX to Partner Center (What's new from changelog)
         type: boolean
         default: true
+      submit_app_store:
+        description: Submit iOS IPA to App Store Connect (What's new from changelog)
+        type: boolean
+        default: true
+      ios_build_number:
+        description: Override iOS CFBundleVersion (only to re-upload the same version)
+        type: string
+        default: ''
   push:
     tags:
       - 'v*'
@@ -261,6 +279,80 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  build-ios:
+    name: iOS (.ipa)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Require App Store Connect secrets
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+        run: |
+          missing=()
+          for name in APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_API_ISSUER_ID APP_STORE_CONNECT_API_KEY_P8; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "Missing GitHub secrets for App Store signing/submit: ${missing[*]}. See docs/app-store-ci.md." >&2
+            exit 1
+          fi
+
+      - name: Write App Store Connect API key
+        env:
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+        run: |
+          mkdir -p "$HOME/.appstoreconnect"
+          echo "$APP_STORE_CONNECT_API_KEY_P8" | base64 --decode > "$HOME/.appstoreconnect/AuthKey.p8"
+
+      - name: Stamp iOS version
+        run: node scripts/sync-ios-version.mjs --build-number "${{ inputs.ios_build_number || '' }}"
+
+      - name: Build App Store IPA
+        env:
+          APPLE_API_ISSUER: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APPLE_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+        run: |
+          export APPLE_API_KEY_PATH="$HOME/.appstoreconnect/AuthKey.p8"
+          npm run build:ios
+
+      - name: Stage IPA for publish
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          mv "for-distribution/ReDD Blocker.ipa" "for-distribution/redd-blocker_${VERSION}.ipa"
+          ls -la for-distribution/
+
+      - name: Upload iOS artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: for-distribution/redd-blocker_*.ipa
+          if-no-files-found: error
+          retention-days: 30
+
   # Partner Center submit — independent of S3 / GitHub Release so a Store API
   # outage does not block desktop distribution.
   publish-microsoft-store:
@@ -346,14 +438,97 @@ jobs:
             -ProductId $env:MS_STORE_PRODUCT_ID `
             -Reconfigure
 
+  # App Store Connect submit — independent of S3 / GitHub Release, same as the
+  # Microsoft Store job. Uploads the IPA, stamps iOS "What's new" from the
+  # changelog (shared + iOS bullets only), and submits for review with
+  # automatic release after approval.
+  publish-app-store:
+    name: Publish (App Store)
+    needs: [build-ios]
+    runs-on: macos-latest
+    timeout-minutes: 120
+    if: >-
+      needs.build-ios.result == 'success' &&
+      (
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
+        (github.event_name == 'workflow_dispatch' && inputs.submit_app_store)
+      )
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Require App Store Connect secrets
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+        run: |
+          missing=()
+          for name in APP_STORE_CONNECT_API_KEY_ID APP_STORE_CONNECT_API_ISSUER_ID APP_STORE_CONNECT_API_KEY_P8; do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "Missing GitHub secrets for App Store submit: ${missing[*]}. See docs/app-store-ci.md — set these once, or uncheck submit_app_store on manual runs." >&2
+            exit 1
+          fi
+
+      - name: Download iOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-ipa
+          path: store-packages-ios
+
+      - name: Resolve version
+        id: meta
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build What's new from changelog (iOS)
+        id: notes
+        run: |
+          node scripts/changelog-to-store-whats-new.js "${{ steps.meta.outputs.version }}" --platform ios --empty-ok --out whats_new_ios.txt
+          if [[ -s whats_new_ios.txt ]]; then
+            echo "has_notes=true" >> "$GITHUB_OUTPUT"
+            echo "=== What's new (iOS) ==="
+            cat whats_new_ios.txt
+          else
+            echo "has_notes=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No iOS-facing changelog bullets for v${{ steps.meta.outputs.version }} — skipping App Store submission."
+          fi
+
+      - name: Submit to App Store Connect
+        if: steps.notes.outputs.has_notes == 'true'
+        env:
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
+          APP_STORE_CONNECT_API_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+          FASTLANE_SKIP_UPDATE_CHECK: '1'
+        run: |
+          IPA="$(find store-packages-ios -type f -name '*.ipa' | head -1)"
+          if [[ -z "$IPA" ]]; then
+            echo "No .ipa found in store-packages-ios" >&2
+            exit 1
+          fi
+          fastlane ios submit_app_store \
+            "version:${{ steps.meta.outputs.version }}" \
+            "ipa:${IPA}" \
+            "notes:whats_new_ios.txt"
+
   publish:
     name: Publish (S3 / GitHub Release)
-    needs: [build-mac, build-windows, build-windows-store]
+    needs: [build-mac, build-windows, build-windows-store, build-ios]
     runs-on: ubuntu-latest
     if: >-
       needs.build-mac.result == 'success' &&
       needs.build-windows.result == 'success' &&
       needs.build-windows-store.result == 'success' &&
+      needs.build-ios.result == 'success' &&
       (
         (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
         (
@@ -385,12 +560,19 @@ jobs:
           name: windows-store-packages
           path: artifacts
 
+      - name: Download iOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ios-ipa
+          path: artifacts
+
       - name: Stage installers for publish
         run: |
           mkdir -p for-distribution
           find artifacts -type f -name 'redd-blocker-*.pkg' -exec cp {} for-distribution/ \;
           find artifacts -type f -name 'redd-blocker_*-setup.exe' -exec cp {} for-distribution/ \;
           find artifacts -type f -name 'redd-blocker_*.msix' -exec cp {} for-distribution/ \;
+          find artifacts -type f -name 'redd-blocker_*.ipa' -exec cp {} for-distribution/ \;
           echo "Staged installers:"
           ls -la for-distribution/
 
@@ -482,6 +664,7 @@ jobs:
             for-distribution/redd-blocker-*.pkg
             for-distribution/redd-blocker_*-setup.exe
             for-distribution/redd-blocker_*.msix
+            for-distribution/redd-blocker_*.ipa
           draft: false
           prerelease: false
           make_latest: true

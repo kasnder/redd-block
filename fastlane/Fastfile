@@ -1,0 +1,67 @@
+# App Store submission lane for CI (Release build / App Store submission workflows).
+#
+# Uploads the IPA built by scripts/ios-appstore-build.sh, stamps the iOS
+# "What's new" (from scripts/changelog-to-store-whats-new.js --platform ios),
+# and submits for review with automatic release after approval — the App Store
+# equivalent of scripts/submit-microsoft-store.ps1.
+#
+# Auth: App Store Connect API key via env vars (see docs/app-store-ci.md):
+#   APP_STORE_CONNECT_API_KEY_ID          Key ID
+#   APP_STORE_CONNECT_API_ISSUER_ID       Issuer ID
+#   APP_STORE_CONNECT_API_KEY_P8          base64 of the .p8 private key
+#
+# Usage:
+#   fastlane ios submit_app_store version:3.8.5 ipa:"path/to.ipa" notes:whats_new_ios.txt
+#   # Retry with an already-uploaded binary (skip upload, pick build by number):
+#   fastlane ios submit_app_store version:3.8.5 notes:whats_new_ios.txt build_number:3.8.5
+
+default_platform(:ios)
+
+platform :ios do
+  desc "Upload IPA + What's new to App Store Connect and submit for review"
+  lane :submit_app_store do |options|
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APP_STORE_CONNECT_API_KEY_ID"),
+      issuer_id: ENV.fetch("APP_STORE_CONNECT_API_ISSUER_ID"),
+      key_content: ENV.fetch("APP_STORE_CONNECT_API_KEY_P8"),
+      is_key_content_base64: true
+    )
+
+    version = options.fetch(:version)
+    notes = File.read(options.fetch(:notes)).strip
+    UI.user_error!("What's new file is empty — nothing iOS-facing to submit") if notes.empty?
+
+    # Promotional text does not reliably persist across new versions, so we
+    # stamp it explicitly on every submission.
+    promotional_text =
+      "Free your mind. ReDD Blocker helps you block distracting apps and " \
+      "websites — backed by 10+ years of our award-winning research at the " \
+      "University of Oxford."
+
+    ipa = options[:ipa].to_s.strip
+    ipa = nil if ipa.empty?
+    build_number = options[:build_number].to_s.strip
+    build_number = nil if build_number.empty?
+
+    deliver(
+      api_key: api_key,
+      app_identifier: "com.reddblock",
+      app_version: version,
+      ipa: ipa,
+      skip_binary_upload: ipa.nil?,
+      build_number: build_number,
+      release_notes: { "default" => notes },
+      promotional_text: { "default" => promotional_text },
+      submit_for_review: true,
+      automatic_release: true,
+      skip_screenshots: true,
+      skip_metadata: false,
+      force: true, # no interactive HTML preview in CI
+      run_precheck_before_submit: false,
+      submission_information: {
+        add_id_info_uses_idfa: false,
+        export_compliance_uses_encryption: false
+      }
+    )
+  end
+end

@@ -3,9 +3,9 @@
 # Use after a Release already published .msix assets (or to retry a failed
 # Publish (Microsoft Store) job with fixed submit scripts on main).
 #
-# Actions → "Store submit only" → Run workflow → set release_tag (e.g. v3.8.4).
+# Actions → "Microsoft store submission" → Run workflow → set release_tag (e.g. v3.8.4).
 
-name: Store submit only
+name: Microsoft store submission
 
 on:
   workflow_dispatch:
