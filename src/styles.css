@@ -6595,12 +6595,11 @@ body.dark-mode .schedule-panel-overlay-group .repeat-label.repeat-label-disabled
     overflow: hidden;
 }
 
-/* Anchor to the button's right edge so the wide menu grows left into the card. */
+/* Right-aligned with the button; JS nudges horizontally only if the viewport would clip it. */
 .repeat-dropdown-menu.strictness-dropdown-menu{
     left: auto;
     right: 0;
     width: 300px;
-    max-width: min(300px, 80vw);
 }
 
 .repeat-dropdown-menu.hidden{

@@ -55,6 +55,18 @@ export function isScheduleSegmentMutationBlocked(segmentIndex) {
     return segmentIndex < state.activeScheduleSegmentCount;
 }
 
+/** Keep the right-aligned menu fully inside the viewport (nudge only when clipped). */
+function positionScheduleStrictnessDropdownMenu(menu) {
+    if (!menu || menu.classList.contains('hidden')) return;
+    menu.style.transform = '';
+    const rect = menu.getBoundingClientRect();
+    const pad = 8;
+    let dx = 0;
+    if (rect.left < pad) dx = pad - rect.left;
+    else if (rect.right > window.innerWidth - pad) dx = window.innerWidth - pad - rect.right;
+    if (dx) menu.style.transform = `translateX(${dx}px)`;
+}
+
 export function syncAllowEditsBetweenBlocksToggle() {
     const btn = document.getElementById('schedule-strictness-dropdown-btn');
     if (!btn) return;
@@ -88,6 +100,7 @@ export function setupAllowEditsBetweenBlocksToggle() {
         if (isHidden) closeSchedulePanelDropdownMenus('schedule-strictness-dropdown-menu');
         menu.classList.toggle('hidden');
         if (isHidden) {
+            requestAnimationFrame(() => positionScheduleStrictnessDropdownMenu(menu));
             setTimeout(() => {
                 document.addEventListener('click', function closeMenu(evt) {
                     if (!menu.contains(evt.target)) {
@@ -98,6 +111,8 @@ export function setupAllowEditsBetweenBlocksToggle() {
             }, 10);
         }
     });
+
+    window.addEventListener('resize', () => positionScheduleStrictnessDropdownMenu(menu));
 
     menu.querySelectorAll('.strictness-option').forEach(opt => {
         opt.addEventListener('click', async (e) => {
