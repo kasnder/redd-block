@@ -24,7 +24,9 @@ free to download).
 4. Back in Partner Center → Account settings → User management →
    **Microsoft Entra applications**, add that app and assign the **Manager**
    role.
-5. Copy your **Seller ID** (Account settings → Identifiers / Publisher ID).
+5. Copy your **Seller ID** (Account settings → Identifiers). It is a
+   **number** (digits only) — not the Publisher GUID, not `CN=…`, not the
+   Store `9…` ID.
 6. Copy the app’s **Store ID** (Apps and games → ReDD Blocker → Product
    identity / Store listing URL segment, e.g. `9P…`).
 
@@ -38,7 +40,7 @@ and from package identity `WINDOWS_IDENTITY_*`):
 | `AZURE_AD_TENANT_ID` | Entra Directory (tenant) ID |
 | `AZURE_AD_APPLICATION_CLIENT_ID` | Entra Application (client) ID |
 | `AZURE_AD_APPLICATION_SECRET` | Entra client secret value |
-| `SELLER_ID` | Partner Center Seller / Publisher ID |
+| `SELLER_ID` | Partner Center **Seller ID** (numeric, e.g. `1234567`) |
 | `MS_STORE_PRODUCT_ID` | Store product ID (`9P…`) |
 
 Existing Store **package identity** secrets (already used by `build:win-store`):
