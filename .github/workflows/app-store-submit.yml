@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: GitHub Release tag whose .ipa asset to submit (e.g. v3.8.5)
+        description: GitHub Release tag whose .ipa asset to submit (v3.8.5 or 3.8.5)
         required: true
         type: string
       skip_binary_upload:
@@ -82,8 +82,10 @@ jobs:
             echo "release_tag input is empty" >&2
             exit 1
           fi
+          # Accept "3.8.5" or "v3.8.5" — GitHub Releases use the v-prefixed tag.
           if [[ "$TAG" != v* ]]; then
-            echo "Hint: tag should look like v3.8.5 (got: $TAG)" >&2
+            TAG="v${TAG}"
+            echo "Normalized release tag to $TAG"
           fi
           echo "Downloading .ipa from release tag: [$TAG] repo: $GH_REPO"
           mkdir -p store-packages-ios
@@ -109,7 +111,8 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          TAG="${RELEASE_TAG#v}"
+          TAG="$(echo -n "$RELEASE_TAG" | tr -d '[:space:]')"
+          TAG="${TAG#v}"
           PKG="$(node -p "require('./package.json').version")"
           if [[ "$TAG" != "$PKG" ]]; then
             echo "Warning: release tag version ($TAG) != package.json ($PKG); using tag for What's new." >&2
