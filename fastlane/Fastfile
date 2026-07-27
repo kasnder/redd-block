@@ -55,6 +55,12 @@ platform :ios do
     build_number = options[:build_number].to_s.strip
     build_number = nil if build_number.empty?
 
+    # App Store Connect requires whatsNew on real locale codes. Passing only
+    # "default" makes deliver report Detected languages: ["default"] and never
+    # stamps the primary listing locale — submit then fails with missing whatsNew.
+    # Primary listing language for ReDD Blocker is English (U.S.).
+    locale = "en-US"
+
     deliver(
       api_key: api_key,
       app_identifier: "com.reddblock",
@@ -62,8 +68,9 @@ platform :ios do
       ipa: ipa,
       skip_binary_upload: ipa.nil?,
       build_number: build_number,
-      release_notes: { "default" => notes },
-      promotional_text: { "default" => promotional_text },
+      languages: [locale],
+      release_notes: { locale => notes },
+      promotional_text: { locale => promotional_text },
       submit_for_review: true,
       automatic_release: true,
       skip_screenshots: true,

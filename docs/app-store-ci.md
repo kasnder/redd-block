@@ -91,9 +91,9 @@ Flow inside [`fastlane/Fastfile`](../fastlane/Fastfile) (`submit_app_store` lane
 
 1. Authenticate with the App Store Connect API key.
 2. `deliver`: upload the IPA, create/edit the App Store version matching
-   `package.json`, set localized What's new (`default` locale) and the fixed
-   promotional text (hardcoded in the Fastfile — it does not reliably persist
-   across new versions), wait for the
+   `package.json`, set What's new and promotional text on the primary
+   locale (`en-US` — not deliver's `"default"` key, which does not stamp
+   App Store Connect `whatsNew`), wait for the
    build to finish processing, and submit for review with
    `automatic_release: true` (goes live automatically after approval) and
    export compliance pre-answered (`ITSAppUsesNonExemptEncryption` is false
