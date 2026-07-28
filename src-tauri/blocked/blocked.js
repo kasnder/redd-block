@@ -46,12 +46,22 @@
   if (subtitleEl) {
     if (blockMode === "allowlist") {
       subtitleEl.textContent = da
-        ? "Dette websted er ikke et af dem, du har givet dig selv lov til at bruge."
+        ? "Denne hjemmeside er ikke en af dem, du har givet dig selv lov til at bruge."
         : "This site isn't one of the ones you've allowed yourself to use.";
     } else {
       subtitleEl.textContent = da
-        ? "Dette websted er på din nuværende blokeringsliste."
+        ? "Denne hjemmeside er på din nuværende blokeringsliste."
         : "This site is on your current blocklist.";
+    }
+  }
+
+  if (da) {
+    setText("footer-made-with", "Lavet med");
+    setText("footer-by", "af");
+    const orgLink = document.getElementById("footer-org-link");
+    if (orgLink) {
+      orgLink.textContent = "digitalevaner.dk";
+      orgLink.href = "https://digitalevaner.dk";
     }
   }
 

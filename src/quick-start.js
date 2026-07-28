@@ -169,6 +169,10 @@ function updateQuickStartModeLabels() {
         const el = document.getElementById(id);
         if (el) el.textContent = text;
     };
+    setText('quick-start-mode-label', tSettings('blocklistModeLabel'));
+    setText('quick-start-mode-sentence-before', tSettings('blocklistModeSentenceBefore'));
+    setText('quick-start-mode-sentence-after', tSettings('blocklistModeSentenceAfter'));
+    setText('quick-start-mode-hint', tSettings(isAllow ? 'allowlistModeHint' : 'blocklistModeHint'));
     setText('quick-start-websites-label', tSettings(isAllow ? 'websitesAllow' : 'websites'));
     setText('quick-start-apps-label', tSettings(isAllow ? 'appsAllow' : 'apps'));
     setText(
@@ -546,6 +550,9 @@ export function applyQuickStartLanguage() {
         if (el) el.textContent = text;
     };
     setText('quick-start-title', tSettings('quickStartTitle'));
+    setText('quick-start-mode-label', tSettings('blocklistModeLabel'));
+    setText('quick-start-mode-sentence-before', tSettings('blocklistModeSentenceBefore'));
+    setText('quick-start-mode-sentence-after', tSettings('blocklistModeSentenceAfter'));
     setText('quick-start-mode-blocklist-label', tSettings('blocklistModeBlocklist'));
     setText('quick-start-mode-allowlist-label', tSettings('blocklistModeAllowlist'));
     setText('quick-start-duration-label', tSettings('quickSelect'));
@@ -593,7 +600,13 @@ export function applyQuickStartLanguage() {
     }
 
     const btn = document.getElementById('quick-start-btn');
-    if (btn) btn.title = tSettings('quickStartTitle');
+    if (btn) {
+        const label = tSettings('quickStartBtn');
+        btn.title = label;
+        btn.setAttribute('aria-label', label);
+    }
+    const btnLabel = document.getElementById('quick-start-btn-label');
+    if (btnLabel) btnLabel.textContent = tSettings('quickStartBtn');
 
     const hint = document.getElementById('quick-start-hint');
     if (hint) {

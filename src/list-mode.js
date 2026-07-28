@@ -49,6 +49,8 @@ export function updateBlocklistModalModeLabels(mode) {
         tSettings(isAllow ? 'appsAllowTooltip' : 'appsTooltip'),
     );
     assignText('blocklist-mode-hint', tSettings(isAllow ? 'allowlistModeHint' : 'blocklistModeHint'));
+    assignText('blocklist-mode-sentence-before', tSettings('blocklistModeSentenceBefore'));
+    assignText('blocklist-mode-sentence-after', tSettings('blocklistModeSentenceAfter'));
     assignText(
         'show-item-details-label',
         tSettings(isAllow ? 'listAllowedOnCard' : 'listBlockedOnCard'),

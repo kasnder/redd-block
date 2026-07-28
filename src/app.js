@@ -2733,10 +2733,10 @@ export function applyEulaOnboardingLanguage() {
     }
 
     const heading = document.getElementById('eula-welcome-title');
-    if (heading) heading.textContent = title;
+    if (heading) heading.innerHTML = title;
 
     const headingIos = document.getElementById('eula-welcome-title-ios');
-    if (headingIos) headingIos.textContent = title;
+    if (headingIos) headingIos.innerHTML = title;
 
     const subtitle = document.getElementById('eula-onboarding-subtitle');
     if (subtitle) subtitle.textContent = tSettings('welcomeOnboardingSubtitle');
@@ -2784,7 +2784,7 @@ export function applyWelcomeOnboardingLanguage() {
     }
 
     const heading = document.getElementById('welcome-onboarding-title');
-    if (heading) heading.textContent = tSettings('welcomeOnboardingTitle');
+    if (heading) heading.innerHTML = tSettings('welcomeOnboardingTitle');
 
     const subtitle = document.getElementById('welcome-onboarding-subtitle');
     if (subtitle) subtitle.textContent = tSettings('welcomeOnboardingSubtitle');
@@ -3129,6 +3129,11 @@ export function applySettingsLanguage() {
         blocklistSelect.options[0].textContent = tSettings('selectionPromptOption');
     }
     setText('main-blocklists-title', tSettings('yourBlocklists'));
+    setText('add-blocklist-btn-label', tSettings('addFocusSpaceBtn'));
+    const addBlocklistBtn = document.getElementById('add-blocklist-btn');
+    if (addBlocklistBtn) addBlocklistBtn.title = tSettings('addFocusSpaceBtn');
+    const createActions = document.querySelector('.blocklists-create-actions');
+    if (createActions) createActions.setAttribute('aria-label', tSettings('blocklistsCreateActionsAria'));
     applyQuickStartLanguage();
     setText('main-schedule-title', tSettings('scheduleTitle'));
     setText('no-active-blocks-label', tSettings('noActiveBlocks'));
@@ -3193,6 +3198,11 @@ export function applySettingsLanguage() {
     }
     setText('footer-made-with', tSettings('madeWith'));
     setText('footer-by', tSettings('by'));
+    const footerOrgLink = document.getElementById('footer-org-link');
+    if (footerOrgLink) {
+        footerOrgLink.textContent = tSettings('footerOrgLabel');
+        footerOrgLink.href = tSettings('footerOrgUrl');
+    }
     const setPlaceholder = (id, text) => {
         const el = document.getElementById(id);
         if (el) el.placeholder = text;
@@ -3213,8 +3223,18 @@ export function applySettingsLanguage() {
     setText('active-blocklist-warning-text', tSettings('activeBlocklistWarning'));
     setText('blocklist-name-label', tSettings('name'));
     setText('blocklist-mode-label', tSettings('blocklistModeLabel'));
+    setText('blocklist-mode-sentence-before', tSettings('blocklistModeSentenceBefore'));
+    setText('blocklist-mode-sentence-after', tSettings('blocklistModeSentenceAfter'));
     setText('blocklist-mode-blocklist-label', tSettings('blocklistModeBlocklist'));
     setText('blocklist-mode-allowlist-label', tSettings('blocklistModeAllowlist'));
+    setText(
+        'blocklist-mode-hint',
+        tSettings(
+            getSelectedBlocklistModalMode() === 'allowlist'
+                ? 'allowlistModeHint'
+                : 'blocklistModeHint',
+        ),
+    );
     updateBlocklistModalModeLabels(getSelectedBlocklistModalMode());
     setText('override-difficulty-label', tSettings('overrideDifficulty'));
     setText('override-method-label', tSettings('overrideMethod'));
@@ -3474,7 +3494,7 @@ export function applySettingsLanguage() {
     applyEulaOnboardingLanguage();
     applyWelcomeOnboardingLanguage();
     applySafariFdaOnboardingLanguage();
-    setText('ios-screentime-onboarding-title', tSettings('welcomeOnboardingTitle'));
+    setHtml('ios-screentime-onboarding-title', tSettings('welcomeOnboardingTitle'));
     setText('ios-screentime-onboarding-note', tSettings('eulaProjectBlurb'));
 
     if (state.migrationOnboardingActive && state.lastMigrationBrowserState) {

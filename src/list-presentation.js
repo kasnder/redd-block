@@ -47,7 +47,7 @@ function siteWord(count) {
         return '网站';
     }
     if (getSettingsLanguage() === 'da') {
-        return count === 1 ? 'websted' : 'websteder';
+        return count === 1 ? 'hjemmeside' : 'hjemmesider';
     }
     return count === 1 ? 'site' : 'sites';
 }

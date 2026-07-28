@@ -1885,22 +1885,12 @@ body.dark-mode .app-blocking-closedown-banner{
         max-width: none;
     }
 
-    #add-blocklist-btn{
-        width: 32px;
-        height: 32px;
-    }
-
     .blocklists-section > .section-header h2{
         line-height: 32px;
     }
 
     .grid-top-row .blocklists-section > .section-header{
         min-height: 32px;
-    }
-
-    #add-blocklist-btn svg{
-        width: 18px;
-        height: 18px;
     }
 
     /* iOS: settings live in main-content top-right (see unified rules below). */
@@ -1993,18 +1983,7 @@ body.dark-mode .app-blocking-closedown-banner{
         min-height: 0;
     }
 
-    body.ios:not(.ios-phone) .main-content .blocklists-section > .section-header #add-blocklist-btn{
-        width: 38px;
-        height: 38px;
-    }
-
-    body.ios:not(.ios-phone) .main-content .blocklists-section > .section-header #add-blocklist-btn svg{
-        width: 20px;
-        height: 20px;
-    }
-
     body.ios:not(.ios-phone) .main-content .icon-btn,
-body.ios:not(.ios-phone) .main-content #add-blocklist-btn,
 body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         width: 44px;
         height: 44px;
@@ -2026,8 +2005,7 @@ body.ios:not(.ios-phone) .main-content #settings-btn-stack{
         font-size: calc(14px * var(--ipad-s, 1));
     }
 
-    body.ios:not(.ios-phone) .main-content #add-blocklist-btn svg,
-body.ios:not(.ios-phone) .main-content #settings-btn-stack svg{
+    body.ios:not(.ios-phone) .main-content #settings-btn-stack svg{
         width: 24px;
         height: 24px;
     }
@@ -3668,7 +3646,7 @@ body.ios .scheduler-section > .section-header {
     flex-wrap: nowrap;
 }
 
-/* Two-column desktop/tablet: one full-width sticky heading row, then blocklists + detail below. */
+/* Two-column desktop/tablet: one full-width sticky heading row, then list stack + detail. */
   @media (min-width: 719px) {
     .grid-top-row{
         grid-template-rows: auto auto;
@@ -3686,9 +3664,11 @@ body.ios .scheduler-section > .section-header {
         margin-top: 0;
     }
 
-    .grid-top-row .blocklists-container{
+    .grid-top-row .blocklists-list-stack{
         grid-column: 1;
         grid-row: 2;
+        min-width: 0;
+        max-width: 100%;
     }
 
     .grid-top-row .scheduler-content{
@@ -3710,7 +3690,7 @@ body.ios .scheduler-section > .section-header {
 .section-header h2{
     font-family: var(--font-section-label);
     font-size: 16px;
-    font-weight: 500;
+    font-weight: 700;
     color: var(--header-text);
     text-transform: uppercase;
     letter-spacing: 0.06em;
@@ -3758,7 +3738,8 @@ body.handset-device .week-calendar-section{
     align-items: center;
 }
 
-.blocklists-section > .section-header h2{
+.blocklists-section > .section-header h2,
+.week-calendar-section .section-header h2{
     font-weight: 700;
     color: var(--text-subtle);
     line-height: 30px;
@@ -3788,43 +3769,6 @@ body:not(.ios) #settings-toolbar-scheduler{
     display: flex !important;
 }
 
-.blocklists-section > .section-header #add-blocklist-btn{
-    margin-left: 0;
-    flex-shrink: 0;
-    width: 30px;
-    height: 30px;
-    background: var(--element-bg);
-    border: 1px solid var(--border-color);
-    box-shadow: var(--redd-shadow-card);
-    border-radius: 8px;
-}
-
-.blocklists-header-actions{
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    flex-shrink: 0;
-}
-
-.blocklists-section > .section-header #quick-start-btn{
-    margin-left: 0;
-    flex-shrink: 0;
-    width: 30px;
-    height: 30px;
-    background: var(--element-bg);
-    border: 1px solid var(--border-color);
-    color: inherit;
-    box-shadow: var(--redd-shadow-card);
-    border-radius: 8px;
-}
-
-.blocklists-section > .section-header #quick-start-btn:hover{
-    background: var(--element-bg);
-    border-color: var(--border-color-medium);
-    box-shadow: var(--redd-shadow-card-hover);
-}
-
-.blocklists-section > .section-header #quick-start-btn .quick-start-btn-emoji,
 .blocklist-card-quick-start .blocklist-emoji,
 .now-blocking-chip-emoji{
     font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
@@ -3832,26 +3776,111 @@ body:not(.ios) #settings-toolbar-scheduler{
     line-height: 1;
 }
 
-.blocklists-section > .section-header #quick-start-btn .quick-start-btn-emoji{
-    font-size: 16px;
-}
-
-.blocklists-section > .section-header #add-blocklist-btn svg,
-.blocklists-section > .section-header #quick-start-btn svg{
-    width: 18px;
-    height: 18px;
-}
-
-.blocklists-section > .section-header #add-blocklist-btn:hover{
-    background: var(--element-bg);
-    border-color: var(--border-color-medium);
-    box-shadow: var(--redd-shadow-card-hover);
-}
-
 .blocklists-section > .section-header.blocklists-section-header .settings-top-btn{
     width: 30px;
     height: 30px;
     padding: 0;
+}
+
+/* Create buttons + scrollable cards — one grid cell on desktop so the
+   scheduler panel can't stretch empty space between them. */
+.blocklists-list-stack{
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    max-width: 100%;
+    min-height: 0;
+}
+
+/* Dual create actions — same outer width as a focus-space card. */
+.blocklists-create-actions{
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    flex-shrink: 0;
+    /* Match .blocklists-container horizontal inset so edges align with cards. */
+    padding: 0 4px 8px;
+}
+
+.blocklists-create-btn{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 14px;
+    border-radius: 12px;
+    border: 1px solid transparent;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.2;
+    cursor: pointer;
+    box-shadow: var(--redd-shadow-card);
+    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+}
+
+.blocklists-create-btn > span:last-child{
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.blocklists-create-btn-icon{
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    flex-shrink: 0;
+}
+
+.blocklists-create-btn-icon svg{
+    display: block;
+}
+
+.blocklists-create-btn--primary{
+    background: var(--primary-btn-bg);
+    color: var(--primary-btn-text);
+    border-color: var(--primary-btn-bg);
+}
+
+.blocklists-create-btn--primary .blocklists-create-btn-icon{
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+}
+
+.blocklists-create-btn--primary:hover{
+    background: var(--primary-btn-bg-hover);
+    border-color: var(--primary-btn-bg-hover);
+    box-shadow: var(--redd-shadow-card-hover);
+}
+
+.blocklists-create-btn--secondary{
+    background: var(--element-bg);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.blocklists-create-btn--secondary .blocklists-create-btn-icon{
+    background: #f3e6c8;
+    color: #8a6a2f;
+}
+
+.blocklists-create-btn--secondary:hover{
+    border-color: var(--border-color-medium, var(--border-color));
+    box-shadow: var(--redd-shadow-card-hover);
+}
+
+body.dark-mode .blocklists-create-btn--secondary .blocklists-create-btn-icon{
+    background: rgba(245, 198, 106, 0.18);
+    color: #e6c46a;
 }
 
 /* Schedule heading row: SCHEDULE title on the left, status chips pushed to the right. */
@@ -7114,15 +7143,22 @@ body.dark-mode .schedule-pending-discard:hover{
     padding: 10px 4px 4px;
 }
 
-/* Two-column selected layout: the list shares a grid row with the start-a-block
-   panel, so let it scroll at the panel's bottom edge instead of cutting off at a
-   fixed height (height: 0 keeps it from inflating the row; the max() keeps the
-   default height as a floor when the panel is short). The 8px offset mirrors
-   .time-picker-container's margin-bottom so both columns end on the same line. */
+/* Two-column selected layout: stretch the list stack to the start-a-block
+   panel's row height (grid defaults to align-items:start), keep create
+   buttons fixed, and let the card list fill + scroll the rest. */
   @media (min-width: 719px) {
+    body:not(.ios):not(.handset-device) .grid-top-row--blocklist-selected .blocklists-list-stack{
+        align-self: stretch;
+        min-height: var(--blocklists-scroll-max-height);
+        /* Same bottom gap as .time-picker-container. */
+        margin-bottom: 8px;
+    }
+
     body:not(.ios):not(.handset-device) .grid-top-row--blocklist-selected .blocklists-container{
+        flex: 1 1 auto;
+        min-height: 0;
+        /* Classic flex scroll child: height:0 + flex:1 fills leftover stack space. */
         height: 0;
-        min-height: max(var(--blocklists-scroll-max-height), calc(100% - 8px));
         max-height: none;
     }
 }
@@ -8250,7 +8286,7 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     border: 1px solid rgba(30, 45, 62, 0.06);
     border-radius: 16px;
     box-shadow: var(--redd-shadow-card-hover);
-    padding: 18px 20px 16px;
+    padding: 18px var(--onboarding-align-inset) 16px;
     margin: 0;
 }
 
@@ -8271,11 +8307,13 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
 
 #welcome-onboarding .language-picker-dropdown{
     z-index: 110;
+    /* Don't inherit the welcome layout's text-align: center */
+    text-align: left;
 }
 
 .welcome-onboarding-header{
     display: grid;
-    justify-items: center;
+    justify-items: stretch;
     width: 100%;
     box-sizing: border-box;
 }
@@ -8283,9 +8321,9 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
 .welcome-onboarding-title-row{
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 12px;
-    margin: 0 auto 8px;
+    margin: 0 0 8px;
     width: 100%;
     box-sizing: border-box;
     text-align: left;
@@ -8300,7 +8338,8 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
 
 .welcome-onboarding-title-text{
     min-width: 0;
-    max-width: 22em;
+    flex: 1;
+    max-width: none;
     text-align: left;
 }
 
@@ -8355,8 +8394,8 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
 
 .welcome-onboarding-subtitle {
     margin: 6px 0 0;
-    max-width: 22em;
-    font-size: 14px;
+    max-width: none;
+    font-size: 13px;
     line-height: 1.45;
     color: var(--text-muted);
     white-space: pre-line;
@@ -8369,7 +8408,7 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     border: 1px solid rgba(30, 45, 62, 0.06);
     border-radius: 16px;
     box-shadow: var(--redd-shadow-card-hover);
-    padding: 18px 20px 16px;
+    padding: 18px var(--onboarding-align-inset) 16px;
 }
 
 .welcome-how-it-works{
@@ -8433,7 +8472,7 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
 
 .welcome-step-text{
     margin: 0;
-    font-size: 14px;
+    font-size: 12px;
     line-height: 1.5;
     color: var(--text-secondary);
     text-align: left;
@@ -8462,7 +8501,6 @@ body.dark-mode .welcome-apple-inline-logo{
 
 .welcome-demo-section{
     margin-top: 8px;
-    margin-left: 40px;
 }
 
 .welcome-demo-toggle{
@@ -8488,8 +8526,9 @@ body.dark-mode .welcome-apple-inline-logo{
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
+    margin-right: 4px; /* with 8px gap → 12px, matching step number → title */
     border-radius: 999px;
     background: var(--redd-teal-soft);
     color: var(--redd-teal);
@@ -8507,6 +8546,7 @@ body.dark-mode .welcome-apple-inline-logo{
 
 .welcome-demo-panel{
     margin-top: 10px;
+    margin-left: 40px; /* 28px circle + 12px gap — align with step body text */
 }
 
 .welcome-demo-panel.hidden{
@@ -8740,6 +8780,12 @@ body.dark-mode .eula-back-btn:hover{
     color: var(--text-muted);
 }
 
+/* Footer credit link — no underline (EULA / privacy links in the card keep theirs). */
+#welcome-onboarding-footer-1 .legal-onboarding-link,
+#eula-onboarding-footer-1 .legal-onboarding-link {
+    text-decoration: none;
+}
+
 #eula-onboarding .welcome-footer-line {
     font-style: italic;
 }
@@ -8806,7 +8852,7 @@ body.dark-mode .welcome-demo-toggle:hover{
     }
 
     .welcome-onboarding-card{
-        padding: 16px 14px 14px;
+        padding: 16px var(--onboarding-align-inset) 14px;
     }
 }
 
@@ -11237,13 +11283,51 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
     color: white;
 }
 
-/* Mode Toggle */
+/* Mode selector — inline sentence with pill toggle */
+.mode-sentence-group{
+    margin-bottom: 18px;
+}
+
+.mode-sentence-label{
+    display: block;
+    margin: 0 0 8px;
+    font-family: var(--font-section-label);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+}
+
+.mode-sentence{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+    margin: 0;
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.45;
+    color: var(--text-secondary);
+}
+
 .mode-toggle{
     display: flex;
     gap: 4px;
     background: var(--toggle-bg);
     padding: 4px;
     border-radius: 8px;
+}
+
+.mode-toggle--inline{
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--redd-warm-grey);
+    vertical-align: middle;
 }
 
 .mode-btn{
@@ -11256,25 +11340,22 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
     border: none;
     border-radius: 6px;
     background: transparent;
+    font-family: inherit;
     font-size: 15px;
     font-weight: 500;
     color: var(--text-muted);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.mode-btn-icon{
-    flex-shrink: 0;
-}
-
-.mode-btn-icon--block{
-    color: #ef4444;
-}
-
-.mode-btn-icon--allow{
-    color: #22c55e;
-    width: 18px;
-    height: 18px;
+.mode-toggle--inline .mode-btn{
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text-muted);
 }
 
 .mode-btn-label{
@@ -11287,9 +11368,35 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
 }
 
+.mode-toggle--inline .mode-btn.active{
+    background: var(--primary-btn-bg);
+    color: var(--primary-btn-text);
+    box-shadow: none;
+}
+
 .mode-btn.disabled{
     opacity: 0.6;
     cursor: not-allowed;
+}
+
+.mode-sentence-hint{
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 10px 0 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.mode-sentence-hint::before{
+    content: '';
+    width: 6px;
+    height: 6px;
+    margin-top: 0.45em;
+    border-radius: 50%;
+    background: var(--text-primary);
+    flex-shrink: 0;
 }
 
 .coming-soon-badge{
@@ -11622,12 +11729,6 @@ body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .quick-st
     display: contents;
 }
 
-body.desktop-compact-layout #quick-start-modal.mobile-fullscreen-modal .quick-start-mode-toggle{
-    min-width: 0;
-    width: 100%;
-    margin-bottom: 12px;
-}
-
 /* Override desktop popup sizing while compact. */
 body.desktop-compact-layout #quick-start-modal .modal-content{
     max-width: 100%;
@@ -11787,12 +11888,6 @@ body.desktop-compact-layout #quick-start-modal .modal-content{
     body:not(.handset-device):not(.ios):not(.android) #quick-start-modal.mobile-fullscreen-modal .quick-start-header,
     body:not(.handset-device):not(.ios):not(.android) #quick-start-modal.mobile-fullscreen-modal .quick-start-modal-scroll-body{
         display: contents;
-    }
-
-    body:not(.handset-device):not(.ios):not(.android) #quick-start-modal.mobile-fullscreen-modal .quick-start-mode-toggle{
-        min-width: 0;
-        width: 100%;
-        margin-bottom: 12px;
     }
 
     body:not(.handset-device):not(.ios):not(.android) #enter-scheduler-modal.mobile-fullscreen-modal .modal-buttons{
@@ -12093,7 +12188,7 @@ body:not(.handset-device) #quick-start-modal .mobile-modal-scroll-body{
 .quick-start-header{
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
     gap: 12px;
     margin-bottom: 16px;
     flex-shrink: 0;
@@ -12123,11 +12218,6 @@ body:not(.handset-device) #quick-start-modal .quick-start-modal-scroll-body{
     font-size: 1.45rem;
     font-weight: 700;
     color: var(--text-primary);
-}
-
-.quick-start-mode-toggle{
-    flex: 0 0 auto;
-    min-width: 168px;
 }
 
 #quick-start-modal .tags-input-container{
@@ -12522,12 +12612,6 @@ body.handset-device #quick-start-modal.mobile-fullscreen-modal .mobile-modal-scr
 body.handset-device #quick-start-modal.mobile-fullscreen-modal .quick-start-header,
 body.handset-device #quick-start-modal.mobile-fullscreen-modal .quick-start-modal-scroll-body{
     display: contents;
-}
-
-body.handset-device #quick-start-modal.mobile-fullscreen-modal .quick-start-mode-toggle{
-    min-width: 0;
-    width: 100%;
-    margin-bottom: 12px;
 }
 
 .modal-content h3{
@@ -14513,11 +14597,6 @@ body.dark-mode #settings-modal .settings-select{
     flex-shrink: 0;
     border-radius: 3px;
     overflow: hidden;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.08);
-}
-
-body.dark-mode .language-picker-flag-wrap{
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
 }
 
 .language-picker-flag-wrap .language-flag-svg{
@@ -14530,13 +14609,16 @@ body.dark-mode .language-picker-flag-wrap{
     position: absolute;
     right: 0;
     top: calc(100% + 6px);
-    min-width: max(100%, 12.5rem);
+    min-width: 100%;
+    width: max-content;
+    max-width: min(18rem, calc(100vw - 24px));
     padding: 12px 12px 10px;
     background: var(--modal-bg);
     border: 1px solid var(--border-color-light);
     border-radius: 12px;
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
     z-index: 1000;
+    text-align: left;
 }
 
 body.dark-mode .language-picker-dropdown{

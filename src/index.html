@@ -290,7 +290,7 @@
                                     aria-expanded="false"
                                     aria-controls="welcome-demo-panel">
                                 <span class="welcome-demo-toggle-play" aria-hidden="true">
-                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                                         <path d="M8 5v14l11-7z"></path>
                                     </svg>
                                 </span>
@@ -983,19 +983,6 @@
                 <div id="blocklists-section" class="blocklists-section">
                     <div class="section-header blocklists-section-header">
                         <h2 id="main-blocklists-title">My Focus Spaces</h2>
-                        <div class="blocklists-header-actions">
-                            <button id="add-blocklist-btn" class="icon-btn" title="Add blocklist">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                                </svg>
-                            </button>
-                            <button id="quick-start-btn" class="icon-btn quick-start-btn" type="button"
-                                title="Quick start" aria-label="Quick start">
-                                <span class="quick-start-btn-emoji" aria-hidden="true">⚡️</span>
-                            </button>
-                        </div>
                         <div class="blocklists-heading-controls">
                             <div class="settings-toolbar settings-toolbar--stack" id="settings-toolbar-stack">
                                 <button id="settings-btn-stack" type="button" class="settings-top-btn icon-btn"
@@ -1022,8 +1009,38 @@
                             </div>
                         </div>
                     </div>
-                    <div id="blocklists-container" class="blocklists-container">
-                        <!-- Blocklists will be rendered here -->
+                    <div class="blocklists-list-stack">
+                        <div class="blocklists-create-actions" role="group" aria-label="Create focus space">
+                            <button id="add-blocklist-btn"
+                                    class="blocklists-create-btn blocklists-create-btn--primary"
+                                    type="button"
+                                    title="New space">
+                                <span class="blocklists-create-btn-icon" aria-hidden="true">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                        <line x1="5" y1="12" x2="19" y2="12"></line>
+                                    </svg>
+                                </span>
+                                <span id="add-blocklist-btn-label">New space</span>
+                            </button>
+                            <button id="quick-start-btn"
+                                    class="blocklists-create-btn blocklists-create-btn--secondary"
+                                    type="button"
+                                    title="Quick start"
+                                    aria-label="Quick start">
+                                <span class="blocklists-create-btn-icon" aria-hidden="true">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"></path>
+                                    </svg>
+                                </span>
+                                <span id="quick-start-btn-label">Quick start</span>
+                            </button>
+                        </div>
+                        <div id="blocklists-container" class="blocklists-container">
+                            <!-- Blocklists will be rendered here -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1171,30 +1188,24 @@
                     </div>
                 </div>
 
-                <div class="form-group" id="blocklist-mode-group">
-                    <label id="blocklist-mode-label">Mode</label>
-                    <div class="mode-toggle" id="blocklist-mode-toggle">
-                        <button type="button" class="mode-btn radio-option active" data-mode="blocklist"
-                            id="blocklist-mode-blocklist">
-                            <svg class="mode-btn-icon mode-btn-icon--block" width="16" height="16" viewBox="0 0 24 24"
-                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                stroke-linejoin="round" aria-hidden="true">
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <path d="m4.9 4.9 14.2 14.2"></path>
-                            </svg>
-                            <span class="mode-btn-label" id="blocklist-mode-blocklist-label">Block</span>
-                        </button>
-                        <button type="button" class="mode-btn radio-option" data-mode="allowlist"
-                            id="blocklist-mode-allowlist">
-                            <svg class="mode-btn-icon mode-btn-icon--allow" width="18" height="18" viewBox="0 0 24 24"
-                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                stroke-linejoin="round" aria-hidden="true">
-                                <path d="M20 6 9 17l-5-5"></path>
-                            </svg>
-                            <span class="mode-btn-label" id="blocklist-mode-allowlist-label">Allow</span>
-                        </button>
-                    </div>
-                    <p class="form-hint" id="blocklist-mode-hint">Only the websites and apps you add will be blocked.</p>
+                <div class="form-group mode-sentence-group" id="blocklist-mode-group">
+                    <label id="blocklist-mode-label" class="mode-sentence-label">Mode</label>
+                    <p class="mode-sentence">
+                        <span id="blocklist-mode-sentence-before">When this list is active,</span>
+                        <span class="mode-toggle mode-toggle--inline" id="blocklist-mode-toggle" role="group"
+                            aria-labelledby="blocklist-mode-label">
+                            <button type="button" class="mode-btn radio-option active" data-mode="blocklist"
+                                id="blocklist-mode-blocklist">
+                                <span class="mode-btn-label" id="blocklist-mode-blocklist-label">block</span>
+                            </button>
+                            <button type="button" class="mode-btn radio-option" data-mode="allowlist"
+                                id="blocklist-mode-allowlist">
+                                <span class="mode-btn-label" id="blocklist-mode-allowlist-label">only allow</span>
+                            </button>
+                        </span>
+                        <span id="blocklist-mode-sentence-after">its sites and apps.</span>
+                    </p>
+                    <p class="mode-sentence-hint" id="blocklist-mode-hint">The sites and apps on your list will be blocked — everything else works as usual.</p>
                 </div>
 
                 <div class="form-group">
@@ -1390,30 +1401,29 @@
             <div class="modal-content quick-start-modal-content">
                 <div class="quick-start-header">
                     <h3 id="quick-start-title">Quick start</h3>
-                    <div class="mode-toggle quick-start-mode-toggle" id="quick-start-mode-toggle">
-                        <button type="button" class="mode-btn radio-option active" data-mode="blocklist"
-                            id="quick-start-mode-blocklist">
-                            <svg class="mode-btn-icon mode-btn-icon--block" width="16" height="16" viewBox="0 0 24 24"
-                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                stroke-linejoin="round" aria-hidden="true">
-                                <circle cx="12" cy="12" r="10"></circle>
-                                <path d="m4.9 4.9 14.2 14.2"></path>
-                            </svg>
-                            <span class="mode-btn-label" id="quick-start-mode-blocklist-label">Block</span>
-                        </button>
-                        <button type="button" class="mode-btn radio-option" data-mode="allowlist"
-                            id="quick-start-mode-allowlist">
-                            <svg class="mode-btn-icon mode-btn-icon--allow" width="18" height="18" viewBox="0 0 24 24"
-                                fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
-                                stroke-linejoin="round" aria-hidden="true">
-                                <path d="M20 6 9 17l-5-5"></path>
-                            </svg>
-                            <span class="mode-btn-label" id="quick-start-mode-allowlist-label">Allow</span>
-                        </button>
-                    </div>
                 </div>
 
                 <div class="quick-start-modal-scroll-body">
+                <div class="form-group mode-sentence-group" id="quick-start-mode-group">
+                    <label id="quick-start-mode-label" class="mode-sentence-label">Mode</label>
+                    <p class="mode-sentence">
+                        <span id="quick-start-mode-sentence-before">When this list is active,</span>
+                        <span class="mode-toggle mode-toggle--inline" id="quick-start-mode-toggle" role="group"
+                            aria-labelledby="quick-start-mode-label">
+                            <button type="button" class="mode-btn radio-option active" data-mode="blocklist"
+                                id="quick-start-mode-blocklist">
+                                <span class="mode-btn-label" id="quick-start-mode-blocklist-label">block</span>
+                            </button>
+                            <button type="button" class="mode-btn radio-option" data-mode="allowlist"
+                                id="quick-start-mode-allowlist">
+                                <span class="mode-btn-label" id="quick-start-mode-allowlist-label">only allow</span>
+                            </button>
+                        </span>
+                        <span id="quick-start-mode-sentence-after">its sites and apps.</span>
+                    </p>
+                    <p class="mode-sentence-hint" id="quick-start-mode-hint">The sites and apps on your list will be blocked — everything else works as usual.</p>
+                </div>
+
                 <div class="form-group">
                     <label class="label-with-info">
                         <span id="quick-start-websites-label">Websites to block</span>
@@ -2838,7 +2848,7 @@
         <!-- Footer -->
         <div class="footer">
             <span class="footer-text"><span id="footer-made-with">Made with</span> <span class="heart">♥</span> <span
-                    id="footer-by">by</span> <a href="https://digitalhabits.org" target="_blank">digitalhabits.org</a></span>
+                    id="footer-by">by</span> <a id="footer-org-link" href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer">digitalhabits.org</a></span>
         </div>
     </div>
 
