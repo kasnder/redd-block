@@ -3808,7 +3808,7 @@ body:not(.ios) #settings-toolbar-scheduler{
 .blocklists-create-btn{
     display: inline-flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     gap: 10px;
     min-width: 0;
     min-height: 44px;
@@ -10983,9 +10983,9 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
 #blocklist-modal .tags-input-stacked .browse-btn{
     flex: 0 0 auto;
     align-self: stretch;
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
-    color: var(--text-primary);
+    background: var(--button-bg);
+    border: 1px solid transparent;
+    color: white;
     border-radius: 8px;
     padding: 8px 12px;
     white-space: nowrap;
@@ -10996,18 +10996,6 @@ body:not(.ios) #blocklist-modal .tags-input-stacked .browse-btn{
 }
 
 #blocklist-modal .tags-input-stacked .browse-btn:hover{
-    background: var(--button-bg);
-    color: white;
-    border-color: transparent;
-}
-
-#blocklist-modal .tags-input-stacked .browse-btn-apps{
-    background: var(--button-bg);
-    border-color: transparent;
-    color: white;
-}
-
-#blocklist-modal .tags-input-stacked .browse-btn-apps:hover{
     background: var(--button-hover);
     color: white;
     border-color: transparent;
@@ -11283,7 +11271,7 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
     color: white;
 }
 
-/* Mode selector — inline sentence with pill toggle */
+/* Mode selector — cream card with white sentence panel (matches websites well) */
 .mode-sentence-group{
     margin-bottom: 18px;
 }
@@ -11299,16 +11287,32 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
     color: var(--text-muted);
 }
 
+.mode-sentence-card{
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 8px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--settings-panel-bg);
+    box-sizing: border-box;
+}
+
 .mode-sentence{
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 6px 8px;
     margin: 0;
+    padding: 10px 12px;
+    border: 1px solid var(--input-border);
+    border-radius: 8px;
+    background: var(--input-bg);
     font-size: 15px;
     font-weight: 500;
     line-height: 1.45;
     color: var(--text-secondary);
+    box-sizing: border-box;
 }
 
 .mode-toggle{
@@ -11325,7 +11329,7 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
     align-items: center;
     gap: 2px;
     padding: 3px;
-    border-radius: 999px;
+    border-radius: 8px;
     background: var(--redd-warm-grey);
     vertical-align: middle;
 }
@@ -11351,7 +11355,7 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
 .mode-toggle--inline .mode-btn{
     flex: 0 0 auto;
     padding: 6px 12px;
-    border-radius: 999px;
+    border-radius: 6px;
     font-size: 14px;
     font-weight: 600;
     line-height: 1.2;
@@ -11380,23 +11384,11 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
 }
 
 .mode-sentence-hint{
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-    margin: 10px 0 0;
+    margin: 0;
+    padding: 0 4px 2px;
     font-size: 13px;
     line-height: 1.45;
     color: var(--text-muted);
-}
-
-.mode-sentence-hint::before{
-    content: '';
-    width: 6px;
-    height: 6px;
-    margin-top: 0.45em;
-    border-radius: 50%;
-    background: var(--text-primary);
-    flex-shrink: 0;
 }
 
 .coming-soon-badge{
@@ -12293,19 +12285,19 @@ body:not(.handset-device) #quick-start-modal .quick-start-modal-scroll-body{
 #quick-start-modal .tags-input-stacked .browse-btn{
     flex: 0 0 auto;
     align-self: stretch;
-    background: var(--input-bg);
-    border: 1px solid var(--input-border);
-    color: var(--text-primary);
+    background: var(--button-bg);
+    border: 1px solid transparent;
+    color: white;
     border-radius: 8px;
     padding: 8px 12px;
     white-space: nowrap;
     gap: 4px;
 }
 
-#quick-start-modal .tags-input-stacked .browse-btn-apps{
-    background: var(--button-bg);
-    border-color: transparent;
+#quick-start-modal .tags-input-stacked .browse-btn:hover{
+    background: var(--button-hover);
     color: white;
+    border-color: transparent;
 }
 
 body:not(.ios) #quick-start-modal .browse-btn-caption{
@@ -15007,8 +14999,8 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
 }
 
 #blocklist-modal .exit-difficulty-panel .toggle-switch input:checked + .toggle-slider{
-    background-color: var(--accent-color);
-    border-color: var(--accent-color);
+    background-color: var(--primary-btn-bg);
+    border-color: var(--primary-btn-bg);
 }
 
 #blocklist-modal .exit-difficulty-panel .toggle-switch input:checked + .toggle-slider:before{
