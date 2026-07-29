@@ -124,12 +124,15 @@ export function renderChallengeReferenceText(el, text, { cursorIndex = 0, errorI
 
 /**
  * Fold typographic lookalikes (smart quotes, dashes, etc.) to keyboard-ASCII
- * equivalents so custom override text matches what users type.
- * Idempotent; safe on both saved target text and live typed input.
+ * equivalents and strip invisible format characters so custom override text
+ * matches what users type. Idempotent; safe on both saved target text and
+ * live typed input.
  */
 export function normalizeChallengeComparableText(value) {
     return String(value ?? '')
         .normalize('NFC')
+        // ZWSP / ZWNJ / ZWJ, BOM/ZWNBSP, word joiner, soft hyphen (strip — not a real hyphen)
+        .replace(/[\u200B-\u200D\uFEFF\u2060\u00AD]/g, '')
         .replace(/[\u00A0\u202F\u2007]/g, ' ') // nbsp / narrow nbsp / figure space
         .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02B9]/g, "'") // curly/modifier apostrophes & primes
         .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"') // curly / guillemet quotes
