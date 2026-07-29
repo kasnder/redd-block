@@ -1,6 +1,6 @@
 {
   "name": "redd-block",
-  "version": "3.8.5",
+  "version": "3.8.6",
   "description": "ReDD Blocker: Space for Focus",
   "scripts": {
     "dev": "node ./scripts/ensure-dev-icons.js && tauri dev",

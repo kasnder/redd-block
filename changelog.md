@@ -10,6 +10,38 @@ SCHEDULES), then platform-specific notes under nested headings:
 `#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
 description.` Legacy flat lists still work.
 
+## v3.8.6
+
+### FOCUS SPACES & SCHEDULES
+
+- **Clearer Block vs Allow mode UI.** Mode selection and create-space actions
+  are redesigned, with clearer allowlist hints and matching website/app help
+  text in both Block and Allow modes.
+- **Custom stop messages work more reliably.** Curly/smart punctuation and
+  invisible paste characters no longer fail typing challenges as typos; empty
+  custom messages can't be saved; and the start confirmation shows your actual
+  custom message instead of an ambiguous character count.
+
+### BY PLATFORM
+
+#### DESKTOP
+
+- **Settings Setup and Onboarding reopen correctly.** Re-entering Setup or
+  Onboarding from Settings works again without replaying the full first-start
+  flow.
+
+##### macOS
+
+- **Window controls stay visible.** The close, minimize, and zoom buttons no
+  longer disappear after a warning-panel race at startup.
+
+#### iOS
+
+- **UI stays stable after keyboard dismiss.** Closing a modal or dismissing
+  the keyboard no longer leaves the phone UI stuck scrolled or zoomed oddly.
+
+- **Version:** 3.8.6 (macOS, Windows, and iOS).
+
 ## v3.8.5
 
 ### FOCUS SPACES & SCHEDULES
