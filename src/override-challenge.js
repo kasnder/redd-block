@@ -122,9 +122,33 @@ export function renderChallengeReferenceText(el, text, { cursorIndex = 0, errorI
     scheduleChallengeScroll(() => scrollChallengeToCharIndex(el, markIndex));
 }
 
+/**
+ * Fold typographic lookalikes (smart quotes, dashes, etc.) to keyboard-ASCII
+ * equivalents so custom override text matches what users type.
+ * Idempotent; safe on both saved target text and live typed input.
+ */
+export function normalizeChallengeComparableText(value) {
+    return String(value ?? '')
+        .normalize('NFC')
+        .replace(/[\u00A0\u202F\u2007]/g, ' ') // nbsp / narrow nbsp / figure space
+        .replace(/[\u2018\u2019\u201A\u201B\u2032\u2035\u02BC\u02B9]/g, "'") // curly/modifier apostrophes & primes
+        .replace(/[\u201C\u201D\u201E\u201F\u00AB\u00BB]/g, '"') // curly / guillemet quotes
+        .replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, '-') // hyphen / en / em / minus
+        .replace(/\u2026/g, '...'); // ellipsis
+}
+
 /** Challenge text is single-spaced — collapse runs of whitespace to one space. */
 export function sanitizeChallengeTypedInput(value) {
-    return String(value ?? '').replace(/^\s+/, '').replace(/\s{2,}/g, ' ');
+    return normalizeChallengeComparableText(
+        String(value ?? '').replace(/^\s+/, '').replace(/\s{2,}/g, ' ')
+    );
+}
+
+/** Sanitize challenge target: newlines → space, collapse spaces, fold lookalikes. */
+export function sanitizeChallengeTargetText(value) {
+    return normalizeChallengeComparableText(
+        String(value ?? '').replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim()
+    );
 }
 
 /**
@@ -306,7 +330,7 @@ export function normalizeOverrideCount(value, type = 'random-words') {
 }
 
 export function normalizeCustomOverrideText(value) {
-    const text = typeof value === 'string' ? value : '';
+    const text = sanitizeChallengeTargetText(typeof value === 'string' ? value : '');
     const maxChars = getMaxOverrideCharsForType('custom');
     return text.slice(0, maxChars);
 }
@@ -350,8 +374,7 @@ export function getDifficultyTypingCharCount(difficulty) {
 /** Preview text for override difficulty (random words, gibberish, or custom). Used in blocklist modal. */
 export function getOverridePreviewText(type, count, customText) {
     if (type === 'custom') {
-        const t = typeof customText === 'string' ? customText : '';
-        const normalized = t.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+        const normalized = sanitizeChallengeTargetText(typeof customText === 'string' ? customText : '');
         return normalized || 'Your custom text will appear here';
     }
     const num = parseInt(count, 10);

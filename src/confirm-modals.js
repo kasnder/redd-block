@@ -5,7 +5,7 @@ import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isBlockAlwaysOn } from './blocklist-utils.js';
-import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxOverrideCharsForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, usesMobileWordCountForOverrideType } from './override-challenge.js';
+import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxOverrideCharsForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, sanitizeChallengeTargetText, usesMobileWordCountForOverrideType } from './override-challenge.js';
 import { isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
@@ -2812,8 +2812,8 @@ export function closeOverrideModal() {
 export function initializeOverrideModalChallenge(difficulty, progressColor = null) {
     state.challengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
 
-    // Sanitize: remove linebreaks and collapse multiple spaces
-    state.challengeText = state.challengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+    // Sanitize: remove linebreaks, collapse spaces, fold typographic lookalikes
+    state.challengeText = sanitizeChallengeTargetText(state.challengeText);
 
     document.getElementById('challenge-text').textContent = state.challengeText;
     document.getElementById('challenge-input').value = '';
@@ -3136,7 +3136,7 @@ export function openPauseModal(blockId) {
         const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
         state.pauseChallengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
 
-        state.pauseChallengeText = state.pauseChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+        state.pauseChallengeText = sanitizeChallengeTargetText(state.pauseChallengeText);
 
         document.getElementById('pause-challenge-text').textContent = state.pauseChallengeText;
         document.getElementById('pause-challenge-input').value = '';

@@ -14,7 +14,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import { escapeHtml } from './utils.js';
-import { generateOverrideChallengeText, getDifficultyTypingCharCount, getMaxOverrideCharsForType, renderChallengeReferenceText, applyChallengeTypedInputSanitization, shouldBlockChallengeSpaceKey } from './override-challenge.js';
+import { generateOverrideChallengeText, getDifficultyTypingCharCount, getMaxOverrideCharsForType, renderChallengeReferenceText, applyChallengeTypedInputSanitization, sanitizeChallengeTargetText, shouldBlockChallengeSpaceKey } from './override-challenge.js';
 import {
     buildWordChallengeState,
     isMobileWordByWordChallenge,
@@ -1046,8 +1046,8 @@ export function setupOverrideAll() {
                 hardestDifficulty.customText
             );
 
-            // Sanitize: remove linebreaks and collapse multiple spaces
-            overrideAllChallengeText = overrideAllChallengeText.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+            // Sanitize: remove linebreaks, collapse spaces, fold typographic lookalikes
+            overrideAllChallengeText = sanitizeChallengeTargetText(overrideAllChallengeText);
 
             // Display challenge
             renderOverrideAllChallengeText();
