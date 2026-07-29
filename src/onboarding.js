@@ -310,6 +310,43 @@ export function returnToWelcomeFromEula() {
 export const MIGRATION_POLL_MS = 2500;
 export const EXT_ONBOARDING_DISMISSED_KEY = 'reddBlockExtOnboardingDismissed';
 
+/** Bumped each Setup open so a late Done/Skip finish cannot dismiss a newer one. */
+let migrationSetupEpoch = 0;
+
+/** Hide Setup immediately, then finish enforcer/persist work in the background. */
+async function finishExtensionSetup() {
+    const epoch = migrationSetupEpoch;
+    hideMigrationOnboarding();
+    try {
+        await invoke('enforcer_start');
+    } catch (e) {
+        console.warn('[migration] enforcer_start failed:', e);
+    }
+    await startWebAutomationWatcher();
+    try { localStorage.setItem(EXT_ONBOARDING_DISMISSED_KEY, String(Date.now())); }
+    catch (_) { /* localStorage may be disabled; harmless */ }
+    await persistOnboardingComplete();
+    await persistMacAutomationIntroShown();
+    if (epoch !== migrationSetupEpoch) return;
+    try {
+        const fresh = await invoke('onboarding_state');
+        await updateBehaviourChangeBanner(fresh);
+    } catch (e) { /* no-op */ }
+}
+
+// Document-level capture so Done/Skip keep working even if content wiring throws.
+let migrationFinishDelegationWired = false;
+function wireMigrationFinishDelegation() {
+    if (migrationFinishDelegationWired) return;
+    migrationFinishDelegationWired = true;
+    document.addEventListener('click', (event) => {
+        const btn = event.target?.closest?.('#migration-done-btn, #migration-skip-btn');
+        if (!btn || btn.disabled) return;
+        if (!appState.migrationOnboardingActive) return;
+        void finishExtensionSetup();
+    }, true);
+}
+
 export async function runDesktopOnboarding() {
     if (state.isIOS || state.isAndroid) return;
     try {
@@ -326,16 +363,16 @@ export async function runDesktopOnboarding() {
             // before the user dismissed). Show the post-cleanup
             // screen so they know what changed and install the
             // extension. Cleanup-mode framing.
-            const state = await invoke('onboarding_state');
-            await showMigrationOnboarding('post', state, { mode: 'after-cleanup' });
+            const onboardingState = await invoke('onboarding_state');
+            await showMigrationOnboarding('post', onboardingState, { mode: 'after-cleanup' });
             return;
         }
 
-        const state = await invoke('onboarding_state');
+        const onboardingState = await invoke('onboarding_state');
 
         // Returning macOS upgraders: one-time intro before the full browser-
         // setup overlay (which would take over the window and hide this).
-        if (await maybeShowMacAutomationIntro(state)) {
+        if (await maybeShowMacAutomationIntro(onboardingState)) {
             return;
         }
 
@@ -346,7 +383,7 @@ export async function runDesktopOnboarding() {
 
         if (state.migrationOnboardingActive) return;
 
-        await updateBehaviourChangeBanner(state);
+        await updateBehaviourChangeBanner(onboardingState);
     } catch (e) {
         console.warn('[onboarding] state check failed:', e);
     }
@@ -444,19 +481,19 @@ export function hadLegacyAutomationBrowserExtension(state) {
     return false;
 }
 
-export async function shouldShowMacAutomationIntro(state) {
+export async function shouldShowMacAutomationIntro(onboardingState) {
     if (!appState.isMacOSDesktop || !hasAcceptedEula() || !hasWelcomeOnboardingBeenShown()) return false;
-    if (hasMacAutomationIntroBeenShown() || state.migrationOnboardingActive) return false;
+    if (hasMacAutomationIntroBeenShown() || appState.migrationOnboardingActive) return false;
 
     const extDismissed = !!localStorage.getItem(EXT_ONBOARDING_DISMISSED_KEY);
     const returningUser = appState.appData?.settings?.onboardingComplete === true || extDismissed;
     if (!returningUser) return false;
 
     // Fresh first-run path after EULA — browser-setup overlay covers it.
-    if (state.firstRunExtensionSetupPending && !extDismissed) return false;
+    if (appState.firstRunExtensionSetupPending && !extDismissed) return false;
 
     await refreshAutomationPermissionStatus();
-    const browsers = state?.browsers || {};
+    const browsers = onboardingState?.browsers || {};
     const automationKeys = AUTOMATION_BROWSER_KEYS.filter(
         (k) => browsers[k]?.installed && browserUsesAutomation(k),
     );
@@ -475,7 +512,7 @@ export async function shouldShowMacAutomationIntro(state) {
 
     // Prefer the legacy-extension signal for ambiguous cases; anyone who
     // already finished onboarding is treated as an upgrader.
-    if (!hadLegacyAutomationBrowserExtension(state)
+    if (!hadLegacyAutomationBrowserExtension(onboardingState)
         && appState.appData?.settings?.onboardingComplete !== true) {
         return false;
     }
@@ -483,11 +520,11 @@ export async function shouldShowMacAutomationIntro(state) {
     return true;
 }
 
-export async function maybeShowMacAutomationIntro(state) {
-    if (!(await shouldShowMacAutomationIntro(state))) return false;
+export async function maybeShowMacAutomationIntro(onboardingState) {
+    if (!(await shouldShowMacAutomationIntro(onboardingState))) return false;
     applyMacAutomationIntroCopy();
     document.getElementById('migration-onboarding')?.classList.add('hidden');
-    state.migrationOnboardingActive = false;
+    appState.migrationOnboardingActive = false;
     stopMigrationPolling();
     document.getElementById('main-content')?.classList.remove('hidden');
     document.getElementById('now-blocking-row')?.classList.remove('hidden');
@@ -520,26 +557,29 @@ export async function ensureExtensionSetupOnboardingShown() {
         if (state.firstRunExtensionSetupPending) {
             state.migrationOnboardingDismissed = false;
         }
-        const state = await invoke('onboarding_state');
-        await showMigrationOnboarding('post', state, { mode: 'fresh' });
+        const onboardingState = await invoke('onboarding_state');
+        await showMigrationOnboarding('post', onboardingState, { mode: 'fresh' });
     } catch (e) {
         console.warn('[onboarding] extension setup overlay failed:', e);
     }
 }
 
-export async function showMigrationOnboarding(phase, state, opts = {}) {
+export async function showMigrationOnboarding(phase, onboardingState, opts = {}) {
     const screen = document.getElementById('migration-onboarding');
     const pre = document.getElementById('migration-phase-pre');
     const post = document.getElementById('migration-phase-post');
     const main = document.getElementById('main-content');
+    const howto = document.getElementById('migration-howto');
     if (!screen || !pre || !post) return;
+
+    migrationSetupEpoch += 1;
+    wireMigrationFinishDelegation();
 
     applyMigrationOverlayStaticCopy();
     pre.classList.toggle('hidden', phase !== 'pre');
     post.classList.toggle('hidden', phase !== 'post');
 
-    // Configure the target phase while still hidden so we never flash the
-    // wrong framing (e.g. "Cleanup complete" before fresh-user copy).
+    // Configure framing before reveal so we never flash the wrong copy.
     if (phase === 'post') {
         const mode = opts.mode || 'fresh';
         const title = document.getElementById('migration-post-title');
@@ -559,17 +599,28 @@ export async function showMigrationOnboarding(phase, state, opts = {}) {
             titleRow?.classList.add('hidden');
             cleanupItems.forEach(el => el.classList.add('hidden'));
         }
-        syncMigrationPostHeader(state);
-        wireMigrationPostPhase(state);
-    } else if (phase === 'pre') {
-        wireMigrationPrePhase();
+        howto?.classList.toggle('hidden', mode !== 'fresh');
     }
 
-    state.migrationOnboardingActive = true;
-    startMigrationPolling();
+    // Reveal before wiring so a wiring error cannot leave a blank main UI.
     showExclusiveOnboardingScreen('migration-onboarding');
+    state.migrationOnboardingActive = true;
+    state.migrationOnboardingDismissed = false;
+    startMigrationPolling();
     document.getElementById('now-blocking-row')?.classList.add('hidden');
     if (main) main.classList.add('hidden');
+
+    try {
+        if (phase === 'post') {
+            state.lastMigrationBrowserRenderSignature = '';
+            syncMigrationPostHeader(onboardingState);
+            wireMigrationPostPhase(onboardingState);
+        } else if (phase === 'pre') {
+            wireMigrationPrePhase();
+        }
+    } catch (e) {
+        console.error('[migration] overlay wiring failed:', e);
+    }
 
     // Bring our window back to the front. The osascript admin
     // prompt steals focus, and on macOS we run as a menu-bar
@@ -611,8 +662,10 @@ export async function returnFromExtensionSetupOnboarding() {
 export function hideMigrationOnboarding() {
     const screen = document.getElementById('migration-onboarding');
     const main = document.getElementById('main-content');
+    const nowBlockingRow = document.getElementById('now-blocking-row');
     if (screen) screen.classList.add('hidden');
     if (main) main.classList.remove('hidden');
+    if (nowBlockingRow) nowBlockingRow.classList.remove('hidden');
     state.migrationOnboardingActive = false;
     state.migrationOnboardingDismissed = true;
     state.firstRunExtensionSetupPending = false;
@@ -722,52 +775,21 @@ export function wireMigrationPrePhase() {
     });
 }
 
-export function wireMigrationPostPhase(state) {
-    renderBrowserInstallButtons(state);
+export function wireMigrationPostPhase(onboardingState) {
+    renderBrowserInstallButtons(onboardingState);
     // macOS: the first paint shows Automation rows as 'unknown' because
     // the native status query is async. Fetch it, then re-render so the
     // rows settle to their real Allowed / needs-permission state.
     if (appState.isMacOSDesktop) {
         refreshAutomationPermissionStatus().then(() => {
-            if (state.migrationOnboardingActive) renderBrowserInstallButtons(state, { force: true });
+            if (appState.migrationOnboardingActive) {
+                renderBrowserInstallButtons(onboardingState, { force: true });
+            }
         });
     }
     wireEnforcementToggle();
     syncMigrationPostBackButtonVisibility();
-    const doneBtn = document.getElementById('migration-done-btn');
-    const skipBtn = document.getElementById('migration-skip-btn');
     const backBtn = document.getElementById('migration-back-btn');
-
-    const finish = async () => {
-        try {
-            await invoke('enforcer_start');
-        } catch (e) {
-            console.warn('[migration] enforcer_start failed:', e);
-        }
-        await startWebAutomationWatcher();
-        // Persist dismissal so we don't surface this full-screen
-        // again on every launch — the slim extension-compliance
-        // banner takes over for ongoing nagging. Stored locally
-        // (per-install) which is fine for a UX hint.
-        try { localStorage.setItem(EXT_ONBOARDING_DISMISSED_KEY, String(Date.now())); }
-        catch (_) { /* localStorage may be disabled; harmless */ }
-        await persistOnboardingComplete();
-        await persistMacAutomationIntroShown();
-        hideMigrationOnboarding();
-        try {
-            const fresh = await invoke('onboarding_state');
-            await updateBehaviourChangeBanner(fresh);
-        } catch (e) { /* no-op */ }
-    };
-
-    if (doneBtn && !doneBtn._listenerAdded) {
-        doneBtn._listenerAdded = true;
-        doneBtn.addEventListener('click', finish);
-    }
-    if (skipBtn && !skipBtn._listenerAdded) {
-        skipBtn._listenerAdded = true;
-        skipBtn.addEventListener('click', finish);
-    }
     if (backBtn && !backBtn._listenerAdded) {
         backBtn._listenerAdded = true;
         backBtn.addEventListener('click', () => {

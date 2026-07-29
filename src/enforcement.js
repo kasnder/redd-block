@@ -29,9 +29,9 @@ import { isModalVisible } from './modal-manager.js';
 import { kickClockNow } from './render.js';
 import { isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { setLanguagePickerOpen } from './app.js';
-import { reconcileBlockingWarningShell, showExclusiveOnboardingScreen, updateOnboardingVisibility } from './blocking-platform.js';
+import { reconcileBlockingWarningShell, showExclusiveOnboardingScreen } from './blocking-platform.js';
 import {
-    EXT_ONBOARDING_DISMISSED_KEY, MIGRATION_POLL_MS, applyEnforcementDescCopy,
+    MIGRATION_POLL_MS, applyEnforcementDescCopy,
     hasAcceptedEula, showMigrationOnboarding, presentWelcomeOnboarding,
 } from './onboarding.js';
 
@@ -1390,13 +1390,16 @@ export function updateMigrationBrowserChecklist(state) {
     const keys = migrationBrowserKeys(state);
 
     const howto = document.getElementById('migration-howto');
-    const anyMissing = keys.some(k => effectiveBrowserComplianceStatus(k, browsers) !== 'compliant');
-    const showHowto = anyMissing;
+    const allCompliant = keys.length > 0
+        && keys.every(k => effectiveBrowserComplianceStatus(k, browsers) === 'compliant');
+    // On the setup overlay, keep the howto visible until Automation status is
+    // ready — otherwise closed browsers look compliant and the box flashes in late.
+    const showHowto = appState.migrationOnboardingActive
+        ? !(automationPermissionStatusReady && allCompliant)
+        : keys.some(k => effectiveBrowserComplianceStatus(k, browsers) !== 'compliant');
     if (howto) howto.classList.toggle('hidden', !showHowto);
 
     if (!checklistItem) return;
-    const allCompliant = keys.length > 0
-        && keys.every(k => effectiveBrowserComplianceStatus(k, browsers) === 'compliant');
     if (allCompliant) {
         checklistItem.classList.remove('checklist-todo');
         checklistItem.classList.add('checklist-done');
@@ -2053,13 +2056,14 @@ export async function openExtensionSetupOverlay() {
     }
 }
 
-export async function continueOnboardingReplayFromWelcome() {
-    if (__ANDROID_BUILD__) return;
-    if (!hasAcceptedEula()) {
-        updateOnboardingVisibility();
-        return;
-    }
-    await openExtensionSetupOverlay();
+/** Settings → Onboarding: after welcome, restore main UI (no EULA / setup overlay). */
+export function finishOnboardingReplayToMainUi() {
+    state.forceShowEulaThisSession = false;
+    state.migrationOnboardingActive = false;
+    state.firstRunExtensionSetupPending = false;
+    document.getElementById('welcome-onboarding')?.classList.add('hidden');
+    document.getElementById('main-content')?.classList.remove('hidden');
+    document.getElementById('now-blocking-row')?.classList.remove('hidden');
 }
 
 export async function restartOnboardingFromSettings() {
@@ -2067,14 +2071,7 @@ export async function restartOnboardingFromSettings() {
     if (state.isIOS || state.isAndroid) return;
     document.getElementById('settings-modal')?.classList.add('hidden');
     setLanguagePickerOpen(false);
-
-    state.migrationOnboardingDismissed = false;
-    localStorage.removeItem(EXT_ONBOARDING_DISMISSED_KEY);
-    state.firstRunExtensionSetupPending = true;
-    state.lastMigrationBrowserRenderSignature = '';
-    state.extensionSetupPausedForBackNavigation = false;
-
-    await presentWelcomeOnboarding(continueOnboardingReplayFromWelcome);
+    await presentWelcomeOnboarding(finishOnboardingReplayToMainUi);
 }
 
 // Re-poll extension compliance so the slim banner reflects reality
