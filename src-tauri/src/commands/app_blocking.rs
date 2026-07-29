@@ -116,6 +116,12 @@ pub fn reshow_blocking_warning(app: AppHandle, pids: Vec<u32>) {
 #[tauri::command]
 #[cfg(not(target_os = "ios"))]
 pub fn reconcile_blocking_warning_shell(app: AppHandle) {
+    // Always re-assert traffic lights — a startup race can enter panel mode
+    // (and previously hid the buttons) before JS listeners attach, leaving
+    // the normal UI without window controls until a later mode flip.
+    #[cfg(target_os = "macos")]
+    crate::commands::ensure_macos_traffic_lights_visible(&app);
+
     if crate::app_watcher::blocking_warning_shell_active() {
         return;
     }

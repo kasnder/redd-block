@@ -360,6 +360,9 @@ pub fn run() {
                 if let Err(e) = window.to_panel::<MainPanel>() {
                     log::warn!("main window: to_panel failed: {e:?}");
                 }
+                // NSPanel swizzle / overlay title bar must never leave the
+                // standard traffic lights hidden — assert on every create.
+                commands::ensure_macos_traffic_lights_visible(app.handle());
 
                 // Set background color to match app (white)
                 use cocoa::appkit::{NSColor, NSWindow};
@@ -545,6 +548,7 @@ pub fn run() {
                                             if let Err(e) = new_window.to_panel::<MainPanel>() {
                                                 log::warn!("main window (rebuild): to_panel failed: {e:?}");
                                             }
+                                            commands::ensure_macos_traffic_lights_visible(app);
 
                                             use cocoa::appkit::{NSColor, NSWindow};
                                             use cocoa::base::{id, nil};
