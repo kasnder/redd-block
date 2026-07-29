@@ -442,7 +442,8 @@ export function showScheduleConfirmModal(blocklist) {
     setStartConfirmOverrideDescription({
         type: schedType,
         count: displayCount,
-        estimatedMinutes
+        estimatedMinutes,
+        customText: difficulty.customText || ''
     }, 'schedule-confirm-override-text');
 
     // Show modal
@@ -555,7 +556,8 @@ export function showScheduleEditConfirmModal(blocklist, existingSchedule, newSeg
     setStartConfirmOverrideDescription({
         type: schedType,
         count: displayCount,
-        estimatedMinutes
+        estimatedMinutes,
+        customText: difficulty.customText || ''
     }, 'schedule-confirm-override-text');
 
     setStartConfirmPrimaryLabel('proceed-schedule-confirm-btn', tSettings('pendingChangesSave'));
@@ -2049,7 +2051,8 @@ export function startBlock() {
     setStartConfirmOverrideDescription({
         type: startType,
         count: displayCount,
-        estimatedMinutes
+        estimatedMinutes,
+        customText: difficulty.customText || ''
     });
 
     // Show modal
@@ -2469,6 +2472,8 @@ export function openBlocklistModal(blocklist = null) {
     document.getElementById('override-type').value = normalizedDifficulty.type;
     document.getElementById('override-count').value = normalizedDifficulty.count;
     document.getElementById('custom-override-text').value = normalizedDifficulty.customText || '';
+    document.getElementById('custom-override-text').classList.remove('input-error');
+    document.getElementById('custom-override-text-error')?.classList.add('hidden');
     const maxDifficultyCb = document.getElementById('override-max-difficulty-checkbox');
     const maxDifficulty = normalizedDifficulty.maxDifficulty === true;
     if (maxDifficultyCb) maxDifficultyCb.checked = maxDifficulty;
@@ -2999,7 +3004,8 @@ export function openResumeConfirmation(blocklistId, type, blockId) {
         type: resumeType,
         count: displayCount,
         estimatedMinutes,
-        resumeShortGibberish: resumeType === 'gibberish'
+        resumeShortGibberish: resumeType === 'gibberish',
+        customText: difficulty.customText || ''
     });
 
     setStartConfirmPrimaryLabel('proceed-start-confirm-btn', tSettings('resumeBlock'));
@@ -3555,6 +3561,7 @@ export function syncOverrideCountUi(type) {
 
 export function applyOverrideTypeUi(type) {
     const customTextArea = document.getElementById('custom-override-text');
+    const customErrorEl = document.getElementById('custom-override-text-error');
     const overrideCountInput = document.getElementById('override-count');
     const overrideCountWrapper = document.getElementById('override-count-wrapper');
     const warningEl = document.getElementById('override-count-warning');
@@ -3563,6 +3570,9 @@ export function applyOverrideTypeUi(type) {
     const maxChars = getMaxOverrideCharsForType(type);
     syncOverrideCountUi(type);
     overrideCountInput.max = String(maxChars);
+
+    customTextArea?.classList.remove('input-error');
+    customErrorEl?.classList.add('hidden');
 
     if (type === 'custom') {
         customTextArea.maxLength = getMaxOverrideCharsForType('custom');

@@ -1338,10 +1338,14 @@ function setupModalListeners() {
     });
     document.getElementById('custom-override-text').addEventListener('input', (e) => {
         const customTextArea = e.target;
+        customTextArea.classList.remove('input-error');
+        document.getElementById('custom-override-text-error')?.classList.add('hidden');
         const previous = state.lastCustomOverrideTextValue;
         pushModalUndo('custom-override-text', () => {
             customTextArea.value = previous;
             state.lastCustomOverrideTextValue = previous;
+            customTextArea.classList.remove('input-error');
+            document.getElementById('custom-override-text-error')?.classList.add('hidden');
             const warningEl = document.getElementById('override-count-warning');
             const maxChars = getMaxOverrideCharsForType('custom');
             if (previous.length >= maxChars) {
@@ -1619,7 +1623,24 @@ function setupModalListeners() {
             if (result?.websiteInvalid) websiteInvalid = true;
         }
 
-        if (nameEmpty || websiteInvalid) return;
+        const overrideType = document.getElementById('override-type').value;
+        const customTextArea = document.getElementById('custom-override-text');
+        const customText = normalizeCustomOverrideText(customTextArea.value);
+        customTextArea.value = customText;
+        const customEmpty = overrideType === 'custom' && !customText;
+        const customErrorEl = document.getElementById('custom-override-text-error');
+        if (customEmpty) {
+            customTextArea.classList.add('input-error');
+            if (customErrorEl) {
+                customErrorEl.textContent = tSettings('customOverrideEmptyError');
+                customErrorEl.classList.remove('hidden');
+            }
+        } else {
+            customTextArea.classList.remove('input-error');
+            customErrorEl?.classList.add('hidden');
+        }
+
+        if (nameEmpty || websiteInvalid || customEmpty) return;
 
         nameInput.value = name;
 
@@ -1638,16 +1659,12 @@ function setupModalListeners() {
         }
 
         const mode = getSelectedBlocklistModalMode();
-        const overrideType = document.getElementById('override-type').value;
         const overrideCountInput = document.getElementById('override-count');
         const maxDifficultyChecked = document.getElementById('override-max-difficulty-checkbox').checked;
         const overrideCount = maxDifficultyChecked
             ? getMaxOverrideCharsForType(overrideType)
             : normalizeOverrideCount(overrideCountInput.value, overrideType);
         overrideCountInput.value = overrideCount;
-        const customTextArea = document.getElementById('custom-override-text');
-        const customText = normalizeCustomOverrideText(customTextArea.value);
-        customTextArea.value = customText;
         const selectedSwatch = document.querySelector('.color-swatch.selected');
         const color = selectedSwatch ? selectedSwatch.dataset.color : null;
         const selectedEmoji = document.querySelector('.emoji-swatch.selected');
@@ -2645,7 +2662,7 @@ export function setupLanguagePicker() {
 }
 
 /** Confirmation modals — describe typing challenge count + time estimate */
-export function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, resumeShortGibberish = false }) {
+export function formatConfirmModalOverrideTypingLine({ type, count, estimatedMinutes, resumeShortGibberish = false, customText = '' }) {
     const minutes = estimatedMinutes;
     const lang = getSettingsLanguage();
     const charUnitDa = 'tegn';
@@ -2658,7 +2675,9 @@ export function formatConfirmModalOverrideTypingLine({ type, count, estimatedMin
     const wordUnit = lang === 'zh-CN' ? wordUnitZh : (lang === 'da' ? wordUnitDa : wordUnitEn);
 
     if (type === 'custom') {
-        return tSettingsFmt('confirmOverrideCustomPhraseFmt', { count, minutes });
+        return tSettingsFmt('confirmOverrideCustomPhraseFmt', {
+            customText: escapeHtml(typeof customText === 'string' ? customText : '')
+        });
     }
     if (type === 'gibberish') {
         if (usesMobileWordCountForOverrideType(type)) {
@@ -3214,6 +3233,7 @@ export function applySettingsLanguage() {
     setPlaceholder('pause-challenge-input', tSettings('typeHere'));
     setPlaceholder('override-all-challenge-input', tSettings('typeHere'));
     setText('website-input-error', tSettings('invalidDomainMsg'));
+    setText('custom-override-text-error', tSettings('customOverrideEmptyError'));
 
     // Blocklist modal
     const modalTitle = document.getElementById('modal-title');

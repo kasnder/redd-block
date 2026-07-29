@@ -552,6 +552,7 @@ export const SETTINGS_TRANSLATIONS = {
         overrideRandomWords: 'Random Words',
         overrideGibberish: 'Random Gibberish',
         overrideCustomText: 'Custom Text',
+        customOverrideEmptyError: 'Custom message cannot be empty.',
         overrideMaxDifficulty: 'Max difficulty',
         overrideMaxDifficultyHintWords: '{count} words',
         overrideMaxDifficultyHintChars: '{count} characters',
@@ -748,7 +749,7 @@ export const SETTINGS_TRANSLATIONS = {
         confirmOverrideGibberishShortFmt:
             'Type <strong>{count} random characters exactly as shown</strong> (~{minutes} min) to exit.',
         confirmOverrideCustomPhraseFmt:
-            'Type a <strong>{count}-character phrase exactly as shown</strong> (~{minutes} min) to exit.',
+            'Type your custom message to exit: "<em>{customText}</em>".',
         confirmOverrideIntentionSuffix: 'That helps you stick with your intention.',
         startSchedule: 'Start Schedule',
         noDaysSelected: 'No days selected',
@@ -1372,6 +1373,7 @@ export const SETTINGS_TRANSLATIONS = {
         overrideRandomWords: 'Tilfældige ord',
         overrideGibberish: 'Tilfældig volapyk',
         overrideCustomText: 'Egen tekst',
+        customOverrideEmptyError: 'Egen besked må ikke være tom.',
         overrideMaxDifficulty: 'Max sværhed',
         overrideMaxDifficultyHintWords: '{count} ord',
         overrideMaxDifficultyHintChars: '{count} tegn',
@@ -1568,7 +1570,7 @@ export const SETTINGS_TRANSLATIONS = {
         confirmOverrideGibberishShortFmt:
             'Skriv <strong>{count} tilfældige tegn præcis som vist</strong> (~{minutes} min) for at forlade.',
         confirmOverrideCustomPhraseFmt:
-            'Skriv en <strong>bestemt sætning på {count} tegn præcis som vist</strong> (~{minutes} min) for at forlade.',
+            'Skriv din egen besked for at forlade: "<em>{customText}</em>".',
         confirmOverrideIntentionSuffix: 'Det hjælper dig med at holde fast i din intention.',
         startSchedule: 'Start skema',
         noDaysSelected: 'Ingen dage valgt',
@@ -2175,6 +2177,7 @@ export const SETTINGS_TRANSLATIONS = {
         overrideRandomWords: '随机单词',
         overrideGibberish: '随机乱码',
         overrideCustomText: '自定义文本',
+        customOverrideEmptyError: '自定义消息不能为空。',
         overrideMaxDifficulty: '最高难度',
         overrideMaxDifficultyHintWords: '{count} 个词',
         overrideMaxDifficultyHintChars: '{count} 个字符',
@@ -2353,7 +2356,7 @@ export const SETTINGS_TRANSLATIONS = {
         confirmOverrideGibberishLettersFmt: '完全按显示内容输入 <strong>{count} 个随机{charUnit}</strong>（约 {minutes} 分钟）才能退出。',
         confirmOverrideGibberishWordsFmt: '完全按显示内容输入 <strong>{count} 个随机{wordUnit}</strong>（约 {minutes} 分钟）才能退出。',
         confirmOverrideGibberishShortFmt: '完全按显示内容输入 <strong>{count} 个随机字符</strong>（约 {minutes} 分钟）才能退出。',
-        confirmOverrideCustomPhraseFmt: '完全按显示内容输入一个 <strong>{count} 字符的短语</strong>（约 {minutes} 分钟）才能退出。',
+        confirmOverrideCustomPhraseFmt: '输入你的自定义消息以退出：“<em>{customText}</em>”。',
         confirmOverrideIntentionSuffix: '这会帮助你坚持自己的意图。',
         startSchedule: '开始日程',
         noDaysSelected: '未选择日期',
