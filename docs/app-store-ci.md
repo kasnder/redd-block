@@ -90,7 +90,12 @@ re-run Release build with the `ios_build_number` input set (e.g. `3.8.5.1`).
 Flow inside [`fastlane/Fastfile`](../fastlane/Fastfile) (`submit_app_store` lane):
 
 1. Authenticate with the App Store Connect API key.
-2. `deliver`: upload the IPA, create/edit the App Store version matching
+2. **Fail-fast preflight:** if any iOS version is already waiting for review,
+   in review, or blocked by unresolved review issues, the lane exits before
+   uploading. It does **not** auto-withdraw — fix App Store Connect manually,
+   then re-run. (Prevents superseding an in-review version and attaching the
+   wrong build, which happened when shipping over a still-queued release.)
+3. `deliver`: upload the IPA, create/edit the App Store version matching
    `package.json`, set What's new and promotional text on the primary
    locale (`en-GB` — English U.K., the app's primary language; not deliver's
    `"default"` key and not `en-US`), wait for the
