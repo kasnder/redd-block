@@ -320,6 +320,25 @@ body.ios:not(.ios-phone) .app-container{
     padding-bottom: calc(var(--app-footer-height) / var(--ui-zoom, 1));
 }
 
+/* Phone/Android: pin the document so the webview cannot leave a stuck scroll
+   offset after keyboard / modal dismiss. Internal panes still scroll. */
+html.handset-webview-lock{
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+}
+html.handset-webview-lock body{
+    height: 100%;
+    overflow: hidden;
+    box-sizing: border-box;
+}
+html.handset-webview-lock body.ios-phone .app-container,
+html.handset-webview-lock body.android .app-container{
+    height: 100%;
+}
+
 /* Let grid columns shrink below intrinsic content width on narrow iOS / split-view. */
 body.ios .grid-top-row {
     min-width: 0;

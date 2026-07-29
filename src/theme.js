@@ -221,6 +221,48 @@ export function usesNativeWebviewZoom() {
     return false;
 }
 
+let handsetViewportGuardBound = false;
+
+/** Unstick phone/Android webview scroll after keyboard or modal dismiss. */
+function resetHandsetViewport() {
+    document.activeElement?.blur?.();
+    window.scrollTo(0, 0);
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    if (state.isIOS && document.body.classList.contains('ios-phone')) {
+        document.documentElement.style.zoom = String(getSavedUiZoom());
+    }
+}
+
+/** Pin document scroll + heal viewport after inputs/modals (iPhone + Android only). */
+export function setupHandsetViewportGuard() {
+    if (handsetViewportGuardBound) return;
+    const isPhone = document.body.classList.contains('ios-phone') || state.isAndroid;
+    if (!isPhone) return;
+    handsetViewportGuardBound = true;
+
+    document.documentElement.classList.add('handset-webview-lock');
+
+    const heal = () => requestAnimationFrame(resetHandsetViewport);
+
+    document.addEventListener('focusout', (e) => {
+        const t = e.target;
+        if (t?.tagName === 'INPUT' || t?.tagName === 'TEXTAREA' || t?.isContentEditable) heal();
+    }, true);
+
+    document.querySelectorAll('.modal-overlay').forEach((el) => {
+        new MutationObserver(() => {
+            if (el.classList.contains('hidden')) heal();
+        }).observe(el, { attributes: true, attributeFilter: ['class'] });
+    });
+
+    window.visualViewport?.addEventListener('resize', () => {
+        const a = document.activeElement;
+        if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+        heal();
+    }, { passive: true });
+}
+
 export function getActiveUiZoomScale() {
     const inline = parseFloat(document.documentElement.style.zoom);
     if (Number.isFinite(inline) && inline > 0) return inline;
@@ -631,6 +673,7 @@ export function setupUiZoomShortcuts() {
 
     applyUiZoom(getSavedUiZoom());
     bindUiZoomLayoutObserver();
+    setupHandsetViewportGuard();
     window.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
     window.visualViewport?.addEventListener('resize', scheduleUiZoomResponsiveLayout, { passive: true });
 
