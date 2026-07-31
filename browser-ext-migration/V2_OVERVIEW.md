@@ -29,7 +29,7 @@ A complete swap of the desktop blocking backend.
 - **v1.x:** privileged helper daemon (`/etc/hosts` writes on macOS,
   hosts file + Windows service on Windows), admin/UAC prompt on
   every install.
-- **v2:** the **ReDD Focus browser extension** is the blocking
+- **v2:** the **Digital Habits: Focus browser extension** is the blocking
   surface; the app is just a UI + native-messaging host + enforcer.
   No `/etc/hosts` mutation. No root daemon. No admin prompt on
   install.
@@ -43,7 +43,7 @@ Same v1.x data model (`redd-block-data.json`) ships forward unchanged
 
 ```
 ┌──────────────────────────────────────────────────────────┐
-│ ReDD Blocker app (Tauri/Rust)                              │
+│ Digital Habits: Blocker app (Tauri/Rust)                              │
 │  ├─ UI (src/app.js)                                      │
 │  ├─ commands/                                            │
 │  ├─ profile_scan.rs   ─ scans installed browsers         │
@@ -66,7 +66,7 @@ Same v1.x data model (`redd-block-data.json`) ships forward unchanged
         │              │                      │
         ▼              ▼                      │
 ┌──────────────┐  ┌──────────────────────────────────────┐
-│ Chrome /     │  │ ReDD Focus Safari Extension          │
+│ Chrome /     │  │ Digital Habits: Focus Safari Extension          │
 │ Brave / Edge │  │  ├─ background.js (heartbeat 15 s)   │
 │ / Firefox    │  │  ├─ SafariWebExtensionHandler.swift  │
 │ extension    │  │  │   (writes safari-status.json)     │
@@ -80,7 +80,7 @@ Same v1.x data model (`redd-block-data.json`) ships forward unchanged
 |---|---|---|
 | Chrome, Brave, Edge | Native messaging (stdio) — `connectNative("com.ulriklyngs.mindshield")` | Per-browser manifest in `~/Library/Application Support/<vendor>/NativeMessagingHosts/` (mac) or `HKCU\Software\<vendor>\<browser>\NativeMessagingHosts\` (Windows). Both written by `native_host_install.rs`. |
 | Firefox | Native messaging (stdio) — same protocol, manifest in `~/Library/Application Support/Mozilla/NativeMessagingHosts/` |
-| Safari | App Group container (`group.com.reddblock.shared`) — Tauri app writes `redd-block-data.json`, extension writes `safari-status.json` | The extension is a separate Mac App Store app (`ReDD Focus.app`); shares the App Group with the Tauri app. |
+| Safari | App Group container (`group.com.reddblock.shared`) — Tauri app writes `redd-block-data.json`, extension writes `safari-status.json` | The extension is a separate Mac App Store app (`Digital Habits: Focus.app`); shares the App Group with the Tauri app. |
 
 The Tauri binary doubles as the native host: `redd-block --native-host`
 is the entrypoint browsers connect to. One binary, two roles.
@@ -217,7 +217,7 @@ wrote — and can't be suppressed without breaking Safari support.
 The realistic fix is **UX, not code**: surface a one-line
 explanation in the Safari onboarding step before the first
 `app_group::path()` call fires, e.g. *"macOS will ask permission
-for ReDD Blocker to read data from the ReDD Focus Safari extension —
+for Digital Habits: Blocker to read data from the Digital Habits: Focus Safari extension —
 that's how we know whether your block is active."* Defer the first
 read until after that screen has been shown.
 
@@ -236,7 +236,7 @@ regression on a clean Windows VM still owed:
 - [ ] Native-messaging manifests written to all four registry keys
       (`HKCU\Software\Google\Chrome\NativeMessagingHosts\com.ulriklyngs.mindshield`
       and equivalents for Brave / Edge / Mozilla).
-- [ ] Watchdog scheduled task (`ReDD Blocker Watchdog`) registers on
+- [ ] Watchdog scheduled task (`Digital Habits Blocker Watchdog`) registers on
       first launch; survives app crash + relaunch within 1 minute.
 - [ ] Enforcer kill path: disable extension in Chrome → toast → 60 s
       grace → `taskkill /IM chrome.exe /T` → 10 s grace → `taskkill
@@ -254,7 +254,7 @@ The v1.x → v1.0 native-messaging path had intermittent failures (some
 browsers wouldn't connect; some installations dropped manifests). The
 v2 path uses `tauri-plugin-single-instance` and a per-OS user-scope
 manifest written by `native_host_install.rs`. Worth a fresh run on a
-machine that has never had ReDD Blocker installed:
+machine that has never had Digital Habits: Blocker installed:
 
 - [ ] Each of Chrome / Brave / Edge / Firefox: install the extension
       from its store, confirm `connectNative("com.ulriklyngs.mindshield")`

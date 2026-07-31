@@ -1,6 +1,6 @@
-# ReDD Blocker Architecture Reference (macOS, Windows, iOS)
+# Digital Habits: Blocker Architecture Reference (macOS, Windows, iOS)
 
-Technical source-of-truth for how ReDD Blocker works today and how earlier
+Technical source-of-truth for how Digital Habits: Blocker works today and how earlier
 versions worked. Implementation-aligned, with file references to actual
 code paths.
 
@@ -9,7 +9,7 @@ code paths.
 | Section | What it covers |
 |---|---|
 | **[Part I — v3 (current)](#part-i--current-architecture-v3)** | Desktop runtime as shipped in v3.0+: macOS Automation blocking for Safari and Chromium browsers, extension blocking on Windows and macOS Firefox, in-process app blocking, compliance enforcer, iOS Screen Time. **Start here.** |
-| **[Part II — v2 (historical)](#part-ii--v2-architecture-historical)** | v2.0–v2.4.x desktop design: every browser blocked via the ReDD Focus extension (including Safari App Group bridge). Superseded on macOS by v3 Automation; Windows is still on this model. |
+| **[Part II — v2 (historical)](#part-ii--v2-architecture-historical)** | v2.0–v2.4.x desktop design: every browser blocked via the Digital Habits: Focus extension (including Safari App Group bridge). Superseded on macOS by v3 Automation; Windows is still on this model. |
 | **[Part III — v1 (historical)](#part-iii--v1-architecture-historical)** | v1.x privileged helper daemon, `/etc/hosts` writes, helper-owned enforcement state. Removed in v2; migration code still cleans residue on upgrade. |
 
 ### v3 desktop runtime in three lines
@@ -17,7 +17,7 @@ code paths.
 - **Website blocking (macOS):** Safari, Chrome, Brave, and Edge are driven by
   **Automation** (Apple Events) in `src-tauri/src/web_automation.rs` — blocked
   tabs redirect to a bundled block page (`src-tauri/blocked/`). **Firefox on
-  macOS** still uses the **ReDD Focus extension** + native-messaging host
+  macOS** still uses the **Digital Habits: Focus extension** + native-messaging host
   (`src-tauri/src/native_host.rs`). **Windows:** all supported browsers use
   the extension + native host (unchanged from v2).
 - **Compliance enforcer** (`src-tauri/src/enforcer.rs`) — 5 s scan tick,
@@ -95,7 +95,7 @@ Three enforcement families:
 
 - **Desktop macOS (websites):** in-process Automation watcher + optional
   Firefox extension path.
-- **Desktop Windows (websites):** ReDD Focus extension + native-messaging
+- **Desktop Windows (websites):** Digital Habits: Focus extension + native-messaging
   host spawned from the same binary.
 - **Desktop (apps):** in-process app watcher (both OSes).
 - **iOS:** Screen Time plugin — no helper, no extension.
@@ -160,7 +160,7 @@ in-process watcher, driven by frontend commands.
 Canonical shared paths (preferred once activated):
 
 - macOS: `/var/lib/redd-block/redd-block-data.json`
-- Windows: `%PROGRAMDATA%\ReDD Blocker\redd-block-data.json` (legacy: `%PROGRAMDATA%\Fristed\...`, `%PROGRAMDATA%\ReDD Block\...`)
+- Windows: `%PROGRAMDATA%\Digital Habits Blocker\redd-block-data.json` (legacy: `%PROGRAMDATA%\Fristed\...`, `%PROGRAMDATA%\ReDD Block\...`)
 
 Legacy per-user paths (used on fresh install until shared dir is writable /
 exists):
@@ -208,7 +208,7 @@ Implemented in `src-tauri/src/web_automation.rs`.
 | Chrome | Apple Events (`tell application "Google Chrome"`) | No |
 | Brave | Apple Events (`tell application "Brave Browser"`) | No |
 | Edge | Apple Events (`tell application "Microsoft Edge"`) | No |
-| Firefox | ReDD Focus extension + `--native-host` | Yes (manual install) |
+| Firefox | Digital Habits: Focus extension + `--native-host` | Yes (manual install) |
 
 Firefox has no usable AppleScript dictionary for tab URL control, so it stays
 on the v2 extension path.
@@ -277,7 +277,7 @@ flowchart TD
 ## 5) Windows website blocking (extension + native host)
 
 Unchanged from v2. All supported browsers (Chrome, Brave, Edge, Firefox) use
-the **ReDD Focus** extension.
+the **Digital Habits: Focus** extension.
 
 ### 5.1 Native-messaging host
 
@@ -379,7 +379,7 @@ Per blocked-app PID state machine:
    `taskkill` without `/F`)
 4. **SIGKILL** — 10 s after polite quit if PID still alive
 
-Protected apps (ReDD Blocker itself, Finder, shell processes) are never targeted.
+Protected apps (Digital Habits: Blocker itself, Finder, shell processes) are never targeted.
 Schedule and manual app lists merge in the frontend; `set_blocked_apps_via_helper`
 (shim) forwards to `app_blocking::set_blocked_apps` with the full mode-aware
 policy: `apps`, `newly_added`, `allowed_apps`, `allowlist_active`,
@@ -630,7 +630,7 @@ generic "Restricted" shield was observed. Known **under-blocking carve-outs**
    blocks non-allowed sites inside it.
 3. Other FamilyControls-authorized Screen Time apps (observed: AppBlock, Jomo,
    Foqos) are exempt from other apps' category shields — the same mechanism
-   that exempts ReDD Blocker itself. Undocumented Apple behavior.
+   that exempts Digital Habits: Blocker itself. Undocumented Apple behavior.
 
 **Out of scope on iOS:** desktop-style process watching/force-quit, the
 "Let's go!" warning overlay, and the diagnostics view (its data source is the
@@ -642,7 +642,7 @@ desktop `current_blocking` state and shows nothing on iOS).
 
 | Artifact | macOS | Windows | iOS |
 |---|---|---|---|
-| App data (canonical) | `/var/lib/redd-block/redd-block-data.json` | `%PROGRAMDATA%\ReDD Blocker\redd-block-data.json` (legacy: `%PROGRAMDATA%\Fristed\...`, `%PROGRAMDATA%\ReDD Block\...`) | App sandbox |
+| App data (canonical) | `/var/lib/redd-block/redd-block-data.json` | `%PROGRAMDATA%\Digital Habits Blocker\redd-block-data.json` (legacy: `%PROGRAMDATA%\Fristed\...`, `%PROGRAMDATA%\ReDD Block\...`) | App sandbox |
 | App data (legacy) | `~/Library/Application Support/com.redd.block/...` | `%APPDATA%\com.redd.block\...` | — |
 | Bundled block page | Inside `.app` Resources | Inside install dir | — |
 | Native host manifests | `~/Library/Application Support/<vendor>/NativeMessagingHosts/` | `HKCU\Software\<vendor>\...\NativeMessagingHosts\` | — |
@@ -710,7 +710,7 @@ prompt at install (except one-time v1 cleanup).
 
 | Concern | v2 approach |
 |---|---|
-| Website blocking | ReDD Focus extension in **every** supported browser |
+| Website blocking | Digital Habits: Focus extension in **every** supported browser |
 | Chromium / Firefox transport | Native messaging — same binary as `--native-host` |
 | Safari transport | App Group container (`group.com.reddblock.shared`) + bundled Safari Web Extension + `SafariWebExtensionHandler.swift` |
 | Safari compliance | 15 s extension heartbeat into App Group; `profile_scan` + enforcer |
@@ -722,7 +722,7 @@ prompt at install (except one-time v1 cleanup).
 ## v2 module map (removed or narrowed in v3)
 
 ```
-ReDD Blocker app (Tauri)
+Digital Habits: Blocker app (Tauri)
  ├─ native_host.rs          ─ stdio host (Chromium/Firefox; Windows all)
  ├─ app_group.rs             ─ Safari App Group bridge [REMOVED in v3]
  ├─ redd-focus-web/         ─ vendored Safari extension bundle [REMOVED in v3]
@@ -744,7 +744,7 @@ ReDD Blocker app (Tauri)
 
 | v2 | v3 |
 |---|---|
-| Safari + Chromium need ReDD Focus extension | Safari + Chromium use Automation; extension not required |
+| Safari + Chromium need Digital Habits: Focus extension | Safari + Chromium use Automation; extension not required |
 | Safari App Group + heartbeat | Removed |
 | Bundled Safari extension build pipeline | Removed; block page bundled in `src-tauri/blocked/` |
 | Full Disk Access for profile scans | Not required for Safari/Chromium website blocking |

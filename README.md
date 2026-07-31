@@ -1,13 +1,13 @@
-# ReDD Blocker: Space for Focus
+# Digital Habits: Blocker
 
 Block distracting websites and apps with scheduled or one-off blocks and customisable difficulty to override. Stay focused on what matters.
 
-Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and the University of Maastricht (Dr Konrad Kollnig), as part of the Reduce Digital Distraction project ([digitalhabits.org](https://digitalhabits.org)).
+Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and the University of Maastricht (Dr Konrad Kollnig), as part of the Centre for Digital Habits ([digitalhabits.org](https://digitalhabits.org)).
 
 ## Features
 
 - **Cross-Platform** — Works on macOS 11+, Windows 10+, iOS (iPad/iPhone), and Android from the same Tauri UI codebase.
-- **Website Blocking** — ReDD Blocker decides what to block. On **macOS**, Safari/Chrome/Brave/Edge use **Automation** (no extension); **Firefox** uses the ReDD Focus extension. On **Windows**, Chrome/Brave/Edge/Firefox use the extension. On **iOS**, blocking uses Screen Time. On **Android**, blocking is enforced by the native AccessibilityService plugin.
+- **Website Blocking** — Digital Habits: Blocker decides what to block. On **macOS**, Safari/Chrome/Brave/Edge use **Automation** (no extension); **Firefox** uses the Digital Habits: Focus extension. On **Windows**, Chrome/Brave/Edge/Firefox use the extension. On **iOS**, blocking uses Screen Time. On **Android**, blocking is enforced by the native AccessibilityService plugin.
 - **App Blocking** — Closes distracting apps on desktop (warning overlay → save window → polite quit → force-close if needed), uses Screen Time shield overlays on iOS, and uses the Android AccessibilityService/friction gate on Android.
 - **Flexible Blocklists** — Create multiple lists with custom names, colors, and emojis
 - **One-Off Blocks** — Quick blocks for immediate focus sessions
@@ -19,49 +19,49 @@ Built by computer scientists at the University of Oxford (Dr Ulrik Lyngs) and th
 
 ## How it works
 
-> **v3 (current).** ReDD Blocker is a single unprivileged app — no helper daemon, no `hosts` file writes. On **macOS**, Safari/Chrome/Brave/Edge website blocking uses **Automation** (Apple Events); **Firefox** still uses the ReDD Focus extension. On **Windows**, all supported browsers use the extension. macOS may ask for your password **once** when cleaning up leftover v1.x components.
+> **v3 (current).** Digital Habits: Blocker is a single unprivileged app — no helper daemon, no `hosts` file writes. On **macOS**, Safari/Chrome/Brave/Edge website blocking uses **Automation** (Apple Events); **Firefox** still uses the Digital Habits: Focus extension. On **Windows**, all supported browsers use the extension. macOS may ask for your password **once** when cleaning up leftover v1.x components.
 
-ReDD Blocker is **one app**. When you start a block, it does two things:
+Digital Habits: Blocker is **one app**. When you start a block, it does two things:
 
 | | What gets blocked | Who does the blocking (desktop) |
 |---|-------------------|----------------------------------|
-| **Websites** | URLs in your blocklists | **macOS:** Automation for Safari/Chrome/Brave/Edge; ReDD Focus extension for Firefox. **Windows:** ReDD Focus extension |
-| **Apps** | Programs in your blocklists | **ReDD Blocker** — closes them for you |
+| **Websites** | URLs in your blocklists | **macOS:** Automation for Safari/Chrome/Brave/Edge; Digital Habits: Focus extension for Firefox. **Windows:** Digital Habits: Focus extension |
+| **Apps** | Programs in your blocklists | **Digital Habits: Blocker** — closes them for you |
 
 ```mermaid
 flowchart LR
-  RB[ReDD Blocker]
+  RB[Digital Habits: Blocker]
   RB --> WEB[Websites<br/>Automation or extension]
-  RB --> APP[Apps<br/>closed by ReDD Blocker]
+  RB --> APP[Apps<br/>closed by Digital Habits: Blocker]
 ```
 
 ### Website blocking (desktop)
 
-**ReDD Blocker** stores your blocklists and enforces them. macOS and Windows use different plumbing — see the tables below.
+**Digital Habits: Blocker** stores your blocklists and enforces them. macOS and Windows use different plumbing — see the tables below.
 
 **macOS**
 
 | Browser | How blocking works | Extension setup |
 |---------|-------------------|-----------------|
-| Safari, Chrome, Brave, Edge | **Automation** (Apple Events) — ReDD Blocker redirects blocked tabs | ReDD Blocker prompts for Automation in System Settings → Privacy & Security → Automation |
-| Firefox | ReDD Focus extension | Install manually from the [Firefox Add-ons store](https://addons.mozilla.org/) — ReDD Blocker does **not** auto-install on macOS |
+| Safari, Chrome, Brave, Edge | **Automation** (Apple Events) — Digital Habits: Blocker redirects blocked tabs | Digital Habits: Blocker prompts for Automation in System Settings → Privacy & Security → Automation |
+| Firefox | Digital Habits: Focus extension | Install manually from the [Firefox Add-ons store](https://addons.mozilla.org/) — Digital Habits: Blocker does **not** auto-install on macOS |
 
 **Windows**
 
 | Browser | How blocking works | Extension setup |
 |---------|-------------------|-----------------|
-| Chrome, Brave, Edge, Firefox | Native messaging (stdio) — the extension wakes ReDD Blocker in the background to fetch the blocklist | ReDD Blocker can auto-install extension hints where supported |
+| Chrome, Brave, Edge, Firefox | Native messaging (stdio) — the extension wakes Digital Habits: Blocker in the background to fetch the blocklist | Digital Habits: Blocker can auto-install extension hints where supported |
 
 **How native messaging works (Windows)**
 
 1. The extension needs the current blocklist.
-2. The browser **cannot read ReDD Blocker's window**, so it wakes up ReDD Blocker **in the background** — same app you installed, **no new window appears**.
-3. ReDD Blocker sends the list to the extension and exits.
+2. The browser **cannot read Digital Habits: Blocker's window**, so it wakes up Digital Habits: Blocker **in the background** — same app you installed, **no new window appears**.
+3. Digital Habits: Blocker sends the list to the extension and exits.
 4. The extension blocks matching sites.
 
 You never open anything extra or run a second program. It's just how Chrome/Firefox talk to local apps.
 
-While a block is active, ReDD Blocker can warn you or quit browsers if website blocking stops working (e.g. Automation denied on Safari/Chrome, or the Firefox extension disabled).
+While a block is active, Digital Habits: Blocker can warn you or quit browsers if website blocking stops working (e.g. Automation denied on Safari/Chrome, or the Firefox extension disabled).
 
 ### App blocking (desktop)
 
@@ -69,16 +69,16 @@ While a block is active, ReDD Blocker can warn you or quit browsers if website b
 |------|----------------|
 | 1 | **"Let's go!"** warning — you click when ready |
 | 2 | **30 seconds** to save work and quit on your own |
-| 3 | ReDD Blocker asks the app to close politely |
+| 3 | Digital Habits: Blocker asks the app to close politely |
 | 4 | Still open after **10 seconds**? Force-closed |
 
-If you **open** a blocked app mid-block, ReDD Blocker skips the warning and closes it on the fast path.
+If you **open** a blocked app mid-block, Digital Habits: Blocker skips the warning and closes it on the fast path.
 
-ReDD Blocker runs from the menu bar / system tray and can start at login so blocking continues across sessions.
+Digital Habits: Blocker runs from the menu bar / system tray and can start at login so blocking continues across sessions.
 
 ### iOS
 
-No browser extension — ReDD Blocker uses **Screen Time** to shield websites and apps. Scheduled blocks work via a background monitor extension even when the app is closed. Details: [architecture.md](architecture.md).
+No browser extension — Digital Habits: Blocker uses **Screen Time** to shield websites and apps. Scheduled blocks work via a background monitor extension even when the app is closed. Details: [architecture.md](architecture.md).
 
 ### Android
 
@@ -91,18 +91,18 @@ You can open `src-tauri/gen/android/` in Android Studio to inspect, run, and bui
 
 ### Permissions (desktop)
 
-- **Extensions:** install ReDD Focus in Firefox (macOS) or in each browser you use on Windows.
-- **macOS — Automation:** Safari, Chrome, Brave, and Edge need **Automation** permission so ReDD Blocker can redirect blocked tabs. ReDD Blocker walks you through this during setup; no Full Disk Access is required.
-- **macOS — Firefox:** install ReDD Focus manually from the Add-ons store and allow it in private windows.
+- **Extensions:** install Digital Habits: Focus in Firefox (macOS) or in each browser you use on Windows.
+- **macOS — Automation:** Safari, Chrome, Brave, and Edge need **Automation** permission so Digital Habits: Blocker can redirect blocked tabs. Digital Habits: Blocker walks you through this during setup; no Full Disk Access is required.
+- **macOS — Firefox:** install Digital Habits: Focus manually from the Add-ons store and allow it in private windows.
 - **No** admin or UAC prompt at install time (macOS may ask once when cleaning up leftover v1.x components).
 
 ### Upgrading from v1.x
 
-If you previously ran ReDD Blocker, **Fristed**, or ReDD Block 1.x (helper daemon + hosts file), the first launch after upgrade:
+If you previously ran Digital Habits: Blocker, **Fristed**, or ReDD Block 1.x (helper daemon + hosts file), the first launch after upgrade:
 
 1. Cleans up the old hosts-file entries and helper daemon (macOS may ask for your password once).
 2. Registers launch-at-login and (on Windows) native-messaging manifests for the extension.
-3. Walks you through browser setup — Automation for Safari/Chrome/Brave/Edge on macOS; ReDD Focus extension on Windows and for Firefox on macOS.
+3. Walks you through browser setup — Automation for Safari/Chrome/Brave/Edge on macOS; Digital Habits: Focus extension on Windows and for Firefox on macOS.
 
 ### Developers
 
@@ -283,7 +283,7 @@ Use `./scripts/bump-version.sh <version>` to update the app version in all files
 | Platform | Canonical location (once activated) | Per-user fallback |
 |----------|-------------------------------------|-------------------|
 | macOS | `/var/lib/redd-block/redd-block-data.json` | `~/Library/Application Support/com.reddblock/redd-block-data.json` |
-| Windows | `%PROGRAMDATA%\ReDD Blocker\redd-block-data.json` (legacy: `%PROGRAMDATA%\Fristed\...`, `%PROGRAMDATA%\ReDD Block\...`) | `%AppData%\com.reddblock\redd-block-data.json` |
+| Windows | `%PROGRAMDATA%\Digital Habits Blocker\redd-block-data.json` (legacy: `%PROGRAMDATA%\Fristed\...`, `%PROGRAMDATA%\ReDD Block\...`) | `%AppData%\com.reddblock\redd-block-data.json` |
 | iOS | App sandbox (managed by Tauri) | — |
 | Android | App sandbox (managed by Tauri; native schedule mirrors managed by the Android plugin) | — |
 

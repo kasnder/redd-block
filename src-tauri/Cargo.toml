@@ -2,7 +2,7 @@
 name = "redd-block"
 version = "3.8.6"
 description = "Digital Habits: Blocker"
-authors = ["The Reduce Digital Distraction Project <team@digitalhabits.org>"]
+authors = ["Centre for Digital Habits <team@digitalhabits.org>"]
 license = "CC-BY-NC-ND-3.0"
 repository = "https://github.com/ulyngs/redd-block"
 edition = "2021"

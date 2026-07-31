@@ -139,7 +139,7 @@ export APP_STORE_CONNECT_API_ISSUER_ID="<Issuer ID from App Store Connect>"
 export APP_STORE_CONNECT_API_KEY_P8="$(base64 -i /path/to/AuthKey_<KEYID>.p8)"
 npm run build:ios
 node scripts/changelog-to-store-whats-new.js "$VERSION" --platform ios --out whats_new_ios.txt
-fastlane ios submit_app_store "version:${VERSION}" "ipa:for-distribution/ReDD Blocker.ipa" notes:whats_new_ios.txt
+fastlane ios submit_app_store "version:${VERSION}" "ipa:for-distribution/Digital Habits Blocker.ipa" notes:whats_new_ios.txt
 ```
 
 ## Manual fallback

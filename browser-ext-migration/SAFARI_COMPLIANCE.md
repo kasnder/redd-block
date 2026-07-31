@@ -5,7 +5,7 @@
 > [../architecture.md](../architecture.md) §7. Still relevant for **Windows**
 > extension compliance and **macOS Firefox**.
 
-How ReDD Blocker tells whether the Safari Web Extension is **installed**,
+How Digital Habits: Blocker tells whether the Safari Web Extension is **installed**,
 **enabled**, and **allowed in private browsing** — and what gets
 enforced when it isn't.
 
@@ -165,7 +165,7 @@ is frontmost.
 
 ## What the user can still do (and why we accept it)
 
-ReDD Blocker is a focus app, not a security product. The model is
+Digital Habits: Blocker is a focus app, not a security product. The model is
 honor-system + significant friction, not perfect prevention.
 
 - **Disable the extension while Safari is foreground** → ≤ 45 s
@@ -232,13 +232,13 @@ host app. Returns `SFSafariExtensionState.isEnabled`. Looks perfect.
 
 Why rejected: Apple's docs say *"the extension must be bundled with
 your app"* and the API returns nothing useful otherwise. Our Safari
-extension is bundled inside `ReDD Focus.app` (a separate Mac App
+extension is bundled inside `Digital Habits: Focus.app` (a separate Mac App
 Store app), not inside `redd-block.app`. Sharing an App Group does
 not grant cross-app extension introspection.
 
 Three theoretical workarounds, all bad:
-1. Have `ReDD Focus.app` call this API and write the result to the
-   App Group container. Requires the user to launch `ReDD Focus.app`,
+1. Have `Digital Habits: Focus.app` call this API and write the result to the
+   App Group container. Requires the user to launch `Digital Habits: Focus.app`,
    which is the dummy container they install once and never open.
 2. Bundle a stub extension inside `redd-block.app` just to query
    state. Duplicative, two ReDD-Focus-ish entries in Safari →

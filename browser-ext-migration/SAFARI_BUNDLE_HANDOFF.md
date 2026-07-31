@@ -11,15 +11,15 @@ context from chat scrollback.
 
 ## TL;DR
 
-ReDD Focus's Safari Web Extension is now built into and shipped
-inside `ReDD Blocker.app/Contents/PlugIns/`. Installing ReDD Blocker on
-macOS lights up ReDD Focus in Safari → Settings → Extensions
+Digital Habits: Focus's Safari Web Extension is now built into and shipped
+inside `Digital Habits Blocker.app/Contents/PlugIns/`. Installing Digital Habits: Blocker on
+macOS lights up Digital Habits: Focus in Safari → Settings → Extensions
 automatically — no separate App Store install, no Full Disk Access
 prompt to "verify the extension is installed". That part works
 end-to-end.
 
 What's still rough is (a) the `.dmg` Tauri packs pre-embed, (b) the
-onboarding UI copy still says "click Details on ReDD Focus", and
+onboarding UI copy still says "click Details on Digital Habits: Focus", and
 (c) full state-detection (enabled / private / all-sites) still
 requires FDA — Phase 4b would drop that requirement via in-process
 SafariServices, source for which is vendored but not wired up.
@@ -55,7 +55,7 @@ Commits on this branch (oldest → newest):
   bundled `.appex` is present, regardless of FDA — see
   `embedded_safari_extension_present()` in `profile_scan.rs`.
 - `pluginkit -m -i com.reddblock.SafariExtension` finds the entry.
-- Safari → Settings → Extensions shows "ReDD Focus 6.1.1 from ReDD
+- Safari → Settings → Extensions shows "Digital Habits: Focus 6.1.1 from ReDD
   Block" — host attribution is correct.
 
 ## Open items
@@ -75,7 +75,7 @@ post-embed `.app` + sign + `notarize-app.sh` (which already handles
 Tauri build the `.dmg` pre-embed — that was the source of the
 stale-artifact bug.
 
-### 2. Onboarding UI copy still says "click Details on ReDD Focus"
+### 2. Onboarding UI copy still says "click Details on Digital Habits: Focus"
 
 **Status:** decided shape, not implemented.
 
@@ -86,7 +86,7 @@ instruction line with a 3-step checklist:
 
 ```
 ✓ Extension installed
-1. Click ReDD Focus → enable the extension       [done|next|pending]
+1. Click Digital Habits: Focus → enable the extension       [done|next|pending]
 2. Click "Allow in Private Browsing"             [done|next|pending]
 3. Click "Always Allow on Every Website…"        [done|next|pending]
 [Open Safari → Extensions]   [Show me how >]
@@ -125,7 +125,7 @@ the FDA prompt from the Safari onboarding flow entirely.
 The sidecar approach (run `safari-tool` as a child process from Rust
 via `std::process::Command`) does NOT work. SFSafariExtensionManager
 returns `SFErrorDomain error 1` (extensionNotFound) even when the
-binary lives inside `ReDD Blocker.app/Contents/MacOS/` and
+binary lives inside `Digital Habits Blocker.app/Contents/MacOS/` and
 `Bundle.main.bundleIdentifier` correctly resolves to `com.reddblock`.
 The framework appears to require the call to come from the
 *registered main executable* of the host bundle, which is `redd-block`
@@ -191,7 +191,7 @@ in practice.
 - **Modifying the upstream `redd-focus-web` entitlements file** to
   add app-sandbox: deliberately not done. We override at sign time
   via `src-tauri/safari-extension.entitlements.plist` to keep the
-  standalone ReDD Focus Xcode build untouched. The standalone app
+  standalone Digital Habits: Focus Xcode build untouched. The standalone app
   has its own (App-Store-driven) sandbox config.
 - **Sidecar Swift binary calling SFSafariExtensionManager**: see
   §3 above. Failed with extensionNotFound regardless of bundle path.
@@ -209,7 +209,7 @@ in practice.
   blow it away and reinstall from a fresh `.pkg` once the branch
   is in shape — `sudo rm -rf "/Applications/Fristed.app"` then
   install from `for-distribution/ReDD-Block-X.Y.Z.pkg` (current
-  releases ship `ReDD Blocker.app`).
+  releases ship `Digital Habits Blocker.app`).
 - The Chromium tombstone scrub fix (commit on
   `explore-force-install-extensions`) cleared
   `extensions.external_uninstalls` from your Chrome Default profile.

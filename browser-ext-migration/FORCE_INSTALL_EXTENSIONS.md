@@ -1,4 +1,4 @@
-# Force-installing the ReDD Focus extension at ReDD Blocker install time
+# Force-installing the Digital Habits: Focus extension at Digital Habits: Blocker install time
 
 > **Historical — partial v3 relevance.** Windows Chromium auto-install hints
 > still apply. macOS Chromium/Safari use **Automation** in v3 (no extension).
@@ -94,7 +94,7 @@ a per-browser walk-through. Users often:
   user to take an extra action),
 - forget which browsers they've done.
 
-We want ReDD Blocker's installer (or first-launch) to silently put the
+We want Digital Habits: Blocker's installer (or first-launch) to silently put the
 extension in place across every detected non-Safari browser, so the
 extension is **already there** when the user's first onboarding scan
 runs.
@@ -109,7 +109,7 @@ mechanisms split along two axes:
 - **User-defeatable** — can the user uninstall the extension afterwards
   via the browser's UI, and does our install survive that?
 
-ReDD Blocker runs as the user (no helper daemon, per `MIGRATION_PLAN.md`
+Digital Habits: Blocker runs as the user (no helper daemon, per `MIGRATION_PLAN.md`
 § "What we're not doing"), so the **user-level** options are the only
 ones we can rely on without an installer-time UAC / sudo prompt.
 
@@ -138,7 +138,7 @@ User-level paths:
   `HKCU\Software\Policies\<vendor>\<browser>\ExtensionSettings\<ext-id>`
   with `installation_mode` + `update_url` REG_SZ values.
 
-Auto-uninstall: when ReDD Blocker uninstalls, our uninstall hook
+Auto-uninstall: when Digital Habits: Blocker uninstalls, our uninstall hook
 strips the `ExtensionSettings.<ext-id>` entry — Chromium then
 auto-uninstalls the extension on next launch. Same lifecycle
 ownership as Firefox.
@@ -169,7 +169,7 @@ Contents:
 
 UX is lighter — extension shows up in `chrome://extensions` like a
 normal store install, user can disable or remove it from the UI.
-Trade-off: no auto-uninstall when ReDD Blocker goes away (extension
+Trade-off: no auto-uninstall when Digital Habits: Blocker goes away (extension
 stays unless user removes it). We replaced this with the policy
 approach for symmetry with Firefox, locked install, and clean
 uninstall hygiene. The current install path also cleans up any
@@ -219,7 +219,7 @@ the extension on its next launch — clean install + uninstall hygiene.
 
 **On macOS this is feasible without `sudo`** because consumer Macs
 typically grant the logged-in user admin group write access to
-`/Applications`. ReDD Blocker runs as the user; if it has write access
+`/Applications`. Digital Habits: Blocker runs as the user; if it has write access
 to `/Applications/Firefox.app/Contents/Resources/`, it can drop the
 file directly. On managed / non-admin Macs the write fails and we
 fall back to the existing onboarding "Install in Firefox" link.
@@ -230,17 +230,17 @@ Trade-offs:
   at quarantine / first-launch, not every launch. Mozilla
   [officially supports](https://mozilla.github.io/policy-templates/)
   this deployment pattern. Firefox auto-updates replace the bundle
-  and wipe our policy file, but we re-apply on every ReDD Blocker
+  and wipe our policy file, but we re-apply on every Digital Habits: Blocker
   launch (idempotent install) so it stays in sync.
 - "Managed by your administrator" UX. Some users will find it
-  aggressive — implies more authority than ReDD Blocker actually has.
+  aggressive — implies more authority than Digital Habits: Blocker actually has.
   Acceptable trade for the auto-uninstall behavior; consistent with
   the project's "annoying enough that you have to mean it" stance.
 
 **On Windows** writing into `Program Files` requires UAC elevation,
 which conflicts with our "no admin / no helper" stance. Windows
 Firefox stays on the existing onboarding link path until / unless
-ReDD Blocker ever ships a privileged installer.
+Digital Habits: Blocker ever ships a privileged installer.
 
 #### 3. Sideload via Extensions directory — REMOVED in Firefox 74
 
@@ -327,7 +327,7 @@ Two reasonable trigger points:
 
 1. **First-launch install (preferred for v1)** — call `install_all()`
    from the existing onboarding flow, just before the compliance
-   scan. The user opens ReDD Blocker for the first time, we drop the
+   scan. The user opens Digital Habits: Blocker for the first time, we drop the
    hints, and the next time they open Chrome / Firefox the extension
    appears. Onboarding then runs the scanner and most browsers come
    back as "installed" without the user having to do anything.
@@ -341,10 +341,10 @@ Two reasonable trigger points:
 
 Two options:
 
-- **Bundle it with ReDD Blocker** at build time — pulled from AMO's
+- **Bundle it with Digital Habits: Blocker** at build time — pulled from AMO's
   "latest" URL during the Tauri build. Adds ~200 KB to the bundle.
   Pinned at build time so it can drift behind the latest AMO release;
-  acceptable since we can re-bundle on each ReDD Blocker release.
+  acceptable since we can re-bundle on each Digital Habits: Blocker release.
 
 - **Download on first run** — fetch from
   `https://addons.mozilla.org/firefox/downloads/latest/reddfocus/latest.xpi`
@@ -372,7 +372,7 @@ Bundling is simpler and more robust offline; lean toward that.
    Extensions hint is a no-op in that case — Chrome dedupes by ID.
    Verify Firefox sideload behavior is the same (probably: re-prompt
    if version differs).
-5. **Uninstall hygiene** — ReDD Blocker's existing uninstall path
+5. **Uninstall hygiene** — Digital Habits: Blocker's existing uninstall path
    (`commands/uninstall.rs`) needs to also remove these hints so a
    clean uninstall doesn't leave hooks pointing at a non-existent app.
 
@@ -389,5 +389,5 @@ Bundling is simpler and more robust offline; lean toward that.
 - Update `commands/uninstall.rs` to clean up the hints.
 - Update `profile_scan.rs` so the compliance scanner doesn't re-prompt
   for installs we know we've already hinted (avoid prompting the user
-  to "Install ReDD Focus" between the hint being written and the
+  to "Install Digital Habits: Focus" between the hint being written and the
   browser actually picking it up on next launch).

@@ -10,7 +10,7 @@ outage does not block macOS or direct Windows distribution.
 
 ## One-time Partner Center / Entra setup
 
-App update APIs are supported for **free** Store products (ReDD Blocker stays
+App update APIs are supported for **free** Store products (Digital Habits: Blocker stays
 free to download).
 
 1. In [Partner Center](https://partner.microsoft.com/), ensure a Microsoft Entra
@@ -27,7 +27,7 @@ free to download).
 5. Copy your **Seller ID** (Account settings → Identifiers). It is a
    **number** (digits only) — not the Publisher GUID, not `CN=…`, not the
    Store `9…` ID.
-6. Copy the app’s **Store ID** (Apps and games → ReDD Blocker → Product
+6. Copy the app’s **Store ID** (Apps and games → Digital Habits: Blocker → Product
    identity / Store listing URL segment, e.g. `9P…`).
 
 ## GitHub Actions secrets

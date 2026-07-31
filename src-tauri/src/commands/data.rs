@@ -444,7 +444,7 @@ pub fn get_app_version(app: AppHandle) -> String {
 }
 
 /// True when this process is running from a Microsoft Store (MSIX) package.
-/// Store users receive updates via the Store, not reddfocus.org installers.
+/// Store users receive updates via the Store, not digitalhabits.org installers.
 #[tauri::command]
 pub fn is_microsoft_store_package() -> bool {
     #[cfg(target_os = "windows")]

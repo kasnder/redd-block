@@ -4,7 +4,7 @@ This file provides guidance to coding agents (Claude Code, etc.) when working wi
 
 ## What this is
 
-ReDD Blocker is a cross-platform website/app blocker built as a **single Tauri v2 app** (Rust backend + HTML/JS/CSS frontend) targeting macOS 11+, Windows 10+, iOS 16+, and Android 8+ (API 26+). One frontend codebase (`src/`) drives all four platforms; enforcement differs per platform. There is **no** privileged helper daemon and **no** hosts-file writing — the app itself is the enforcement engine (v3 architecture).
+Digital Habits: Blocker is a cross-platform website/app blocker built as a **single Tauri v2 app** (Rust backend + HTML/JS/CSS frontend) targeting macOS 11+, Windows 10+, iOS 16+, and Android 8+ (API 26+). One frontend codebase (`src/`) drives all four platforms; enforcement differs per platform. There is **no** privileged helper daemon and **no** hosts-file writing — the app itself is the enforcement engine (v3 architecture).
 
 The authoritative deep-dive is [architecture.md](architecture.md) — read it before touching enforcement code. It is versioned: **Part I = v3 (current, start here)**, Parts II/III are historical v2/v1 kept for migration context. Do not reason about current behavior from the historical parts.
 
@@ -42,11 +42,11 @@ There is no CLI test runner. Tests run **inside the app** in dev mode via the de
 ## Architecture essentials
 
 ### Single source of truth
-Desktop website/app rules derive from one JSON file, `redd-block-data.json` (canonical `/var/lib/redd-block/...` on macOS, `%PROGRAMDATA%\ReDD Blocker\...` on Windows; per-user fallback until the shared dir is writable — path logic in `src-tauri/src/commands/data.rs`). The frontend writes it via `save_data`; every backend re-reads it. `native_host::derive_payload()` computes effective website rules: blocklist domains always block; when any allowlist source is active, policy is `allowed-union − blocked-union` (blocklist wins on overlap). iOS uses its own App Group store, not this file.
+Desktop website/app rules derive from one JSON file, `redd-block-data.json` (canonical `/var/lib/redd-block/...` on macOS, `%PROGRAMDATA%\Digital Habits Blocker\...` on Windows; per-user fallback until the shared dir is writable — path logic in `src-tauri/src/commands/data.rs`). The frontend writes it via `save_data`; every backend re-reads it. `native_host::derive_payload()` computes effective website rules: blocklist domains always block; when any allowlist source is active, policy is `allowed-union − blocked-union` (blocklist wins on overlap). iOS uses its own App Group store, not this file.
 
 ### Enforcement per platform
 - **macOS websites:** Automation (Apple Events) in `src-tauri/src/web_automation.rs` — 1 s tick, redirects blocked tabs in Safari/Chrome/Brave/Edge to a bundled block page (`src-tauri/blocked/`). Firefox is the exception: it uses the extension + native-messaging host.
-- **Windows websites:** ReDD Focus extension + native-messaging host (`native_host.rs`); the same binary runs as the host via `redd-block --native-host`.
+- **Windows websites:** Digital Habits: Focus extension + native-messaging host (`native_host.rs`); the same binary runs as the host via `redd-block --native-host`.
 - **Desktop apps (both OSes):** in-process poll-and-quit watcher, `src-tauri/src/app_watcher.rs` (1 s tick, PID state machine: warn → 30 s grace → polite quit → SIGKILL). Allow-mode inverts the target set.
 - **Compliance enforcer** (`src-tauri/src/enforcer.rs`, 5 s tick): force-quits non-compliant *running* browsers during active website blocks — **opt-in only** (`settings.enforcementEnabled`, default off).
 - **iOS:** Apple Screen Time via `tauri-plugin-screentime/` (Swift). No file, no extension, no process watching. Allow-mode uses `.all(except:)` with a 50-item cap.

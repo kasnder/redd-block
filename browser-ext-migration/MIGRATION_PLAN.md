@@ -7,8 +7,8 @@
 
 > **Status (branch `claude/plan-extension-migration-J9CTL`)** — code complete,
 > end-to-end tested on real macOS and Windows hardware. Safari now uses an
-> App Group bridge (`group.com.reddblock.shared`) between ReDD Blocker and the
-> ReDD Focus Safari extension. The macOS release path is `.dmg` only; the old
+> App Group bridge (`group.com.reddblock.shared`) between Digital Habits: Blocker and the
+> Digital Habits: Focus Safari extension. The macOS release path is `.dmg` only; the old
 > localhost fallback and signed `.pkg` ideas are preserved in
 > [FUTURE_OPTIONS.md](./FUTURE_OPTIONS.md).
 
@@ -17,7 +17,7 @@
 ### Architecture
 The privileged-helper-daemon stack is gone. v2.0 is a single unprivileged
 Tauri binary per OS that:
-- Blocks websites via the **ReDD Focus browser extension** (Chrome / Brave /
+- Blocks websites via the **Digital Habits: Focus browser extension** (Chrome / Brave /
   Edge / Firefox via native messaging; Safari via a dedicated extension target
   plus App Group container bridge).
 - Blocks apps via an in-process sysinfo poll-and-kill watcher.
@@ -67,7 +67,7 @@ Single `#migration-onboarding` overlay drives three states:
    Blocklists preserved, ○ Install extension) + per-browser status rows
    with Copy URL buttons.
 3. **Welcome** (fresh user, never had v1.x, extension not yet compliant) —
-   same layout but cleanup checklist hidden, headline "Welcome to ReDD Blocker"
+   same layout but cleanup checklist hidden, headline "Welcome to Digital Habits: Blocker"
    instead of "Cleanup complete".
 
 Dismissal persisted in `localStorage` (`reddBlockExtOnboardingDismissed`).
@@ -231,7 +231,7 @@ same end state.
       gone → atomic write hosts (`Set-Content` + `Move-Item -Force`
       with random suffix) → verify post-write → `schtasks /Delete` +
       `Remove-Item helper-state.json` (NOT the whole `C:\ProgramData\
-      ReDD Blocker` — same data-preservation rule as macOS) →
+      Digital Habits: Blocker` — same data-preservation rule as macOS) →
       verify removal → status marker. Things to test against a real
       v1.x install (or a hand-crafted residue):
       - One UAC prompt, accept → hosts cleaned, scheduled task gone,
@@ -254,7 +254,7 @@ still needs doing before merge:
       (sessions/cookies persisted), and forced `taskkill /F /T`
       only kicks in for stragglers after the 10 s grace.
       - **Watchdog respawn.** Kill `redd-block.exe` from Task Manager;
-        confirm the Scheduled Task `ReDD Blocker Watchdog` respawns it
+        confirm the Scheduled Task `Digital Habits Blocker Watchdog` respawns it
         within ~1 minute. Disable the task in Task Scheduler; relaunch
         the app and confirm `watchdog::register()` re-creates it.
       - **Clean uninstall.** Add/Remove Programs → confirm the
@@ -356,7 +356,7 @@ supersede earlier sections of this doc:
   bundles via `npm run tauri -- build --debug --bundles nsis` without
   setting up Trusted Signing. CI behaviour unchanged.
 - `src-tauri/src/watchdog.rs` (new module, Windows-only). Per-user
-  Scheduled Task `ReDD Blocker Watchdog` triggers every minute; the
+  Scheduled Task `Digital Habits Blocker Watchdog` triggers every minute; the
   task action is a small wrapper `redd-block-watchdog.cmd` next to
   the exe that uses `tasklist` + `start ""` to spawn `redd-block.exe`
   only if it isn't already running. `register()` is called at every
@@ -479,7 +479,7 @@ supersede earlier sections of this doc:
 - [x] Tray right-click menu removed (no Open / Quit items); left-click
       reveals/focuses the main window. Uninstall is the only
       sanctioned exit path.
-- [x] Watchdog Scheduled Task (`ReDD Blocker Watchdog`, per-user, 1-min
+- [x] Watchdog Scheduled Task (`Digital Habits Blocker Watchdog`, per-user, 1-min
       poll). Self-heals on every app launch via
       `watchdog::register()`; removed by both `redd-block.exe
       --uninstall` and the NSIS pre-uninstall hook.
@@ -518,7 +518,7 @@ supersede earlier sections of this doc:
       `browser-ext-mvp/reddfocus-patch.diff` — recover it with
       `git show <pre-rename-sha>:browser-ext-mvp/reddfocus-patch.diff`
       if you need it.
-- [ ] Republish ReDD Focus to Chrome Web Store / Firefox AMO /
+- [ ] Republish Digital Habits: Focus to Chrome Web Store / Firefox AMO /
       Edge Add-ons with the added `nativeMessaging` permission —
       triggers a re-review on each.
 - [ ] Decide on a Chromium extension ID that matches
@@ -548,8 +548,8 @@ Safari coverage.
 
 | OS | Website blocking | App blocking |
 | --- | --- | --- |
-| macOS 11+ | ReDD Focus extension — Chrome/Brave/Edge/Firefox via `--native-host`, Safari via `SafariWebExtensionHandler.swift` | AppleScript hide, in-process (Accessibility TCC, no root) |
-| Windows 10+ | ReDD Focus extension via `--native-host` + registry-registered manifest | `SetWinEventHook` + `ShowWindow`, in-process |
+| macOS 11+ | Digital Habits: Focus extension — Chrome/Brave/Edge/Firefox via `--native-host`, Safari via `SafariWebExtensionHandler.swift` | AppleScript hide, in-process (Accessibility TCC, no root) |
+| Windows 10+ | Digital Habits: Focus extension via `--native-host` + registry-registered manifest | `SetWinEventHook` + `ShowWindow`, in-process |
 
 ### Why not Screen Time on macOS
 
@@ -584,7 +584,7 @@ schedules to fire and blocks to expire.
   both OSes (user-level, no admin).
 - **Relaunch on force-quit.**
   - macOS: launchd `KeepAlive=true` (planned; not yet wired).
-  - Windows: per-user Scheduled Task `ReDD Blocker Watchdog` polling
+  - Windows: per-user Scheduled Task `Digital Habits Blocker Watchdog` polling
     every minute (`src-tauri/src/watchdog.rs`). Registered at install
     time via the NSIS hook *and* re-registered on every app launch
     (self-heal if the user deletes/disables it from Task Scheduler).

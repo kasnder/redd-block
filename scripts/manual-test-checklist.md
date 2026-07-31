@@ -7,7 +7,7 @@ For iOS builds, run **section 14 (iOS-Specific)** on a physical device.
 
 **Platform notes (v3):**
 - **macOS Safari/Chrome/Brave/Edge:** website blocking via **Automation** (no extension).
-- **macOS Firefox + all Windows browsers:** ReDD Focus **extension** + native messaging.
+- **macOS Firefox + all Windows browsers:** Digital Habits: Focus **extension** + native messaging.
 - **No helper daemon, no hosts-file writes** for blocking (v1 cleanup may still strip old markers once).
 
 ---
@@ -240,7 +240,7 @@ Screen Time apps and Settings › Screen Time › Always Allowed contents first
 ## 15. Desktop Allowlist (Allow-Mode Focus Spaces)
 
 Same channel split as blocklist mode: **macOS Safari/Chrome/Brave/Edge** enforce
-via Automation; **macOS Firefox + all Windows browsers** via the ReDD Focus
+via Automation; **macOS Firefox + all Windows browsers** via the Digital Habits: Focus
 extension. App allow-mode uses the in-process app watcher (macOS + Windows;
 no Linux). Run the website checks once per channel.
 
@@ -265,7 +265,7 @@ Before manual checks, run the automated allowlist coverage: Tier 1 Category 14
 - [ ] Start with **no** closable apps open: intention-only overlay appears; "Let's go!" dismisses it with no countdown
 - [ ] Mid-session: bring a non-allowed app frontmost → it is quit (30 s wrap-up then polite quit); background agents keep running
 - [ ] Switch away from a warned non-allowed app before its quit lands → quit is aborted (no longer user-facing)
-- [ ] Allowed apps and protected apps (Finder, ReDD Blocker) are never targeted
+- [ ] Allowed apps and protected apps (Finder, Digital Habits: Blocker) are never targeted
 - [ ] End/stop: no further quits; previously warned apps reopen normally
 
 ### Diagnostics

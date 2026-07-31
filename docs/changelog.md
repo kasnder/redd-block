@@ -56,8 +56,8 @@ description.` Legacy flat lists still work.
 ##### macOS
 
 - **Stale Automation warning clears after switching to extension blocking.**
-  When a browser's blocking method switches to the ReDD Focus extension, the
-  leftover "Allow ReDD Blocker to control your browser" warning now clears
+  When a browser's blocking method switches to the Digital Habits: Focus extension, the
+  leftover "Allow Digital Habits: Blocker to control your browser" warning now clears
   instead of staying up indefinitely.
 
 - **Version:** 3.8.5 (macOS, Windows, and iOS).
@@ -134,7 +134,7 @@ description.` Legacy flat lists still work.
   and app switches instead of constant polling, and website Automation focuses on the frontmost browser while backing off when the display is asleep — same protection, lower power use.
 - **Blocked pages clear when a focus space ends.** When you stop or pause a
   focus space (including Allow mode), tabs sitting on the blocked page return
-  to their original site under Automation, matching the ReDD Focus extension.
+  to their original site under Automation, matching the Digital Habits: Focus extension.
 
 - **Version:** 3.8.1 (macOS, Windows, and iOS).
 
@@ -214,7 +214,7 @@ description.` Legacy flat lists still work.
 
 ### LOCALIZATION
 
-- **Simplified Chinese.** ReDD Blocker is now available in **Simplified
+- **Simplified Chinese.** Digital Habits: Blocker is now available in **Simplified
   Chinese** and can auto-select it when your device or browser language is
   Chinese.
 
@@ -286,7 +286,7 @@ description.` Legacy flat lists still work.
 
 ### BRANDING
 
-- **App subtitle.** Installer and store copy now use **ReDD Blocker: Space for
+- **App subtitle.** Installer and store copy now use **Digital Habits: Blocker: Space for
   Focus**.
 
 ### BY PLATFORM
@@ -330,8 +330,8 @@ description.` Legacy flat lists still work.
 
 ## v3.4.2
 
-> **Meet ReDD Blocker!** **Fristed: Block Apps & Sites** has a new name — same
-> powerful blocking you love, now called **ReDD Blocker**. Your Focus Spaces,
+> **Meet Digital Habits: Blocker!** **Fristed: Block Apps & Sites** has a new name — same
+> powerful blocking you love, now called **Digital Habits: Blocker**. Your Focus Spaces,
 > schedules, and blocklists carry over — nothing else changes.
 
 ### FOCUS SPACES & SCHEDULES
@@ -350,13 +350,13 @@ description.` Legacy flat lists still work.
 
 ### BRANDING
 
-- **ReDD Blocker icons.** Updated app, menu-bar tray, iOS shield, and
-  blocked-site page icons to ReDD Blocker branding (replacing leftover Fristed
+- **Digital Habits: Blocker icons.** Updated app, menu-bar tray, iOS shield, and
+  blocked-site page icons to Digital Habits: Blocker branding (replacing leftover Fristed
   artwork).
 
 ### LOCALIZATION
 
-- **Danish copy.** Onboarding and Settings strings updated for the ReDD Blocker
+- **Danish copy.** Onboarding and Settings strings updated for the Digital Habits: Blocker
   name and blocking hints.
 
 ### BY PLATFORM
@@ -382,12 +382,12 @@ description.` Legacy flat lists still work.
 ##### Windows
 
 - **Data stays put.** Blocklist data in legacy **Fristed** or **ReDD Block**
-  storage folders is copied into the canonical **ReDD Blocker** path
+  storage folders is copied into the canonical **Digital Habits Blocker** path
   automatically.
 
 ##### iOS
 
-- **Home-screen icons.** App Store icons updated to the ReDD Blocker logo.
+- **Home-screen icons.** App Store icons updated to the Digital Habits: Blocker logo.
 
 - **Version:** 3.4.2 (macOS, Windows, and iOS).
 
@@ -480,7 +480,7 @@ description.` Legacy flat lists still work.
   that are actually installed on your Mac. The Safari Full Disk Access row is
   hidden when Safari is not installed.
 - **Desktop: clearer browser setup banner wording.** Setup banner headlines now
-  use **ReDD Focus** wording when the outstanding issue is with a browser
+  use **Digital Habits: Focus** wording when the outstanding issue is with a browser
   extension, and keep Fristed wording for macOS Automation-related setup.
 - **Desktop: updated Full Disk Access screenshot.** The macOS Safari setup
   guide now uses an up-to-date System Settings screenshot for granting Full
@@ -624,12 +624,12 @@ description.` Legacy flat lists still work.
 
 - **macOS: website blocking via Automation instead of browser extensions.**
   Safari, Chrome, Brave, and Edge are now blocked through macOS Automation
-  (Apple Events) — no ReDD Focus extension to install or keep enabled for
+  (Apple Events) — no Digital Habits: Focus extension to install or keep enabled for
   those browsers. Grant ReDD Block Automation access once per browser in
   System Settings; the app redirects blocked URLs to a built-in block page.
 - **macOS: no Full Disk Access, App Group, or bundled Safari extension.**
   The v2.x Safari Web Extension pipeline and cross-app data container are
-  removed. Firefox on macOS still uses the ReDD Focus extension, installed
+  removed. Firefox on macOS still uses the Digital Habits: Focus extension, installed
   manually from the in-app setup flow (same as before for Firefox-only users).
 - **macOS: Automation onboarding and enforcer.** New setup rows with
   step-by-step guidance (including a screenshot of System Settings →
@@ -641,7 +641,7 @@ description.` Legacy flat lists still work.
 - **Settings and uninstall polish.** Settings dialog uses sectioned cards;
   macOS uninstall copy calls out Firefox extension cleanup where relevant.
 - **Windows unchanged.** Chrome, Brave, Edge, and Firefox still block through
-  the ReDD Focus extension and native messaging host.
+  the Digital Habits: Focus extension and native messaging host.
 - **Version:** 3.0.0.
 
 ## v2.3.0
@@ -652,7 +652,7 @@ description.` Legacy flat lists still work.
   content; feedback links are left-aligned with GitHub issues listed first.
 - **Settings copy and migration setup.** Danish strings updated across
   override-all, uninstall, grace-period, and extension-setup flows; the
-  “Setting up ReDD Focus” how-to list is shortened; miscellaneous wording tweaks
+  “Setting up Digital Habits: Focus” how-to list is shortened; miscellaneous wording tweaks
   on the setup extension page.
 - **App-blocking warning (desktop).** The full-screen “Let’s go!” overlay and
   the in-app close-down countdown are localized (English / Danish), including
@@ -691,7 +691,7 @@ description.` Legacy flat lists still work.
 
   The enforcer, watcher and native messaging host keep running
   through every transition — only the visible affordances change.
-- **The "Set up ReDD Focus" reminder banner is now persistent for
+- **The "Set up Digital Habits: Focus" reminder banner is now persistent for
   everyone, not just v1.x upgraders.** Whenever any browser the
   user has installed is missing the extension (or has it disabled,
   or not allowed in private browsing), the slim banner shows up at
@@ -700,14 +700,14 @@ description.` Legacy flat lists still work.
   session only; it reappears next launch / on focus refresh while
   the underlying problem persists, so a fresh user who clicks ×
   on it isn't silently left without a reminder.
-- **Settings → Advanced Options → "Set up ReDD Focus extension".**
+- **Settings → Advanced Options → "Set up Digital Habits: Focus extension".**
   New entry that re-opens the per-browser install checklist on
   demand, so users who dismissed the banner (or the welcome
   screen) can find their way back to the setup flow without
   waiting for the next launch.
 - **Fix: the compliance enforcer no longer force-closes browsers
   when no block is running.** Previously, if a browser had the
-  ReDD Focus extension installed but misconfigured (e.g. not allowed
+  Digital Habits: Focus extension installed but misconfigured (e.g. not allowed
   in incognito), the enforcer would start its grace countdown and
   eventually quit the browser even when no website-blocking was
   active — pestering users about an extension that wasn't doing any
@@ -761,7 +761,7 @@ description.` Legacy flat lists still work.
 - **New blocking architecture on desktop.** No more privileged helper
   daemon, no more hosts-file edits, no admin/UAC prompt on install.
   - Website blocking on both macOS and Windows now goes through the
-    ReDD Focus browser extension. Chrome / Brave / Edge / Firefox
+    Digital Habits: Focus browser extension. Chrome / Brave / Edge / Firefox
     speak to the app via a built-in native messaging host that's
     just the app binary in a `--native-host` CLI mode. Safari
     (macOS) now bridges through an App Group shared container and a

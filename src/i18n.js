@@ -82,7 +82,7 @@ export const SETTINGS_TRANSLATIONS = {
         eulaAcceptSaveFailedAlert: 'We could not save your agreement. Please try again to continue.',
         eulaWelcomeIconAlt: 'Digital Habits: Blocker app icon',
         eulaProjectBlurb:
-            'Developed by the Reduce Digital Distraction Project, with researchers at the University of Oxford and University of Maastricht. ReDD is a not-for-profit creating open-source digital focus tools.',
+            'Developed by the Centre for Digital Habits, with researchers at the University of Oxford and University of Maastricht. Centre for Digital Habits is a not-for-profit creating open-source digital focus tools.',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to Digital Habits: Blocker',
         welcomeOnboardingSubtitle:
@@ -340,7 +340,7 @@ export const SETTINGS_TRANSLATIONS = {
         settingsEnforcementLockedTooltip: 'To change this setting, first stop all active blocks.',
         settingsDiagnosticsLabel: 'Something not working?',
         onboardingOpenSourceFootnote:
-            'Developed by the Reduce Digital Distraction Project, with researchers at the University of Oxford and University of Maastricht. ReDD is a not-for-profit creating open-source digital focus tools.',
+            'Developed by the Centre for Digital Habits, with researchers at the University of Oxford and University of Maastricht. Centre for Digital Habits is a not-for-profit creating open-source digital focus tools.',
         settingsSetupBtn: 'Setup',
         settingsDiagnosticsBtn: 'Diagnostics',
         diagnosticsLoadingBtn: 'Loading…',
@@ -921,7 +921,7 @@ export const SETTINGS_TRANSLATIONS = {
         eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen for at fortsætte.',
         eulaWelcomeIconAlt: 'Digital Habits: Blocker-appikon',
         eulaProjectBlurb:
-            'Udviklet af Reduce Digital Distraction Project sammen med forskere ved University of Oxford og Maastricht University. ReDD er en non-profit, der skaber open source digitale fokusværktøjer.',
+            'Udviklet af Centre for Digital Habits sammen med forskere ved University of Oxford og Maastricht University. Centre for Digital Habits er en non-profit, der skaber open source digitale fokusværktøjer.',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til <em>Digital Habits: Blocker</em>',
         welcomeOnboardingSubtitle:
@@ -1162,7 +1162,7 @@ export const SETTINGS_TRANSLATIONS = {
         settingsEnforcementLockedTooltip: 'For at ændre denne indstilling skal du først stoppe alle aktive blokeringer.',
         settingsDiagnosticsLabel: 'Virker noget ikke?',
         onboardingOpenSourceFootnote:
-            'Udviklet af Reduce Digital Distraction Project sammen med forskere ved University of Oxford og Maastricht University. ReDD er en non-profit, der skaber open source digitale fokusværktøjer.',
+            'Udviklet af Centre for Digital Habits sammen med forskere ved University of Oxford og Maastricht University. Centre for Digital Habits er en non-profit, der skaber open source digitale fokusværktøjer.',
         settingsSetupBtn: 'Opsætning',
         settingsDiagnosticsBtn: 'Diagnostik',
         diagnosticsLoadingBtn: 'Indlæser…',
@@ -1731,7 +1731,7 @@ export const SETTINGS_TRANSLATIONS = {
         eulaBackBtn: '返回',
         eulaAcceptSaveFailedAlert: '无法保存你的同意状态。请重试后继续。',
         eulaWelcomeIconAlt: 'Digital Habits: Blocker 应用图标',
-        eulaProjectBlurb: '由 Reduce Digital Distraction Project 开发，并与牛津大学和马斯特里赫特大学的研究人员合作。ReDD 是一个非营利项目，致力于创建开源数字专注工具。',
+        eulaProjectBlurb: '由 Centre for Digital Habits 开发，并与牛津大学和马斯特里赫特大学的研究人员合作。Centre for Digital Habits 是一个非营利项目，致力于创建开源数字专注工具。',
         welcomeOnboardingTitle: '欢迎使用 <em>Digital Habits: Blocker</em>',
         welcomeOnboardingSubtitle: '为平静专注留出空间，阻止让你分心的应用和网站。',
         welcomeHowHeading: '开始步骤（我们会一步步引导你）',
@@ -1974,7 +1974,7 @@ export const SETTINGS_TRANSLATIONS = {
         settingsEnforcementRowHintExtension: '如果阻止期间 Digital Habits: Focus 被关闭。',
         settingsEnforcementLockedTooltip: '有阻止正在运行时无法关闭。',
         settingsDiagnosticsLabel: '哪里不工作？',
-        onboardingOpenSourceFootnote: '由 Reduce Digital Distraction Project 开发，并与牛津大学和马斯特里赫特大学的研究人员合作。ReDD 是一个非营利项目，致力于创建开源数字专注工具。',
+        onboardingOpenSourceFootnote: '由 Centre for Digital Habits 开发，并与牛津大学和马斯特里赫特大学的研究人员合作。Centre for Digital Habits 是一个非营利项目，致力于创建开源数字专注工具。',
         settingsSetupBtn: '浏览器设置',
         settingsDiagnosticsBtn: '运行诊断',
         diagnosticsLoadingBtn: '正在检查...',
