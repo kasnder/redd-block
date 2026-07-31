@@ -146,8 +146,17 @@ if (-not (Test-Path $distDir)) { New-Item -ItemType Directory -Path $distDir | O
 Write-Host ""
 Write-Host "  Copying installers to for-distribution/..." -ForegroundColor White
 
+$CargoTargetDir = (
+    node -e "process.stdout.write(require(require('path').join(process.argv[1], 'scripts', 'build-env')).getCargoTargetDir(process.env))" $ProjectRoot |
+    Out-String
+).Trim()
+if (-not $CargoTargetDir) {
+    Write-Host "ERROR: Could not resolve CARGO_TARGET_DIR via scripts/build-env.js" -ForegroundColor Red
+    exit 1
+}
+
 if ($buildX64) {
-    $x64Bundle = Join-Path $ProjectRoot "src-tauri\target\x86_64-pc-windows-msvc\release\bundle"
+    $x64Bundle = Join-Path $CargoTargetDir "x86_64-pc-windows-msvc\release\bundle"
     $nsisSource = Join-Path $x64Bundle "nsis\${ProductName}_${AppVersion}_x64-setup.exe"
     $msiSource = Join-Path $x64Bundle "msi\${ProductName}_${AppVersion}_x64_en-US.msi"
     if (Test-Path $nsisSource) {
@@ -160,7 +169,7 @@ if ($buildX64) {
     }
 }
 if ($buildArm64) {
-    $arm64Bundle = Join-Path $ProjectRoot "src-tauri\target\aarch64-pc-windows-msvc\release\bundle"
+    $arm64Bundle = Join-Path $CargoTargetDir "aarch64-pc-windows-msvc\release\bundle"
     $nsisSource = Join-Path $arm64Bundle "nsis\${ProductName}_${AppVersion}_arm64-setup.exe"
     $msiSource = Join-Path $arm64Bundle "msi\${ProductName}_${AppVersion}_arm64_en-US.msi"
     if (Test-Path $nsisSource) {

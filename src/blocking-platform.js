@@ -1620,6 +1620,7 @@ export function detectPlatform() {
             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         if (!isIPad) {
             document.body.classList.add('ios-phone');
+            document.body.classList.add('mobile-phone-home');
             document.body.classList.add('handset-device');
         }
         // Hide desktop-only UI on iOS
@@ -1633,6 +1634,7 @@ export function detectPlatform() {
     } else if (/Android/.test(navigator.userAgent)) {
         state.isAndroid = true;
         document.body.classList.add('android');
+        document.body.classList.add('mobile-phone-home');
         document.body.classList.add('handset-device');
         // Hide desktop-only UI on Android — same fullscreen-webview
         // treatment as iOS (custom title bar / window controls make no

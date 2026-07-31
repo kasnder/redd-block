@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
+const { getCargoTargetDir } = require('./build-env');
 
 const repoRoot = path.resolve(__dirname, '..');
-const tauriTargetRoot = path.join(repoRoot, 'src-tauri', 'target');
+const tauriTargetRoot = getCargoTargetDir(process.env);
 const distRoot = path.join(repoRoot, 'for-distribution');
 
 function parseArg(flag) {

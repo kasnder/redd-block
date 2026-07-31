@@ -53,7 +53,16 @@ $tauriTarget = @{ "x64" = "x86_64-pc-windows-msvc"; "arm64" = "aarch64-pc-window
 $msixArch = $archMap[$Architecture]
 $target = $tauriTarget[$Architecture]
 
-$tauriExe = Join-Path $ProjectRoot "src-tauri\target\$target\release\redd-block.exe"
+$CargoTargetDir = (
+    node -e "process.stdout.write(require(require('path').join(process.argv[1], 'scripts', 'build-env')).getCargoTargetDir(process.env))" $ProjectRoot |
+    Out-String
+).Trim()
+if (-not $CargoTargetDir) {
+    Write-Host "ERROR: Could not resolve CARGO_TARGET_DIR via scripts/build-env.js" -ForegroundColor Red
+    exit 1
+}
+
+$tauriExe = Join-Path $CargoTargetDir "$target\release\redd-block.exe"
 if (-not (Test-Path $tauriExe)) {
     Write-Host "ERROR: Tauri exe not found at $tauriExe" -ForegroundColor Red
     Write-Host "Run 'npm run build:win-store' first." -ForegroundColor Yellow
@@ -226,13 +235,13 @@ Write-Host "  [3/4] Staging files..." -ForegroundColor Gray
 Copy-Item $tauriExe $stagingDir
 Write-Host "    Copied redd-block.exe ($([math]::Round((Get-Item $tauriExe).Length / 1MB, 1)) MB)" -ForegroundColor Gray
 
-$wv2Loader = Join-Path $ProjectRoot "src-tauri\target\$target\release\WebView2Loader.dll"
+$wv2Loader = Join-Path $CargoTargetDir "$target\release\WebView2Loader.dll"
 if (Test-Path $wv2Loader) {
     Copy-Item $wv2Loader $stagingDir
     Write-Host "    Copied WebView2Loader.dll" -ForegroundColor Gray
 }
 
-$resourceDir = Join-Path $ProjectRoot "src-tauri\target\$target\release\resources"
+$resourceDir = Join-Path $CargoTargetDir "$target\release\resources"
 if (Test-Path $resourceDir) {
     Copy-Item $resourceDir $stagingDir -Recurse
     Write-Host "    Copied resources/" -ForegroundColor Gray

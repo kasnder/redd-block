@@ -14,7 +14,7 @@
 # Trigger: Actions → "Release build" → Run workflow, or push tag v* (e.g. v3.1.10).
 # Manual inputs:
 #   upload_to_s3            — push installers to S3 (default: true)
-#   create_github_release   — create GitHub Release from changelog.md (default: false)
+#   create_github_release   — create GitHub Release from changelog.md (default: true)
 #   submit_microsoft_store  — submit MSIX to Partner Center (default: true)
 #   submit_app_store        — submit IPA to App Store Connect (default: true)
 #   ios_build_number        — override CFBundleVersion (only for re-uploading the
@@ -72,7 +72,7 @@ on:
       create_github_release:
         description: Create a GitHub Release (notes from changelog.md)
         type: boolean
-        default: false
+        default: true
       submit_microsoft_store:
         description: Submit Store MSIX to Partner Center (What's new from changelog)
         type: boolean
