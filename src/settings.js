@@ -63,7 +63,7 @@ export function setupHelperSettings() {
             if (cleanHostsBtn.disabled) return;
 
             const confirmed = await ask(
-                'This will remove all ReDD Blocker entries from your system\'s hosts file. ' +
+                'This will remove all Digital Habits: Blocker entries from your system\'s hosts file. ' +
                 'Only use this if websites remain blocked after all blocks have been stopped.\n\n' +
                 'Your computer may ask for your password or show a security prompt.',
                 { title: 'Clean hosts file?', kind: 'warning' }
@@ -165,7 +165,7 @@ export async function confirmHelperRemoved() {
         return {
             removed: false,
             status,
-            error: 'ReDD Blocker could not confirm that the helper was fully removed. It still appears to be installed.'
+            error: 'Digital Habits: Blocker could not confirm that the helper was fully removed. It still appears to be installed.'
         };
     }
 

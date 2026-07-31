@@ -488,7 +488,7 @@ function setupEventListeners() {
             }
         } else if (note) {
             if (result.status === 'denied') {
-                note.textContent = 'Screen Time access was denied. Please tap the button again, or enable ReDD Blocker in Settings > Screen Time > Apps With Screen Time Access.';
+                note.textContent = 'Screen Time access was denied. Please tap the button again, or enable Digital Habits: Blocker in Settings > Screen Time > Apps With Screen Time Access.';
             } else if (result.error) {
                 note.textContent = `Screen Time access failed: ${result.error}`;
             }
@@ -508,7 +508,7 @@ function setupEventListeners() {
         btn.disabled = true;
         btn.textContent = 'Opening Settings...';
         if (status) {
-            status.textContent = 'Enable ReDD Blocker in Accessibility, then return here.';
+            status.textContent = 'Enable Digital Habits: Blocker in Accessibility, then return here.';
             status.classList.remove('hidden');
         }
 

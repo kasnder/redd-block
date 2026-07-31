@@ -17,12 +17,12 @@ private enum ShieldSnapshotPresenter {
     }()
 
     private static let titleLabel = ShieldConfiguration.Label(
-        text: "Blocked by ReDD Blocker",
+        text: "Blocked by Digital Habits: Blocker",
         color: .label
     )
 
     private static let fallbackSubtitle = ShieldConfiguration.Label(
-        text: "This content is restricted by ReDD Blocker.",
+        text: "This content is restricted by Digital Habits: Blocker.",
         color: .label
     )
 

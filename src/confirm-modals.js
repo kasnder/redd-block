@@ -2156,7 +2156,7 @@ async function runProceedWithBlock() {
                 startBtn.disabled = false;
                 startBtn.innerHTML = getStartBlockButtonHTML();
                 if (authResult.status === 'denied') {
-                    alert('Screen Time authorization was denied. Please go to Settings > Screen Time > ReDD Blocker and enable access.');
+                    alert('Screen Time authorization was denied. Please go to Settings > Screen Time > Digital Habits: Blocker and enable access.');
                 } else if (authResult.error) {
                     alert('Screen Time authorization failed: ' + authResult.error);
                 } else {

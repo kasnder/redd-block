@@ -569,7 +569,7 @@ fn run_elevated_macos(staged: &Path, status_path: &Path) -> ElevatedOutcome {
     // user knows what they're approving.
     let escaped = inner.replace('\\', "\\\\").replace('"', "\\\"");
     let script = format!(
-        r#"do shell script "{}" with administrator privileges with prompt "ReDD Blocker needs to clean up the old hosts-file entries and remove the legacy helper.""#,
+        r#"do shell script "{}" with administrator privileges with prompt "Digital Habits: Blocker needs to clean up the old hosts-file entries and remove the legacy helper.""#,
         escaped
     );
 
