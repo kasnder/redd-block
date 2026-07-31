@@ -10,7 +10,7 @@ configs:
 settingGroups:
   app:
     base:
-      PRODUCT_NAME: Digital Habits Blocker
+      PRODUCT_NAME: "Digital Habits Blocker"
       PRODUCT_BUNDLE_IDENTIFIER: com.reddblock
 targetTemplates:
   app:
@@ -42,6 +42,7 @@ targets:
     info:
       path: redd-block_iOS/Info.plist
       properties:
+        CFBundleDisplayName: "Digital Habits: Blocker"
         LSRequiresIPhoneOS: true
         ITSAppUsesNonExemptEncryption: false
         UILaunchStoryboardName: LaunchScreen
