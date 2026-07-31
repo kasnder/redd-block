@@ -1755,11 +1755,11 @@ export function renderBrowserInstallButtons(state, { force = false } = {}) {
                     const isOpen = showMeBtn.classList.toggle('open');
                     screenshotsWrap.classList.toggle('hidden', !isOpen);
                     showMeBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-                    if (isOpen) state.migrationShowMeHowExpandedKeys.add(key);
-                    else state.migrationShowMeHowExpandedKeys.delete(key);
+                    if (isOpen) appState.migrationShowMeHowExpandedKeys.add(key);
+                    else appState.migrationShowMeHowExpandedKeys.delete(key);
                 });
 
-                if (state.migrationShowMeHowExpandedKeys.has(key)) {
+                if (appState.migrationShowMeHowExpandedKeys.has(key)) {
                     showMeBtn.classList.add('open');
                     screenshotsWrap.classList.remove('hidden');
                     showMeBtn.setAttribute('aria-expanded', 'true');
