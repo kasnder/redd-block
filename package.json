@@ -24,6 +24,7 @@
     "vite:dev": "vite",
     "vite:build": "vite build",
     "vite:build:android": "vite build --mode android",
+    "verify:android-bundle": "node scripts/ci/verify-android-vite-output.mjs",
     "vite:preview": "vite preview",
     "test:tier1": "node scripts/ci/run-tier1-headless.mjs",
     "clean:build-cache": "node ./scripts/clean-build-cache.js"
@@ -41,6 +42,9 @@
     "email": "team@digitalhabits.org"
   },
   "license": "CC-BY-NC-ND-3.0",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-autostart": "^2",

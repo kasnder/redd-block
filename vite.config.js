@@ -85,6 +85,13 @@ const DESKTOP_AND_IOS_ONLY_IDS = [
 // class that only appears in static markup.
 const INDEX_HTML_PATH = fileURLToPath(new URL('./src/index.html', import.meta.url));
 
+// The app supports macOS 11 (Safari 14-era WebKit) and iOS 16.0. Vite 8's
+// baseline-widely-available default moved Safari from 16.0 to 16.4, so keep
+// the compatibility floor explicit rather than inheriting a moving major
+// version default. The target applies to both Oxc JS transforms and the CSS
+// minifier (via build.cssTarget's default).
+const SUPPORTED_BROWSER_TARGETS = ['safari14', 'ios16'];
+
 // True if `css` contains at least one rule targeting `.className`. The negative
 // lookahead stops `.card` from matching `.card-header`, so this is a faithful
 // "does this exact class have any styling" probe (ignoring pseudo/compound
@@ -296,6 +303,9 @@ export default defineConfig(async ({ mode }) => ({
     build: {
         outDir: '../dist',
         emptyOutDir: true,
+        target: SUPPORTED_BROWSER_TARGETS,
+        cssTarget: SUPPORTED_BROWSER_TARGETS,
+        cssMinify: 'lightningcss',
         rollupOptions: {
             input: {
                 main: fileURLToPath(new URL('./src/index.html', import.meta.url)),
