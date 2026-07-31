@@ -1278,7 +1278,7 @@ function restoreBlocklistMenu(menu) {
 
 function getBlocklistMenuScrollParent() {
     if (
-        document.body.classList.contains('ios-phone')
+        document.body.classList.contains('mobile-phone-home')
         || document.body.classList.contains('desktop-compact-layout')
         || document.body.classList.contains('enter-scheduler-sheet-layout')
     ) {

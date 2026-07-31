@@ -1512,16 +1512,16 @@ export function attachPreviewBlockDragHandlers(previewEl, segmentIndex, track) {
     }
 }
 
-function usesIOSPhoneEnterSchedulerModal() {
-    return document.body.classList.contains('ios-phone');
+function usesMobilePhoneEnterSchedulerModal() {
+    return document.body.classList.contains('mobile-phone-home');
 }
 
 /**
- * Full-screen enter sheet: iPhone always; desktop when the grid is single-column
- * (≤718px). iPad / Android keep their existing inline enter UI.
+ * Full-screen enter sheet: mobile phones always; desktop when the grid is
+ * single-column (≤718px). iPad keeps its existing inline enter UI.
  */
 export function usesEnterSchedulerSheet() {
-    if (usesIOSPhoneEnterSchedulerModal()) return true;
+    if (usesMobilePhoneEnterSchedulerModal()) return true;
     if (
         document.body.classList.contains('ios')
         || document.body.classList.contains('android')
@@ -1532,8 +1532,13 @@ export function usesEnterSchedulerSheet() {
     return usesStackSettingsPlacement();
 }
 
+export function isMobilePhoneDevice() {
+    return usesMobilePhoneEnterSchedulerModal();
+}
+
+// Keep the old export name for callers outside the main render path.
 export function isIOSPhoneDevice() {
-    return usesIOSPhoneEnterSchedulerModal();
+    return isMobilePhoneDevice();
 }
 
 /** Selected border + entering chip on the card; never while enter lives in a full-screen sheet. */
@@ -1645,7 +1650,7 @@ function openEnterSchedulerModal() {
     if (!modal || !home) return;
 
     // Desktop sheet must always paint as the mobile full-screen chrome (not a dialog).
-    if (!usesIOSPhoneEnterSchedulerModal()) {
+    if (!usesMobilePhoneEnterSchedulerModal()) {
         document.body.classList.add('desktop-compact-layout', 'enter-scheduler-sheet-layout');
     }
 
@@ -1698,12 +1703,12 @@ export function syncEnterSchedulerSheetLayout() {
     // Desktop-only body class: list-only home + fullscreen enter/settings/create/quick-start.
     document.body.classList.toggle(
         'desktop-compact-layout',
-        sheet && !usesIOSPhoneEnterSchedulerModal(),
+        sheet && !usesMobilePhoneEnterSchedulerModal(),
     );
     // Legacy alias kept for any interim selectors.
     document.body.classList.toggle(
         'enter-scheduler-sheet-layout',
-        sheet && !usesIOSPhoneEnterSchedulerModal(),
+        sheet && !usesMobilePhoneEnterSchedulerModal(),
     );
 
     const changed = lastEnterSchedulerSheetMode !== null && lastEnterSchedulerSheetMode !== sheet;
@@ -1900,7 +1905,7 @@ export function handleBlocklistSelect(e, { openEnterUi = false } = {}) {
         initializeTimeInputs();
     } else {
         // Show selection prompt, hide time picker, hint, and both buttons
-        if (selectionPrompt && !isIOSPhoneDevice()) selectionPrompt.classList.remove('hidden');
+        if (selectionPrompt && !isMobilePhoneDevice()) selectionPrompt.classList.remove('hidden');
         else if (selectionPrompt) selectionPrompt.classList.add('hidden');
         timePicker.classList.add('hidden');
         if (passwordHint) passwordHint.classList.add('hidden');
