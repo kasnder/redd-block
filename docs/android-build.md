@@ -64,8 +64,8 @@ Paths above are macOS defaults. On Linux the SDK is typically
 npm run build:android:debug
 ```
 
-- `--apk true --aab false` — build the APK, skip the Play Store AAB. (In Tauri
-  CLI 2.x the `--apk`/`--aab` flags require an explicit `true`/`false` value.)
+- `--apk` — build the APK, skip the Play Store AAB. (In Tauri CLI 2.11.x the
+  `--apk`/`--aab` options are boolean flags.)
 - `--debug` — debuggable, unminified build (`android:debuggable=true`).
 - `--target aarch64` — build a single ABI (`arm64-v8a`) instead of all four.
   This covers physical devices and Apple-silicon/arm64 emulators, and is much
