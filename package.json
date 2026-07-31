@@ -6,6 +6,7 @@
     "dev": "node ./scripts/ensure-dev-icons.js && tauri dev",
     "icons:generate": "node ./scripts/generate-icons-from-svg.js",
     "dev:android": "tauri android dev",
+    "build:android:play": "./scripts/build-android-play.sh",
     "dev:ios": "bash ./scripts/ios-dev.sh",
     "build": "tauri build",
     "build:android": "tauri android build",

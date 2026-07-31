@@ -87,9 +87,27 @@ npm run tauri -- android dev --open   # also opens Android Studio
 npm run build:android        # = tauri android build (all ABIs, release, APK + AAB)
 ```
 
-Note: **no release signing config is committed**, so release APKs/AABs come out
-**unsigned** — sign them separately (`apksigner`, or via an Android Studio signing
-config / Play App Signing) before distribution.
+Ordinary release builds still use the generated debug signing config unless the
+Keychain-backed Play Store script below supplies a release key. Do not upload an
+ordinary `npm run build:android` artifact to Google Play.
+
+## Google Play bundle with macOS Keychain signing
+
+For a locally signed Play Store bundle, use the repository signing script. It
+stores the keystore password, key password, and alias in the macOS Keychain;
+normal builds do not prompt for credentials and no signing secret is written to
+the repository:
+
+```bash
+./scripts/build-android-play.sh --setup   # one time per Mac/keychain
+./scripts/build-android-play.sh
+```
+
+The script uses `~/StudioProjects/Keys/redd.jks` by default, or the path in
+`REDD_BLOCK_ANDROID_KEYSTORE`, and writes the verified AAB to
+`for-distribution/android/`. It also configures Gradle's release signing only
+for the credentials supplied by this script; ordinary local release builds
+retain the existing debug-key fallback.
 
 ## Building from Android Studio
 

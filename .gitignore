@@ -29,6 +29,8 @@ Thumbs.db
 *.pem
 *.p12
 *.pfx
+*.jks
+*.keystore
 
 # IDE
 .idea/

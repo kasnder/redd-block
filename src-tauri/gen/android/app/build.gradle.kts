@@ -13,6 +13,20 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Release signing is supplied by scripts/build-android-play.sh through the
+// macOS Keychain. Keep the credentials out of the repository and preserve the
+// debug-signing fallback for ordinary local builds.
+val playKeystore = System.getenv("REDD_BLOCK_ANDROID_KEYSTORE")
+val playStorePassword = System.getenv("REDD_BLOCK_ANDROID_STORE_PASSWORD")
+val playKeyAlias = System.getenv("REDD_BLOCK_ANDROID_KEY_ALIAS")
+val playKeyPassword = System.getenv("REDD_BLOCK_ANDROID_KEY_PASSWORD")
+val playSigningConfigured = listOf(
+    playKeystore,
+    playStorePassword,
+    playKeyAlias,
+    playKeyPassword,
+).all { !it.isNullOrBlank() }
+
 android {
     compileSdk = 36
     namespace = "net.kollnig.reddblockandroid"
@@ -23,6 +37,19 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        if (playSigningConfigured) {
+            create("playRelease") {
+                storeFile = file(playKeystore!!)
+                storePassword = playStorePassword
+                keyAlias = playKeyAlias
+                keyPassword = playKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -37,7 +64,11 @@ android {
             }
         }
         getByName("release") {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (playSigningConfigured) {
+                signingConfigs.getByName("playRelease")
+            } else {
+                signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
