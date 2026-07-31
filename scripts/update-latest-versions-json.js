@@ -4,7 +4,7 @@
  *
  * Usage:
  *   node scripts/update-latest-versions-json.js --version 3.4.3
- *   node scripts/update-latest-versions-json.js --version 3.4.3 --macos-pkg ./for-distribution/redd-blocker-3.4.3.pkg
+ *   node scripts/update-latest-versions-json.js --version 3.4.3 --macos-pkg ./for-distribution/Digital-Habits-Blocker-3.4.3.pkg
  *   node scripts/update-latest-versions-json.js --macos-pkg-sha256 abc123...
  */
 

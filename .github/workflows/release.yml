@@ -7,9 +7,9 @@
 # iOS-facing changelog bullets — see docs/app-store-ci.md).
 #
 # S3 layout matches redd-next download links (ReDDBlockClient.tsx):
-#   s3://redd-website-assets/reddblock/redd-blocker-{version}.pkg
-#   s3://redd-website-assets/reddblock/redd-blocker_{version}_x64-setup.exe
-#   s3://redd-website-assets/reddblock/redd-blocker_{version}_arm64-setup.exe
+#   s3://redd-website-assets/reddblock/Digital-Habits-Blocker-{version}.pkg
+#   s3://redd-website-assets/reddblock/Digital-Habits-Blocker_{version}_x64-setup.exe
+#   s3://redd-website-assets/reddblock/Digital-Habits-Blocker_{version}_arm64-setup.exe
 #
 # Trigger: Actions → "Release build" → Run workflow, or push tag v* (e.g. v3.1.10).
 # Manual inputs:
@@ -164,7 +164,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macos-installer
-          path: for-distribution/redd-blocker-*.pkg
+          path: for-distribution/Digital-Habits-Blocker-*.pkg
           if-no-files-found: error
           retention-days: 30
 
@@ -229,8 +229,8 @@ jobs:
         with:
           name: windows-installers
           path: |
-            for-distribution/redd-blocker_*-setup.exe
-            for-distribution/redd-blocker_*.msi
+            for-distribution/Digital-Habits-Blocker_*-setup.exe
+            for-distribution/Digital-Habits-Blocker_*.msi
           if-no-files-found: error
           retention-days: 30
 
@@ -342,14 +342,14 @@ jobs:
       - name: Stage IPA for publish
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          mv "for-distribution/Digital Habits Blocker.ipa" "for-distribution/redd-blocker_${VERSION}.ipa"
+          mv "for-distribution/Digital Habits Blocker.ipa" "for-distribution/Digital-Habits-Blocker_${VERSION}.ipa"
           ls -la for-distribution/
 
       - name: Upload iOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
-          path: for-distribution/redd-blocker_*.ipa
+          path: for-distribution/Digital-Habits-Blocker_*.ipa
           if-no-files-found: error
           retention-days: 30
 
@@ -569,10 +569,10 @@ jobs:
       - name: Stage installers for publish
         run: |
           mkdir -p for-distribution
-          find artifacts -type f -name 'redd-blocker-*.pkg' -exec cp {} for-distribution/ \;
-          find artifacts -type f -name 'redd-blocker_*-setup.exe' -exec cp {} for-distribution/ \;
-          find artifacts -type f -name 'redd-blocker_*.msix' -exec cp {} for-distribution/ \;
-          find artifacts -type f -name 'redd-blocker_*.ipa' -exec cp {} for-distribution/ \;
+          find artifacts -type f -name 'Digital-Habits-Blocker-*.pkg' -exec cp {} for-distribution/ \;
+          find artifacts -type f -name 'Digital-Habits-Blocker_*-setup.exe' -exec cp {} for-distribution/ \;
+          find artifacts -type f -name 'Digital-Habits-Blocker_*.msix' -exec cp {} for-distribution/ \;
+          find artifacts -type f -name 'Digital-Habits-Blocker_*.ipa' -exec cp {} for-distribution/ \;
           echo "Staged installers:"
           ls -la for-distribution/
 
@@ -599,7 +599,7 @@ jobs:
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
           (github.event_name == 'workflow_dispatch' && inputs.create_github_release)
         run: |
-          PKG="$(find for-distribution -maxdepth 1 -name 'redd-blocker-*.pkg' | head -1)"
+          PKG="$(find for-distribution -maxdepth 1 -name 'Digital-Habits-Blocker-*.pkg' | head -1)"
           if [[ -z "$PKG" ]]; then
             echo "No macOS .pkg found in for-distribution" >&2
             exit 1
@@ -661,10 +661,10 @@ jobs:
           name: Digital Habits Blocker ${{ steps.meta.outputs.version }}
           body_path: release-notes.md
           files: |
-            for-distribution/redd-blocker-*.pkg
-            for-distribution/redd-blocker_*-setup.exe
-            for-distribution/redd-blocker_*.msix
-            for-distribution/redd-blocker_*.ipa
+            for-distribution/Digital-Habits-Blocker-*.pkg
+            for-distribution/Digital-Habits-Blocker_*-setup.exe
+            for-distribution/Digital-Habits-Blocker_*.msix
+            for-distribution/Digital-Habits-Blocker_*.ipa
           draft: false
           prerelease: false
           make_latest: true

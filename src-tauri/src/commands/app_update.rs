@@ -97,7 +97,7 @@ fn release_asset(version: &str) -> Result<(String, String), String> {
 
     #[cfg(target_os = "macos")]
     {
-        let filename = format!("redd-blocker-{version}.pkg");
+        let filename = format!("Digital-Habits-Blocker-{version}.pkg");
         let url = format!("{GITHUB_RELEASES}/{tag}/{filename}");
         return Ok((url, filename));
     }
@@ -108,7 +108,7 @@ fn release_asset(version: &str) -> Result<(String, String), String> {
             "aarch64" => "arm64",
             _ => "x64",
         };
-        let filename = format!("redd-blocker_{version}_{arch}-setup.exe");
+        let filename = format!("Digital-Habits-Blocker_{version}_{arch}-setup.exe");
         let url = format!("{GITHUB_RELEASES}/{tag}/{filename}");
         return Ok((url, filename));
     }

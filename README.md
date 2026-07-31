@@ -161,7 +161,7 @@ first install.
 npm run build:mac
 
 # macOS: Wrap the .app into a signed/notarized .pkg installer
-# (outputs redd-blocker-{version}.pkg)
+# (outputs Digital-Habits-Blocker-{version}.pkg)
 npm run build:mac-pkg
 
 # macOS: Both in one go (.app + .pkg)

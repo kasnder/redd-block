@@ -137,7 +137,7 @@ Write-Host "=== Build Summary ===" -ForegroundColor Cyan
 $TauriConfig = Get-Content (Join-Path $ProjectRoot "src-tauri\tauri.conf.json") | ConvertFrom-Json
 $AppVersion = $TauriConfig.version
 $ProductName = $TauriConfig.productName
-$ReleaseSlug = "redd-blocker"
+$ReleaseSlug = "Digital-Habits-Blocker"
 
 # Copy installers to for-distribution with clean lowercase filenames
 $distDir = Join-Path $ProjectRoot "for-distribution"

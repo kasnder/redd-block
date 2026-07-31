@@ -99,7 +99,7 @@ foreach ($f in $msixFiles) {
 $pkgJsonPath = Join-Path $ProjectRoot 'package.json'
 $version = (Get-Content -LiteralPath $pkgJsonPath -Raw | ConvertFrom-Json).version
 if (-not $version) { throw "Could not read version from $pkgJsonPath" }
-$bundleOut = Join-Path $PackagesDir "redd-blocker_${version}_store.msixbundle"
+$bundleOut = Join-Path $PackagesDir "Digital-Habits-Blocker_${version}_store.msixbundle"
 $bundleFileName = [System.IO.Path]::GetFileName($bundleOut)
 $makeappx = Find-MakeAppx
 Write-Host "Bundling with $makeappx → $bundleOut" -ForegroundColor Cyan

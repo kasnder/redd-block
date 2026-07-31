@@ -2,9 +2,9 @@
 # Upload Digital Habits Blocker release installers to S3.
 #
 # Uses the same bucket, region, and key layout as redd-next download links:
-#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/redd-blocker-{version}.pkg
-#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/redd-blocker_{version}_x64-setup.exe
-#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/redd-blocker_{version}_arm64-setup.exe
+#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/Digital-Habits-Blocker-{version}.pkg
+#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/Digital-Habits-Blocker_{version}_x64-setup.exe
+#   https://redd-website-assets.s3.eu-north-1.amazonaws.com/reddblock/Digital-Habits-Blocker_{version}_arm64-setup.exe
 #
 # Env (matches redd-api/.env.example):
 #   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION
@@ -24,7 +24,7 @@ cd "$(dirname "$0")/.."
 
 BUCKET="${S3_ASSETS_BUCKET:-redd-website-assets}"
 PREFIX="${S3_RELEASE_PREFIX:-reddblock/}"
-RELEASE_SLUG="redd-blocker"
+RELEASE_SLUG="Digital-Habits-Blocker"
 VERSION="$(node -p "require('./package.json').version")"
 
 upload_file() {

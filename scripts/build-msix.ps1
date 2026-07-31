@@ -27,7 +27,7 @@ if (Test-Path $envFile) {
 $TauriConfig = Get-Content (Join-Path $ProjectRoot "src-tauri\tauri.conf.json") | ConvertFrom-Json
 $AppVersion = $TauriConfig.version
 $MsixVersion = "$AppVersion.0"
-$ReleaseSlug = "redd-blocker"
+$ReleaseSlug = "Digital-Habits-Blocker"
 
 $IdentityName = $env:WINDOWS_IDENTITY_NAME
 $Publisher = $env:WINDOWS_PUBLISHER
