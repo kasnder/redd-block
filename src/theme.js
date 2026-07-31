@@ -466,7 +466,7 @@ export function measureTimePickerPlaceholderHeight(section) {
 
 /** Pin the empty-state hint to the first blocklist card (two-column) or reserve time-picker space (stack). */
 export function syncSelectionPromptLayout() {
-    if (document.body.classList.contains('ios-phone')) {
+    if (document.body.classList.contains('mobile-phone-home')) {
         clearSelectionPromptLayout();
         return;
     }
