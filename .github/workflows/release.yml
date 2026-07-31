@@ -615,13 +615,24 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Builds can take a while; main often moves ahead of the checkout SHA.
+          # Re-apply the updated file on tip of main, then push (retry once if raced).
+          cp docs/latest-versions.json /tmp/latest-versions.json
+          git fetch origin main
+          git checkout -B main origin/main
+          cp /tmp/latest-versions.json docs/latest-versions.json
+
           git add docs/latest-versions.json
           if git diff --staged --quiet; then
             echo "latest-versions.json already up to date"
             exit 0
           fi
           git commit -m "Update latest-versions.json for v${{ steps.meta.outputs.version }}"
-          git push origin HEAD:refs/heads/main
+          if ! git push origin HEAD:refs/heads/main; then
+            git pull --rebase origin main
+            git push origin HEAD:refs/heads/main
+          fi
 
       - name: Configure AWS credentials
         if: >-
