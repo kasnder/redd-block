@@ -6,7 +6,7 @@
     "dev": "node ./scripts/ensure-dev-icons.js && npm run tauri -- dev",
     "icons:generate": "node ./scripts/generate-icons-from-svg.js",
     "dev:android": "npm run tauri -- android dev",
-    "build:android:debug": "npm run tauri -- android build --debug --apk true --aab false --target aarch64",
+    "build:android:debug": "npm run tauri -- android build --debug --apk --target aarch64",
     "build:android:play": "./scripts/build-android-play.sh",
     "dev:ios": "bash ./scripts/ios-dev.sh",
     "build": "npm run tauri -- build",
