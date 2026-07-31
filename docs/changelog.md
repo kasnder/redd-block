@@ -10,6 +10,33 @@ SCHEDULES), then platform-specific notes under nested headings:
 `#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
 description.` Legacy flat lists still work.
 
+## v3.8.7
+
+### BRANDING
+
+- **Meet Digital Habits: Blocker!** Renamed from **ReDD Blocker** as part of
+  the move from the Reduce Digital Distraction (ReDD) Project to
+  **Centre for Digital Habits** ([digitalhabits.org](https://digitalhabits.org)).
+
+### FOCUS SPACES & SCHEDULES
+
+- **One focus space expands by default.** When you only have a single focus
+  space, its sites/apps summary expands on first render so you can see what it
+  covers without an extra click.
+
+### BY PLATFORM
+
+#### DESKTOP
+
+- **Digital Habits: Focus.** In-app references to the companion browser
+  extension now use its new Digital Habits: Focus name.
+- **Browser setup rows stay visible.** Extension-based browser setup rows no
+  longer disappear incorrectly in Settings.
+
+#### iOS
+
+- **Version:** 3.8.7 (macOS, Windows, and iOS).
+
 ## v3.8.6
 
 ### FOCUS SPACES & SCHEDULES
