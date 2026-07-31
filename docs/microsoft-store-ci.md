@@ -71,9 +71,11 @@ Flow inside [`scripts/submit-microsoft-store.ps1`](../scripts/submit-microsoft-s
 3. `msstore publish <bundle.msixbundle> -id <productId> -nc` — upload only.
    (`publish` recreates the pending draft, so metadata must come *after* this.
    Pass the package **file** as the path; do not use `-i` with a file.)
-4. `msstore submission get` → stamp `releaseNotes` and mark every existing
-   package except the new bundle as `PendingDelete` (Partner Center best
-   practice: drop superseded `.msix` / older bundles) →
+4. `msstore submission get` → stamp `releaseNotes` (same What's new format as
+   iOS) and listing `description` from
+   [`store-listing/description.txt`](../store-listing/description.txt), and
+   mark every existing package except the new bundle as `PendingDelete`
+   (Partner Center best practice: drop superseded `.msix` / older bundles) →
    `msstore submission update`.
 5. `msstore submission publish` — commit for certification. Live availability
    follows the app’s Partner Center publishing schedule after certification.

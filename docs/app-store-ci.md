@@ -96,13 +96,18 @@ Flow inside [`fastlane/Fastfile`](../fastlane/Fastfile) (`submit_app_store` lane
    then re-run. (Prevents superseding an in-review version and attaching the
    wrong build, which happened when shipping over a still-queued release.)
 3. `deliver`: upload the IPA, create/edit the App Store version matching
-   `package.json`, set What's new and promotional text on the primary
-   locale (`en-GB` — English U.K., the app's primary language; not deliver's
-   `"default"` key and not `en-US`), wait for the
-   build to finish processing, and submit for review with
+   `package.json`, set description, What's new, and promotional text on the
+   primary locale (`en-GB` — English U.K., the app's primary language; not
+   deliver's `"default"` key and not `en-US`) from
+   [`store-listing/`](../store-listing/) + the generated What's new file,
+   wait for the build to finish processing, and submit for review with
    `automatic_release: true` (goes live automatically after approval) and
    export compliance pre-answered (`ITSAppUsesNonExemptEncryption` is false
    in the Info.plist).
+
+Listing copy (description + promotional text) is versioned in
+[`store-listing/`](../store-listing/) so auto-submit does not keep shipping
+stale App Store Connect text.
 
 ## Retry submit without rebuilding
 

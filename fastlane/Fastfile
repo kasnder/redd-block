@@ -92,12 +92,18 @@ platform :ios do
     notes = File.read(notes_path).strip
     UI.user_error!("What's new file is empty — nothing iOS-facing to submit") if notes.empty?
 
-    # Promotional text does not reliably persist across new versions, so we
-    # stamp it explicitly on every submission.
-    promotional_text =
-      "Free your mind. Digital Habits: Blocker helps you block distracting apps and " \
-      "websites — backed by 10+ years of our award-winning research at the " \
-      "University of Oxford."
+    # Listing copy lives in store-listing/ so CI does not depend on leftover
+    # App Store Connect text (e.g. old "Fristed" description). Promo text also
+    # does not reliably persist across versions — stamp both every submit.
+    listing_root = File.expand_path("../store-listing", __dir__)
+    description_path = File.join(listing_root, "description.txt")
+    promo_path = File.join(listing_root, "promotional_text.txt")
+    UI.user_error!("Missing #{description_path}") unless File.exist?(description_path)
+    UI.user_error!("Missing #{promo_path}") unless File.exist?(promo_path)
+    description = File.read(description_path).strip
+    promotional_text = File.read(promo_path).strip
+    UI.user_error!("store-listing/description.txt is empty") if description.empty?
+    UI.user_error!("store-listing/promotional_text.txt is empty") if promotional_text.empty?
 
     ipa = resolve_path.call(options[:ipa])
     UI.user_error!("IPA not found: #{options[:ipa]}") if !options[:ipa].to_s.strip.empty? && !File.exist?(ipa.to_s)
@@ -124,6 +130,7 @@ platform :ios do
       skip_binary_upload: ipa.nil?,
       build_number: build_number,
       languages: [locale],
+      description: { locale => description },
       release_notes: { locale => notes },
       promotional_text: { locale => promotional_text },
       submit_for_review: true,
