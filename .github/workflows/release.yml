@@ -658,7 +658,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          name: Digital Habits Blocker ${{ steps.meta.outputs.version }}
+          name: "Digital Habits: Blocker v${{ steps.meta.outputs.version }}"
           body_path: release-notes.md
           files: |
             for-distribution/Digital-Habits-Blocker-*.pkg
