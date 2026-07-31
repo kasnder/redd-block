@@ -56,4 +56,4 @@ jobs:
       # #[cfg(target_os = "android")] command surface) and assembles a debug
       # APK via Gradle. Single ABI to keep CI time down.
       - name: Build debug APK
-        run: npm run tauri -- android build --debug --apk true --target aarch64
+        run: npm run build:android:debug
