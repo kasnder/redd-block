@@ -1,0 +1,70 @@
+# Automated dependency updates. Dependabot opens pull requests only; every
+# update still goes through the normal review and CI checks.
+# https://docs.github.com/code-security/dependabot/dependabot-version-updates
+
+version: 2
+updates:
+  # --- Frontend ---
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+    groups:
+      npm-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # --- Rust backend and local Tauri plugins ---
+  - package-ecosystem: "cargo"
+    directories:
+      - "/src-tauri"
+      - "/tauri-plugin-android-blocker"
+      - "/tauri-plugin-screentime"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps(rust)"
+    groups:
+      cargo-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # --- Android app and plugin Gradle projects ---
+  - package-ecosystem: "gradle"
+    directories:
+      - "/src-tauri/gen/android"
+      - "/src-tauri/gen/android/app"
+      - "/src-tauri/gen/android/buildSrc"
+      - "/tauri-plugin-android-blocker/android"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps(android)"
+    groups:
+      gradle-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
+  # --- GitHub Actions ---
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
