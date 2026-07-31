@@ -73,6 +73,9 @@ function pruneOrphanQuickStartBlocklists() {
 /** Focus-space cards whose Sites/Apps summary is expanded (survives re-render). */
 const expandedBlocklistCardIds = new Set();
 
+/** One-shot: expand the sole focus space's sites/apps summary on first load. */
+let didDefaultExpandSoleCard = false;
+
 function setBlocklistCardExpanded(card, id, expanded) {
     if (expanded) expandedBlocklistCardIds.add(id);
     else expandedBlocklistCardIds.delete(id);
@@ -793,6 +796,16 @@ export function renderBlocklists() {
     const container = document.getElementById('blocklists-container');
     const visibleBlocklists = getVisibleBlocklists();
 
+    if (!didDefaultExpandSoleCard) {
+        const savedFocusSpaces = visibleBlocklists.filter((bl) => !isQuickStartBlocklist(bl));
+        if (savedFocusSpaces.length === 1 && blocklistCardHasExpandableSummary(savedFocusSpaces[0])) {
+            expandedBlocklistCardIds.add(savedFocusSpaces[0].id);
+            didDefaultExpandSoleCard = true;
+        } else if (savedFocusSpaces.length >= 1) {
+            didDefaultExpandSoleCard = true;
+        }
+    }
+
     if (visibleBlocklists.length === 0) {
         container.innerHTML = `
       <div class="no-active-blocks clickable" id="empty-blocklists-cta" style="cursor: pointer;">
@@ -1133,6 +1146,7 @@ export function renderBlocklists() {
 
         const summaryBtn = card.querySelector('.blocklist-meta-items-btn');
         if (summaryBtn) {
+            if (expandedBlocklistCardIds.has(id)) summaryBtn.setAttribute('aria-expanded', 'true');
             summaryBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
