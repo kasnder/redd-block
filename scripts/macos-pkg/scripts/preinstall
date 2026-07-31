@@ -2,9 +2,9 @@
 # preinstall — runs as root before the .pkg payload is laid down.
 #
 # Two jobs:
-#   1. Stop any running app process (v1.x ReDD Block, v3 Fristed rebrand,
-#      or current ReDD Blocker build) so Installer.app can lay down
-#      `/Applications/ReDD Blocker.app` without an in-memory conflict.
+#   1. Stop any running app process (v1.x ReDD Block, Fristed, ReDD Blocker,
+#      or current Digital Habits Blocker build) so Installer.app can lay down
+#      `/Applications/Digital Habits Blocker.app` without an in-memory conflict.
 #      v2+ adds an `applicationShouldTerminate:` interceptor that turns
 #      ⌘-Q and `tell app "X" to quit` into a hide-window, so the polite
 #      path is unreliable — we go straight to SIGTERM/SIGKILL on the
@@ -28,18 +28,23 @@ echo "=== preinstall $(date '+%F %T') ==="
 # 1. Stop any running app process. Order:
 #    - polite quit (only when the .app is already on disk — on a
 #      first-time install preinstall runs before the payload lands, so
-#      `tell application "ReDD Blocker"` would make macOS show a
-#      "Where is ReDD Blocker?" file picker; skip it in that case),
+#      `tell application "…"` would make macOS show a
+#      "Where is …?" file picker; skip it in that case),
 #    - SIGTERM by binary path / process name,
 #    - 2 s breather,
 #    - SIGKILL stragglers including --native-host subprocesses spawned
 #      by browsers (those hold open file handles inside the .app
 #      bundle and would block the payload swap).
-APP_PATH='/Applications/ReDD Blocker.app'
+APP_PATH='/Applications/Digital Habits Blocker.app'
+LEGACY_REDD_BLOCKER_APP_PATH='/Applications/ReDD Blocker.app'
 LEGACY_REDD_BLOCK_APP_PATH='/Applications/ReDD Block.app'
 FRISTED_APP_PATH='/Applications/Fristed.app'
 
 if [ -d "$APP_PATH" ]; then
+    osascript -e 'tell application id "com.reddblock" to quit' 2>/dev/null || true
+    osascript -e 'tell application "Digital Habits Blocker" to quit' 2>/dev/null || true
+fi
+if [ -d "$LEGACY_REDD_BLOCKER_APP_PATH" ]; then
     osascript -e 'tell application id "com.reddblock" to quit' 2>/dev/null || true
     osascript -e 'tell application "ReDD Blocker" to quit' 2>/dev/null || true
 fi
@@ -54,20 +59,22 @@ fi
 # `redd-block` is the Tauri binary stem inside the .app; that's the
 # name `ps` shows, not always the bundle display name. Match all known
 # install locations as a belt-and-braces.
-for app_path in "$APP_PATH" "$LEGACY_REDD_BLOCK_APP_PATH" "$FRISTED_APP_PATH"; do
+for app_path in "$APP_PATH" "$LEGACY_REDD_BLOCKER_APP_PATH" "$LEGACY_REDD_BLOCK_APP_PATH" "$FRISTED_APP_PATH"; do
     pgrep -f "${app_path}/Contents/MacOS/redd-block" | xargs -r kill -TERM 2>/dev/null
 done
 pkill -x 'redd-block' 2>/dev/null
+pkill -x 'Digital Habits Blocker' 2>/dev/null
 pkill -x 'ReDD Blocker' 2>/dev/null
 pkill -x 'ReDD Block' 2>/dev/null
 pkill -x 'Fristed' 2>/dev/null
 sleep 2
 
 # Anything still running gets SIGKILL'd.
-for app_path in "$APP_PATH" "$LEGACY_REDD_BLOCK_APP_PATH" "$FRISTED_APP_PATH"; do
+for app_path in "$APP_PATH" "$LEGACY_REDD_BLOCKER_APP_PATH" "$LEGACY_REDD_BLOCK_APP_PATH" "$FRISTED_APP_PATH"; do
     pgrep -f "${app_path}/Contents/MacOS/redd-block" | xargs -r kill -KILL 2>/dev/null
 done
 pkill -KILL -x 'redd-block' 2>/dev/null
+pkill -KILL -x 'Digital Habits Blocker' 2>/dev/null
 pkill -KILL -x 'ReDD Blocker' 2>/dev/null
 pkill -KILL -x 'ReDD Block' 2>/dev/null
 pkill -KILL -x 'Fristed' 2>/dev/null
@@ -77,7 +84,9 @@ sleep 1
 #     .pkg accidentally laid down alongside the .app in /Applications.
 #     Best-effort: never fail the install on this.
 shopt -s nullglob 2>/dev/null || true
-for f in '/Applications/rw.'*'.ReDD Blocker_'*'_universal.dmg' \
+for f in '/Applications/rw.'*'.Digital Habits Blocker_'*'_universal.dmg' \
+         '/Applications/._rw.'*'.Digital Habits Blocker_'*'_universal.dmg' \
+         '/Applications/rw.'*'.ReDD Blocker_'*'_universal.dmg' \
          '/Applications/._rw.'*'.ReDD Blocker_'*'_universal.dmg'; do
     [ -e "$f" ] || continue
     rm -f "$f" && echo "removed stray $f"

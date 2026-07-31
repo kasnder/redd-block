@@ -23,9 +23,11 @@ set -euo pipefail
 
 EXT_DISMISS_KEY='reddBlockExtOnboardingDismissed'
 
-echo "==> Quitting any running ReDD Blocker process"
+echo "==> Quitting any running Digital Habits Blocker / ReDD Blocker process"
+pkill -9 -f "Digital Habits Blocker.app/Contents/MacOS/redd-block" 2>/dev/null || true
 pkill -9 -f "ReDD Blocker.app/Contents/MacOS/redd-block" 2>/dev/null || true
 pkill -9 -f "tauri dev" 2>/dev/null || true
+pkill -9 -x "Digital Habits Blocker" 2>/dev/null || true
 pkill -9 -x "ReDD Blocker" 2>/dev/null || true
 sleep 0.5
 

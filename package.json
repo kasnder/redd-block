@@ -1,7 +1,7 @@
 {
   "name": "redd-block",
   "version": "3.8.6",
-  "description": "ReDD Blocker: Space for Focus",
+  "description": "Digital Habits: Blocker",
   "scripts": {
     "dev": "node ./scripts/ensure-dev-icons.js && tauri dev",
     "icons:generate": "node ./scripts/generate-icons-from-svg.js",

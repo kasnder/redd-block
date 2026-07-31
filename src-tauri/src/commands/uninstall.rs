@@ -196,7 +196,7 @@ fn spawn_native_host_killer(bundle: &str) -> std::io::Result<()> {
     let bundle_name = std::path::Path::new(bundle)
         .file_name()
         .and_then(|s| s.to_str())
-        .unwrap_or("ReDD Blocker.app");
+        .unwrap_or("Digital Habits Blocker.app");
     let match_pattern = format!("{bundle_name}/Contents/MacOS/redd-block");
 
     let log_path = uninstall_log_path();
@@ -339,6 +339,8 @@ fn should_scrub_autostart_plist(filename: &str, content: &str) -> bool {
     }
     content.contains("/Applications/Fristed.app")
         || content.contains("/Applications/ReDD Block.app")
+        || content.contains("/Applications/ReDD Blocker.app")
+        || content.contains("/Applications/Digital Habits Blocker.app")
 }
 
 /// Spawn a detached `bash` that waits a couple of seconds for our

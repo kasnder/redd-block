@@ -10,7 +10,7 @@ configs:
 settingGroups:
   app:
     base:
-      PRODUCT_NAME: ReDD Blocker
+      PRODUCT_NAME: Digital Habits Blocker
       PRODUCT_BUNDLE_IDENTIFIER: com.reddblock
 targetTemplates:
   app:

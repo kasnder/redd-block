@@ -104,7 +104,7 @@ fn hosts_has_markers(content: &str) -> bool {
 
 fn legacy_artefacts_present() -> bool {
     // We only count daemon-specific files as residue. The shared data
-    // dir (/var/lib/redd-block on macOS, C:\ProgramData\ReDD Blocker on
+    // dir (/var/lib/redd-block on macOS, ProgramData\<product> on
     // Windows) intentionally stays — the new app's data path resolver
     // (commands::data::should_use_shared_data_path) keeps using it
     // when v1.x activated it, so the user's redd-block-data.json must
@@ -121,9 +121,10 @@ fn legacy_artefacts_present() -> bool {
     }
     #[cfg(target_os = "windows")]
     {
-        Path::new(r"C:\ProgramData\ReDD Blocker\helper-state.json").exists()
-            || Path::new(r"C:\ProgramData\Fristed\helper-state.json").exists()
-            || Path::new(r"C:\ProgramData\ReDD Block\helper-state.json").exists()
+        let mut dirs = crate::product_identity::windows_legacy_shared_dirs();
+        dirs.push(crate::product_identity::windows_primary_shared_dir());
+        dirs.iter()
+            .any(|dir| dir.join("helper-state.json").exists())
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {

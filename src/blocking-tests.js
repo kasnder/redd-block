@@ -1373,9 +1373,11 @@
 
         const { isProtectedApp } = window.__REDDBLOCK_INTERNALS__;
 
-        // T43: "ReDD Blocker" is protected
+        // T43: current and legacy product names are protected
         (function T43() {
-            assert(isProtectedApp('ReDD Blocker'), 'T43: "ReDD Blocker" is protected');
+            assert(isProtectedApp('Digital Habits Blocker'), 'T43: "Digital Habits Blocker" is protected');
+            assert(isProtectedApp('Digital Habits: Blocker'), 'T43: "Digital Habits: Blocker" is protected');
+            assert(isProtectedApp('ReDD Blocker'), 'T43: legacy "ReDD Blocker" is protected');
         })();
 
         // T44: "redd-block" is protected
@@ -1392,7 +1394,7 @@
         (function T46() {
             assert(isProtectedApp('FRISTED'), 'T46: "FRISTED" (legacy name) is protected');
             assert(isProtectedApp('REDD BLOCKER'), 'T46: "REDD BLOCKER" (uppercase) is protected');
-            assert(isProtectedApp('  ReDD Blocker  '), 'T46: Leading/trailing spaces handled');
+            assert(isProtectedApp('  Digital Habits Blocker  '), 'T46: Leading/trailing spaces handled');
         })();
 
         // T47: Normal apps are NOT protected

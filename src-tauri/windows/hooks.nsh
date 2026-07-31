@@ -1,23 +1,22 @@
 !macro NSIS_HOOK_PREINSTALL
   ; Best-effort cleanup of a legacy direct-install app so the direct
-  ; ReDD Blocker installer leaves only one desktop app installed. This is
-  ; intentionally scoped to direct NSIS/MSI installs; MSIX does not run
+  ; Digital Habits Blocker installer leaves only one desktop app installed.
+  ; Intentionally scoped to direct NSIS/MSI installs; MSIX does not run
   ; these hooks. We do NOT touch shared ProgramData storage here.
   ;
   ; Tauri's bundle already runs elevated for per-machine installs, so
   ; deleting the old app directory is safe to attempt here. For current-
   ; user installs we still try the standard local app roots.
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = ''SilentlyContinue''; $paths = @(); if ($env:ProgramFiles) { $paths += (Join-Path $env:ProgramFiles ''ReDD Block'') }; if ($env:ProgramW6432) { $paths += (Join-Path $env:ProgramW6432 ''ReDD Block'') }; if ($env:LOCALAPPDATA) { $paths += (Join-Path $env:LOCALAPPDATA ''Programs\ReDD Block'') }; foreach ($path in ($paths | Select-Object -Unique)) { if (-not (Test-Path -LiteralPath $path)) { continue }; Get-Process | Where-Object { $_.Path -and $_.Path -like ($path + ''\*'') } | Stop-Process -Force; Remove-Item -LiteralPath $path -Recurse -Force }"'
+  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = ''SilentlyContinue''; $paths = @(); if ($env:ProgramFiles) { $paths += (Join-Path $env:ProgramFiles ''ReDD Block''); $paths += (Join-Path $env:ProgramFiles ''ReDD Blocker'') }; if ($env:ProgramW6432) { $paths += (Join-Path $env:ProgramW6432 ''ReDD Block''); $paths += (Join-Path $env:ProgramW6432 ''ReDD Blocker'') }; if ($env:LOCALAPPDATA) { $paths += (Join-Path $env:LOCALAPPDATA ''Programs\ReDD Block''); $paths += (Join-Path $env:LOCALAPPDATA ''Programs\ReDD Blocker'') }; foreach ($path in ($paths | Select-Object -Unique)) { if (-not (Test-Path -LiteralPath $path)) { continue }; Get-Process | Where-Object { $_.Path -and $_.Path -like ($path + ''\*'') } | Stop-Process -Force; Remove-Item -LiteralPath $path -Recurse -Force }"'
   Pop $0
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  ; Always launch ReDD Blocker after install completes. The MUI finish
-  ; page also has a "Run ReDD Blocker" checkbox (default checked); if
-  ; the user leaves it checked we'd briefly run the app twice — the
-  ; tauri-plugin-single-instance plugin (registered in lib.rs)
-  ; collapses any second instance into a focus-the-existing-window
-  ; call, so this is safe.
+  ; Always launch after install completes. The MUI finish page also has
+  ; a "Run …" checkbox (default checked); if the user leaves it checked
+  ; we'd briefly run the app twice — the tauri-plugin-single-instance
+  ; plugin (registered in lib.rs) collapses any second instance into a
+  ; focus-the-existing-window call, so this is safe.
   ;
   ; Why always-launch: on a v1.x → 2.0 upgrade the migration
   ; onboarding (full-screen overlay) only fires when the app is
@@ -32,6 +31,8 @@
   ;    redd-block.exe between the kill below and the actual file
   ;    deletion that NSIS does after this hook returns. Idempotent —
   ;    schtasks /Delete /F is silent if the task isn't present.
+  nsExec::ExecToLog 'schtasks /Delete /TN "Digital Habits Blocker Watchdog" /F'
+  Pop $0
   nsExec::ExecToLog 'schtasks /Delete /TN "ReDD Blocker Watchdog" /F'
   Pop $0
   nsExec::ExecToLog 'schtasks /Delete /TN "ReDD Block Watchdog" /F'
@@ -57,7 +58,7 @@
 
   ; 3. Run the app's `--uninstall` mode to remove per-browser
   ;    native-messaging manifests and the matching HKCU registry keys.
-  ;    Without this, manifests under %LOCALAPPDATA%\ReDD Blocker\
+  ;    Without this, manifests under %LOCALAPPDATA%\<product>\
   ;    native-host\ and HKCU\Software\<vendor>\<browser>\
   ;    NativeMessagingHosts\com.ulriklyngs.mindshield would be orphaned
   ;    after uninstall. The binary still exists at this point — NSIS
@@ -67,7 +68,7 @@
   ;
   ; Note: 2.0 dropped v1.x's "Keep Blocking after uninstall" feature
   ; entirely (no daemon = no enforcement after the binary is removed).
-  ; The user's blocklists / settings in C:\ProgramData\ReDD Blocker\
+  ; The user's blocklists / settings in ProgramData\<product>\
   ; redd-block-data.json are intentionally preserved so a future
   ; reinstall picks them back up — only the daemon-state file (now
   ; absent) and the helper-state.json are scrubbed during migration.

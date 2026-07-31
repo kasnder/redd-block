@@ -23,7 +23,7 @@ const svgImage = `
   
   <!-- Title -->
   <text x="50%" y="60" text-anchor="middle" font-family="sans-serif" font-weight="bold" font-size="32" fill="white" filter="url(#shadow)">
-    Install ReDD Blocker
+    Install Digital Habits Blocker
   </text>
   
   <!-- Arrow -->
@@ -37,7 +37,7 @@ const svgImage = `
   
   <!-- Instruction Text -->
   <text x="50%" y="340" text-anchor="middle" font-family="sans-serif" font-size="16" fill="white" opacity="0.9" filter="url(#shadow)">
-    Drag ReDD Blocker to the Applications folder
+    Drag Digital Habits Blocker to the Applications folder
   </text>
 </svg>
 `;

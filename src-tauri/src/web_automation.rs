@@ -1595,7 +1595,7 @@ mod tests {
 
     #[test]
     fn file_url_encodes_spaces() {
-        let p = std::path::Path::new("/Applications/ReDD Blocker.app/Contents/Resources/blocked/blocked.html");
+        let p = std::path::Path::new("/Applications/Digital Habits Blocker.app/Contents/Resources/blocked/blocked.html");
         assert_eq!(
             path_to_file_url(p),
             "file:///Applications/ReDD%20Blocker.app/Contents/Resources/blocked/blocked.html"

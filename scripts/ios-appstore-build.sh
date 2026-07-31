@@ -21,7 +21,7 @@ APPLE_DEVELOPMENT_TEAM=JD647S9RT6 \
 npx tauri ios build
 
 mkdir -p "$ROOT_DIR/for-distribution"
-cp "$ROOT_DIR/src-tauri/gen/apple/build/arm64/ReDD Blocker.ipa" "$ROOT_DIR/for-distribution/ReDD Blocker.ipa"
+cp "$ROOT_DIR/src-tauri/gen/apple/build/arm64/Digital Habits Blocker.ipa" "$ROOT_DIR/for-distribution/Digital Habits Blocker.ipa"
 echo ""
-echo "✅ App Store IPA ready: for-distribution/ReDD Blocker.ipa"
-echo "   Upload with Transporter or: xcrun altool --upload-app --type ios --file \"for-distribution/ReDD Blocker.ipa\" --apiKey \$APPLE_API_KEY_ID --apiIssuer \$APPLE_API_ISSUER"
+echo "✅ App Store IPA ready: for-distribution/Digital Habits Blocker.ipa"
+echo "   Upload with Transporter or: xcrun altool --upload-app --type ios --file \"for-distribution/Digital Habits Blocker.ipa\" --apiKey \$APPLE_API_KEY_ID --apiIssuer \$APPLE_API_ISSUER"

@@ -342,7 +342,7 @@ jobs:
       - name: Stage IPA for publish
         run: |
           VERSION="$(node -p "require('./package.json').version")"
-          mv "for-distribution/ReDD Blocker.ipa" "for-distribution/redd-blocker_${VERSION}.ipa"
+          mv "for-distribution/Digital Habits Blocker.ipa" "for-distribution/redd-blocker_${VERSION}.ipa"
           ls -la for-distribution/
 
       - name: Upload iOS artifact
@@ -658,7 +658,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
-          name: ReDD Blocker ${{ steps.meta.outputs.version }}
+          name: Digital Habits Blocker ${{ steps.meta.outputs.version }}
           body_path: release-notes.md
           files: |
             for-distribution/redd-blocker-*.pkg

@@ -95,7 +95,7 @@ platform :ios do
     # Promotional text does not reliably persist across new versions, so we
     # stamp it explicitly on every submission.
     promotional_text =
-      "Free your mind. ReDD Blocker helps you block distracting apps and " \
+      "Free your mind. Digital Habits: Blocker helps you block distracting apps and " \
       "websites — backed by 10+ years of our award-winning research at the " \
       "University of Oxford."
 
@@ -106,8 +106,8 @@ platform :ios do
 
     # App Store Connect requires whatsNew on the real listing locale. Passing
     # only "default" never stamps it; using the wrong locale (e.g. en-US) can
-    # activate an empty extra localization and break submit. ReDD Blocker's
-    # primary language is English (U.K.).
+    # activate an empty extra localization and break submit. Digital Habits
+    # Blocker's primary language is English (U.K.).
     locale = "en-GB"
 
     fail_if_app_store_review_in_progress!(

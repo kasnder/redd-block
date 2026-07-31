@@ -3,18 +3,23 @@
 
 use crate::windows_process::hidden_command;
 
-/// Default Run value name from `app.package_info().name` ("ReDD Blocker").
-const AUTOSTART_RUN_VALUE: &str = "ReDD Blocker";
-
-/// Best-effort: delete the launch-at-login registry value.
-pub fn disable_autostart() {
+fn delete_run_value(name: &str) {
     let _ = hidden_command("reg")
         .args([
             "delete",
             r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
             "/v",
-            AUTOSTART_RUN_VALUE,
+            name,
             "/f",
         ])
         .output();
+}
+
+/// Best-effort: delete the launch-at-login registry value(s), including
+/// legacy product names from prior rebrands.
+pub fn disable_autostart() {
+    delete_run_value(crate::product_identity::AUTOSTART_RUN_VALUE);
+    for name in crate::product_identity::LEGACY_AUTOSTART_RUN_VALUES {
+        delete_run_value(name);
+    }
 }

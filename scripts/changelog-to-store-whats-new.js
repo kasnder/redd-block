@@ -40,7 +40,7 @@ This update comes with some helpful improvements!`;
 
 const SIGNOFF = `Please keep suggesting improvements to the app - you can do so at https://github.com/ulyngs/redd-block
 
-We hope you're enjoying ReDD Blocker!
+We hope you're enjoying Digital Habits: Blocker!
 
 - Ulrik, Tiago, & the Centre for Digital Habits Team
 (digitalhabits.org)`;

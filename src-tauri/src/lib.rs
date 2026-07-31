@@ -62,6 +62,7 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 pub mod commands;
+pub mod product_identity;
 #[cfg(target_os = "macos")]
 pub mod cross_app_consent;
 

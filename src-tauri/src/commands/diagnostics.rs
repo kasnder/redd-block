@@ -615,13 +615,12 @@ fn current_residue_items() -> Vec<String> {
     }
     #[cfg(target_os = "windows")]
     {
-        for p in [
-            r"C:\ProgramData\ReDD Blocker\helper-state.json",
-            r"C:\ProgramData\Fristed\helper-state.json",
-            r"C:\ProgramData\ReDD Block\helper-state.json",
-        ] {
-            if std::path::Path::new(p).exists() {
-                items.push(p.to_string());
+        let mut dirs = crate::product_identity::windows_legacy_shared_dirs();
+        dirs.push(crate::product_identity::windows_primary_shared_dir());
+        for dir in dirs {
+            let p = dir.join("helper-state.json");
+            if p.exists() {
+                items.push(p.display().to_string());
             }
         }
     }

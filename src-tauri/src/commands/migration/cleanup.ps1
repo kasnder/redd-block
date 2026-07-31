@@ -24,6 +24,14 @@ $staged = '{STAGED}'
 $status = '{STATUS}'
 $hosts = 'C:\Windows\System32\drivers\etc\hosts'
 $legacyBackup = 'C:\Windows\System32\drivers\etc\hosts.redd-backup'
+$programData = if ($env:PROGRAMDATA) { $env:PROGRAMDATA } else { 'C:\ProgramData' }
+# helper-state.json may exist under any historical shared-storage folder name.
+$helperStatePaths = @(
+    (Join-Path $programData 'Digital Habits Blocker\helper-state.json'),
+    (Join-Path $programData 'ReDD Blocker\helper-state.json'),
+    (Join-Path $programData 'ReDD Block\helper-state.json'),
+    (Join-Path $programData 'Fristed\helper-state.json')
+)
 
 # 1. validate staged cleaned content
 if (-not (Test-Path $staged)) { throw 'staged hosts missing' }
@@ -69,15 +77,17 @@ if ($postWrite -match '^# === BEGIN REDD BLOCK' -or $postWrite -match '^# ReDD B
 }
 
 # 6. retire legacy scheduled task + daemon-specific files only.
-#    CRITICAL: do NOT recursively delete C:\ProgramData\ReDD Block.
-#    The new app reuses that directory for the user's blocklist data
+#    CRITICAL: do NOT recursively delete ProgramData product folders.
+#    The new app reuses shared storage for the user's blocklist data
 #    (redd-block-data.json) when shared-storage was activated — see
-#    commands/data.rs::should_use_shared_data_path.
+#    commands::data::should_use_shared_data_path.
 & {
     $ErrorActionPreference = 'Continue'
     & schtasks /Delete /TN 'ReDD Block Helper' /F 2>&1 | Out-Null
 }
-Remove-Item -LiteralPath 'C:\ProgramData\ReDD Block\helper-state.json' -Force -ErrorAction SilentlyContinue
+foreach ($helperState in $helperStatePaths) {
+    Remove-Item -LiteralPath $helperState -Force -ErrorAction SilentlyContinue
+}
 
 # 7. VERIFY removal.
 $taskStillThere = $false
@@ -87,7 +97,9 @@ $taskStillThere = $false
     if ($LASTEXITCODE -eq 0) { $script:taskStillThere = $true }
 }
 if ($taskStillThere) { throw 'scheduled task still present' }
-if (Test-Path -LiteralPath 'C:\ProgramData\ReDD Block\helper-state.json') { throw 'helper-state.json still present' }
+foreach ($helperState in $helperStatePaths) {
+    if (Test-Path -LiteralPath $helperState) { throw "helper-state.json still present: $helperState" }
+}
 
 # 8. INTENTIONALLY KEEP $legacyBackup ($hosts.redd-backup). Last-resort
 #    recovery copy of the user's pre-modification hosts file. Only

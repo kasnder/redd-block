@@ -2,13 +2,14 @@
 # postinstall — runs as root after the .pkg payload is laid down.
 #
 # Auto-launches the new app for the user who triggered the install,
-# mirroring the Windows NSIS finish-page "Run ReDD Blocker" checkbox.
+# mirroring the Windows NSIS finish-page run checkbox.
 # Without this, macOS users who installed via .pkg would be left staring
 # at the Installer.app "Install Successful" screen with no clear next step.
-# Also removes legacy `/Applications/ReDD Block.app` and `/Applications/Fristed.app`
-# bundles so upgrades don't leave duplicate app icons in Applications, and scrubs
-# stale user LaunchAgents (e.g. `Fristed.plist`) so login items don't point at
-# deleted app paths before the new build re-registers autostart.
+# Also removes legacy `/Applications/ReDD Blocker.app`,
+# `/Applications/ReDD Block.app`, and `/Applications/Fristed.app`
+# bundles so upgrades don't leave duplicate app icons in Applications, and
+# scrubs stale user LaunchAgents so login items don't point at deleted
+# app paths before the new build re-registers autostart.
 
 set +e
 
@@ -16,9 +17,14 @@ LOG=/var/log/redd-block-pkg-postinstall.log
 exec > >(tee -a "$LOG") 2>&1
 echo "=== postinstall $(date '+%F %T') ==="
 
+APP_PATH='/Applications/Digital Habits Blocker.app'
+LEGACY_REDD_BLOCKER_APP_PATH='/Applications/ReDD Blocker.app'
 LEGACY_REDD_BLOCK_APP_PATH='/Applications/ReDD Block.app'
 FRISTED_APP_PATH='/Applications/Fristed.app'
 
+if [ -d "$LEGACY_REDD_BLOCKER_APP_PATH" ]; then
+    rm -rf "$LEGACY_REDD_BLOCKER_APP_PATH" && echo "removed legacy app: $LEGACY_REDD_BLOCKER_APP_PATH"
+fi
 if [ -d "$LEGACY_REDD_BLOCK_APP_PATH" ]; then
     rm -rf "$LEGACY_REDD_BLOCK_APP_PATH" && echo "removed legacy app: $LEGACY_REDD_BLOCK_APP_PATH"
 fi
@@ -27,7 +33,7 @@ if [ -d "$FRISTED_APP_PATH" ]; then
 fi
 
 # Block page SVG must be readable by Safari (file:// loads as the user).
-BLOCKED_RES='/Applications/ReDD Blocker.app/Contents/Resources/blocked'
+BLOCKED_RES="${APP_PATH}/Contents/Resources/blocked"
 if [ -d "$BLOCKED_RES" ]; then
     chmod 644 "$BLOCKED_RES"/* 2>/dev/null && echo "fixed block page resource permissions"
 fi
@@ -45,7 +51,7 @@ fi
 # Remove stale launch-at-login plists before opening the new app.
 # Release builds self-heal autostart on every launch, but a leftover
 # `Fristed.plist` (or a redd-block plist pointing at a deleted .app)
-# would still fire at login and error until the user opens ReDD Blocker.
+# would still fire at login and error until the user opens the new app.
 scrub_stale_autostart_plists_for_user() {
     local user="$1"
     local uid="$2"
@@ -68,6 +74,8 @@ scrub_stale_autostart_plists_for_user() {
             remove=1
         elif grep -q '/Applications/ReDD Block.app' "$plist" 2>/dev/null; then
             remove=1
+        elif grep -q '/Applications/ReDD Blocker.app' "$plist" 2>/dev/null; then
+            remove=1
         fi
         if [ "$remove" = "1" ]; then
             launchctl bootout "gui/$uid" "$plist" 2>/dev/null || true
@@ -79,8 +87,8 @@ scrub_stale_autostart_plists_for_user "$TARGET_USER" "$TARGET_UID"
 
 # launchctl asuser runs the command in the target user's bootstrap
 # domain so the GUI shows up on their session.
-launchctl asuser "$TARGET_UID" /usr/bin/open '/Applications/ReDD Blocker.app' || \
-    sudo -u "$TARGET_USER" /usr/bin/open '/Applications/ReDD Blocker.app'
+launchctl asuser "$TARGET_UID" /usr/bin/open "$APP_PATH" || \
+    sudo -u "$TARGET_USER" /usr/bin/open "$APP_PATH"
 
-echo "postinstall launched ReDD Blocker for $TARGET_USER"
+echo "postinstall launched Digital Habits Blocker for $TARGET_USER"
 exit 0

@@ -187,34 +187,24 @@ fn get_shared_helper_state_path() -> PathBuf {
 
 #[cfg(target_os = "windows")]
 fn get_windows_primary_shared_dir() -> PathBuf {
-    let program_data = std::env::var("PROGRAMDATA")
-        .unwrap_or_else(|_| "C:\\ProgramData".to_string());
-    PathBuf::from(program_data).join("ReDD Blocker")
+    crate::product_identity::windows_primary_shared_dir()
 }
 
 #[cfg(target_os = "windows")]
-fn get_windows_legacy_shared_dirs() -> [PathBuf; 2] {
-    let program_data = std::env::var("PROGRAMDATA")
-        .unwrap_or_else(|_| "C:\\ProgramData".to_string());
-    let root = PathBuf::from(program_data);
-    [root.join("Fristed"), root.join("ReDD Block")]
+fn get_windows_legacy_shared_dirs() -> Vec<PathBuf> {
+    crate::product_identity::windows_legacy_shared_dirs()
 }
 
-#[cfg(target_os = "windows")]
-fn get_windows_legacy_shared_data_path() -> PathBuf {
-    get_windows_legacy_shared_dirs()[0].join("redd-block-data.json")
-}
-
-#[cfg(target_os = "windows")]
-fn get_windows_legacy_helper_state_path() -> PathBuf {
-    get_windows_legacy_shared_dirs()[0].join("helper-state.json")
-}
-
-#[cfg(target_os = "windows")]
-fn migrate_windows_shared_storage_copy() {
-    let primary_dir = get_windows_primary_shared_dir();
-
-    if let Err(e) = fs::create_dir_all(&primary_dir) {
+/// Copy `redd-block-data.json` / `helper-state.json` from each legacy
+/// shared-storage folder into `primary_dir` when the destination is
+/// missing. Never overwrites an existing primary file; never deletes
+/// legacy folders. Used by the Windows ProgramData rebrand migration
+/// and covered by unit tests with temp dirs.
+pub(crate) fn copy_shared_storage_forward(
+    primary_dir: &std::path::Path,
+    legacy_dirs: &[PathBuf],
+) {
+    if let Err(e) = fs::create_dir_all(primary_dir) {
         log::warn!(
             "windows shared storage migration: failed to create {}: {e}",
             primary_dir.display()
@@ -222,7 +212,7 @@ fn migrate_windows_shared_storage_copy() {
         return;
     }
 
-    for legacy_dir in get_windows_legacy_shared_dirs() {
+    for legacy_dir in legacy_dirs {
         if !legacy_dir.exists() {
             continue;
         }
@@ -252,6 +242,15 @@ fn migrate_windows_shared_storage_copy() {
         }
     }
 }
+
+#[cfg(target_os = "windows")]
+fn migrate_windows_shared_storage_copy() {
+    copy_shared_storage_forward(
+        &get_windows_primary_shared_dir(),
+        &get_windows_legacy_shared_dirs(),
+    );
+}
+
 
 #[cfg(not(target_os = "ios"))]
 fn should_use_shared_data_path() -> bool {
@@ -745,5 +744,100 @@ fn wipe_path(path: &PathBuf) {
         log::warn!("wipe_user_data: failed to remove {}: {e}", path.display());
     } else {
         log::info!("wipe_user_data: removed {}", path.display());
+    }
+}
+
+#[cfg(test)]
+mod shared_storage_migration_tests {
+    use super::copy_shared_storage_forward;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temp_root(label: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("redd-block-migrate-{label}-{nanos}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn copies_redd_blocker_data_into_primary_when_missing() {
+        let root = temp_root("copy");
+        let primary = root.join("Digital Habits Blocker");
+        let legacy = root.join("ReDD Blocker");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("redd-block-data.json"), b"{\"from\":\"legacy\"}").unwrap();
+
+        copy_shared_storage_forward(&primary, &[legacy.clone()]);
+
+        let dst = primary.join("redd-block-data.json");
+        assert!(dst.exists(), "expected primary data file after migration");
+        assert_eq!(fs::read_to_string(dst).unwrap(), "{\"from\":\"legacy\"}");
+        // Legacy kept in place (copy, not move).
+        assert!(legacy.join("redd-block-data.json").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn does_not_overwrite_existing_primary() {
+        let root = temp_root("no-overwrite");
+        let primary = root.join("Digital Habits Blocker");
+        let legacy = root.join("ReDD Blocker");
+        fs::create_dir_all(&primary).unwrap();
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(primary.join("redd-block-data.json"), b"primary-wins").unwrap();
+        fs::write(legacy.join("redd-block-data.json"), b"legacy-should-lose").unwrap();
+
+        copy_shared_storage_forward(&primary, &[legacy]);
+
+        assert_eq!(
+            fs::read_to_string(primary.join("redd-block-data.json")).unwrap(),
+            "primary-wins"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn prefers_first_legacy_that_has_the_file() {
+        // Newest-first legacy order: ReDD Blocker, then ReDD Block, then Fristed.
+        // First existing source wins because later copies skip once dst exists.
+        let root = temp_root("order");
+        let primary = root.join("Digital Habits Blocker");
+        let redd_blocker = root.join("ReDD Blocker");
+        let redd_block = root.join("ReDD Block");
+        fs::create_dir_all(&redd_blocker).unwrap();
+        fs::create_dir_all(&redd_block).unwrap();
+        fs::write(redd_blocker.join("redd-block-data.json"), b"from-redd-blocker").unwrap();
+        fs::write(redd_block.join("redd-block-data.json"), b"from-redd-block").unwrap();
+
+        copy_shared_storage_forward(&primary, &[redd_blocker, redd_block]);
+
+        assert_eq!(
+            fs::read_to_string(primary.join("redd-block-data.json")).unwrap(),
+            "from-redd-blocker"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn copies_helper_state_too() {
+        let root = temp_root("helper");
+        let primary = root.join("Digital Habits Blocker");
+        let legacy = root.join("Fristed");
+        fs::create_dir_all(&legacy).unwrap();
+        fs::write(legacy.join("helper-state.json"), b"{\"helper\":true}").unwrap();
+
+        copy_shared_storage_forward(&primary, &[legacy]);
+
+        assert_eq!(
+            fs::read_to_string(primary.join("helper-state.json")).unwrap(),
+            "{\"helper\":true}"
+        );
+        let _ = fs::remove_dir_all(root);
     }
 }

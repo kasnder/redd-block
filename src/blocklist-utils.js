@@ -6,8 +6,16 @@ import { state } from './state.js';
 // Far-future timestamp used for "always on" blocks (year 9999)
 export const ALWAYS_ON_END_TIME = new Date(9999, 11, 31, 23, 59, 59, 999).getTime();
 
-// Protected app names — ReDD Blocker must never block itself
-export const PROTECTED_APP_NAMES = ['redd block', 'redd blocker', 'redd-block', 'redd-block-helper', 'fristed'];
+// Protected app names — Digital Habits Blocker must never block itself
+export const PROTECTED_APP_NAMES = [
+    'digital habits blocker',
+    'digital habits: blocker',
+    'redd block',
+    'redd blocker',
+    'redd-block',
+    'redd-block-helper',
+    'fristed',
+];
 
 // Protected domains — blocking these would break networking or the app itself
 export const PROTECTED_DOMAINS = [

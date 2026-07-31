@@ -4,7 +4,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=== Building MSIX Package (ReDD Blocker) ===" -ForegroundColor Cyan
+Write-Host "=== Building MSIX Package (Digital Habits Blocker) ===" -ForegroundColor Cyan
 Write-Host ""
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -35,7 +35,7 @@ $PublisherDisplayName = $env:WINDOWS_PUBLISHER_DISPLAY_NAME
 
 if (-not $IdentityName -or -not $Publisher) {
     Write-Host "ERROR: WINDOWS_IDENTITY_NAME and WINDOWS_PUBLISHER must be set in .env" -ForegroundColor Red
-    Write-Host "  Find these under Partner Center -> Apps and games -> ReDD Blocker -> Product identity" -ForegroundColor Yellow
+    Write-Host "  Find these under Partner Center -> Apps and games -> Digital Habits: Blocker -> Product identity" -ForegroundColor Yellow
     exit 1
 }
 
@@ -43,7 +43,7 @@ if (-not $PublisherDisplayName) {
     $PublisherDisplayName = "Reduce Digital Distraction Ltd"
 }
 
-Write-Host "  App: ReDD Blocker v$AppVersion" -ForegroundColor White
+Write-Host "  App: Digital Habits: Blocker v$AppVersion" -ForegroundColor White
 Write-Host "  Architecture: $Architecture" -ForegroundColor White
 Write-Host "  Identity: $IdentityName" -ForegroundColor White
 Write-Host ""
@@ -170,7 +170,7 @@ $manifest = @"
     ProcessorArchitecture="$msixArch" />
   
   <Properties>
-    <DisplayName>ReDD Blocker</DisplayName>
+    <DisplayName>Digital Habits: Blocker</DisplayName>
     <PublisherDisplayName>$PublisherDisplayName</PublisherDisplayName>
     <Logo>Assets\StoreLogo.scale-100.png</Logo>
     <virtualization:RegistryWriteVirtualization>
@@ -186,7 +186,7 @@ $manifest = @"
          copy of %LOCALAPPDATA%. Browsers read the real path from registry. -->
     <virtualization:FileSystemWriteVirtualization>
       <virtualization:ExcludedDirectories>
-        <virtualization:ExcludedDirectory>`$(KnownFolder:LocalAppData)\ReDD Blocker</virtualization:ExcludedDirectory>
+        <virtualization:ExcludedDirectory>`$(KnownFolder:LocalAppData)\Digital Habits Blocker</virtualization:ExcludedDirectory>
       </virtualization:ExcludedDirectories>
     </virtualization:FileSystemWriteVirtualization>
   </Properties>
@@ -202,7 +202,7 @@ $manifest = @"
   <Applications>
     <Application Id="App" Executable="redd-block.exe" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements 
-        DisplayName="ReDD Blocker" 
+        DisplayName="Digital Habits: Blocker" 
         Description="$description"
         BackgroundColor="transparent" 
         Square150x150Logo="Assets\Square150x150Logo.scale-100.png"

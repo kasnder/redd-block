@@ -1,7 +1,7 @@
 [package]
 name = "redd-block"
 version = "3.8.6"
-description = "ReDD Blocker: Space for Focus"
+description = "Digital Habits: Blocker"
 authors = ["The Reduce Digital Distraction Project <team@digitalhabits.org>"]
 license = "CC-BY-NC-ND-3.0"
 repository = "https://github.com/ulyngs/redd-block"

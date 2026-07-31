@@ -1,4 +1,4 @@
-# Full Microsoft Store build for ReDD Blocker (matches redd-do).
+# Full Microsoft Store build for Digital Habits Blocker (matches redd-do).
 #
 # 1. Compile Tauri (unsigned — Partner Center re-signs the MSIX on upload)
 # 2. Bundle NSIS/MSI with webviewInstallMode "skip" (Store uses MSIX, not the installer)
@@ -22,7 +22,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "=== ReDD Blocker Windows Build (Microsoft Store) ===" -ForegroundColor Cyan
+Write-Host "=== Digital Habits Blocker Windows Build (Microsoft Store) ===" -ForegroundColor Cyan
 Write-Host ""
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot

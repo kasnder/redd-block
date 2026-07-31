@@ -50,8 +50,10 @@ APP_DATA_DIR="$HOME/Library/Application Support/com.reddblock"
 SHARED_DATA_DIR="/var/lib/redd-block"
 LOG_DIR="$HOME/Library/Logs/com.reddblock"
 
-echo "==> Quitting any running ReDD Blocker process"
+echo "==> Quitting any running Digital Habits Blocker / ReDD Blocker process"
+pkill -9 -f "Digital Habits Blocker.app/Contents/MacOS/redd-block" 2>/dev/null || true
 pkill -9 -f "ReDD Blocker.app/Contents/MacOS/redd-block" 2>/dev/null || true
+pkill -9 -x "Digital Habits Blocker" 2>/dev/null || true
 pkill -9 -x "ReDD Blocker" 2>/dev/null || true
 sleep 0.5
 
@@ -146,7 +148,7 @@ do
 done
 
 echo "==> Wiping log file(s)"
-for log in "$LOG_DIR/ReDD Blocker.log" "$LOG_DIR/ReDD Block.log" "$LOG_DIR/Fristed.log"; do
+for log in "$LOG_DIR/Digital Habits Blocker.log" "$LOG_DIR/ReDD Blocker.log" "$LOG_DIR/ReDD Block.log" "$LOG_DIR/Fristed.log"; do
     if [[ -f "$log" ]]; then
         : > "$log"
         echo "  truncated $log"
@@ -158,12 +160,12 @@ cat <<EOF
 ==> Done. To test the first-time flow:
 
   1. (In one terminal) follow the log:
-       tail -F "$LOG_DIR/ReDD Blocker.log" | grep tcc-probe
+       tail -F "$LOG_DIR/Digital Habits Blocker.log" "$LOG_DIR/ReDD Blocker.log" | grep tcc-probe
 
   2. (Then) rebuild and launch (required — source fixes are not in
      /Applications until you rebuild):
        npm run tauri build
-       open "/Applications/ReDD Blocker.app"
+       open "/Applications/Digital Habits Blocker.app"
 
   Or for dev:
        npm run tauri dev

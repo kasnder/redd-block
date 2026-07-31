@@ -31,16 +31,30 @@ use std::path::{Path, PathBuf};
 
 use crate::windows_process::hidden_command;
 
-pub const TASK_NAME: &str = "ReDD Blocker Watchdog";
+pub const TASK_NAME: &str = crate::product_identity::WATCHDOG_TASK_NAME;
 const WRAPPER_CMD_FILENAME: &str = "redd-block-watchdog.cmd";
 const WRAPPER_VBS_FILENAME: &str = "redd-block-watchdog.vbs";
 
 fn wrapper_dir(exe: &Path) -> Option<PathBuf> {
     if crate::native_host_install::is_msix_packaged_exe_path(exe) {
-        let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
-        Some(local.join("ReDD Blocker").join("watchdog"))
+        Some(
+            crate::product_identity::windows_primary_local_product_dir()?
+                .join("watchdog"),
+        )
     } else {
         exe.parent().map(|p| p.to_path_buf())
+    }
+}
+
+fn delete_task(name: &str) {
+    let _ = hidden_command("schtasks")
+        .args(["/Delete", "/TN", name, "/F"])
+        .output();
+}
+
+fn delete_legacy_tasks() {
+    for name in crate::product_identity::LEGACY_WATCHDOG_TASK_NAMES {
+        delete_task(name);
     }
 }
 
@@ -139,6 +153,7 @@ pub fn register() {
     };
 
     // Task action invokes wscript.exe with the .vbs — no console flash.
+    delete_legacy_tasks();
     let task_run = format!("wscript.exe \"{}\"", vbs_path.display());
     let out = hidden_command("schtasks")
         .args([
@@ -189,11 +204,16 @@ pub fn is_registered() -> bool {
 
 /// Idempotent: removes the task and both wrapper scripts if present.
 pub fn unregister() {
-    let _ = hidden_command("schtasks")
-        .args(["/Delete", "/TN", TASK_NAME, "/F"])
-        .output();
+    delete_task(TASK_NAME);
+    delete_legacy_tasks();
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = wrapper_dir(&exe) {
+            let _ = std::fs::remove_file(dir.join(WRAPPER_CMD_FILENAME));
+            let _ = std::fs::remove_file(dir.join(WRAPPER_VBS_FILENAME));
+        }
+        // Also scrub legacy MSIX wrapper dirs from prior product folder names.
+        for legacy in crate::product_identity::windows_legacy_local_product_dirs() {
+            let dir = legacy.join("watchdog");
             let _ = std::fs::remove_file(dir.join(WRAPPER_CMD_FILENAME));
             let _ = std::fs::remove_file(dir.join(WRAPPER_VBS_FILENAME));
         }

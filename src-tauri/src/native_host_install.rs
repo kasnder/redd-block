@@ -70,8 +70,10 @@ impl BrowserTarget {
             // Windows doesn't use a per-browser directory; the manifest
             // lives wherever we want and is referenced by registry key.
             let _ = self;
-            let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
-            Some(local.join("ReDD Blocker").join("native-host"))
+            Some(
+                crate::product_identity::windows_primary_local_product_dir()?
+                    .join("native-host"),
+            )
         }
         #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
         {
@@ -98,7 +100,7 @@ impl BrowserTarget {
 fn manifest_body(browser: BrowserTarget, binary_path: &str) -> serde_json::Value {
     let mut obj = json!({
         "name": HOST_NAME,
-        "description": "ReDD Blocker native messaging host",
+        "description": "Digital Habits Blocker native messaging host",
         "path": binary_path,
         "type": "stdio",
     });
@@ -211,10 +213,8 @@ const STAGED_NATIVE_HOST_EXE: &str = "redd-block.exe";
 
 #[cfg(target_os = "windows")]
 fn native_host_stage_dir() -> Option<PathBuf> {
-    let local = std::env::var_os("LOCALAPPDATA").map(PathBuf::from)?;
     Some(
-        local
-            .join("ReDD Blocker")
+        crate::product_identity::windows_primary_local_product_dir()?
             .join("native-host"),
     )
 }
@@ -309,6 +309,10 @@ fn ensure_staged_native_host(source_exe: &std::path::Path) -> std::io::Result<St
 fn remove_staged_native_host() {
     if let Some(dir) = native_host_stage_dir() {
         let _ = std::fs::remove_dir_all(dir);
+    }
+    // Prior product-folder staging dirs from rebrands.
+    for legacy in crate::product_identity::windows_legacy_local_product_dirs() {
+        let _ = std::fs::remove_dir_all(legacy.join("native-host"));
     }
 }
 
@@ -688,7 +692,7 @@ fn uninstall_one(browser: BrowserTarget) -> std::io::Result<()> {
 
 #[cfg(target_os = "windows")]
 fn install_one(browser: BrowserTarget, binary: &str) -> std::io::Result<()> {
-    // 1. Write the manifest to %LOCALAPPDATA%\ReDD Blocker\native-host\.
+    // 1. Write the manifest to %LOCALAPPDATA%\Digital Habits Blocker\native-host\.
     let dir = browser.manifest_dir().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve manifest dir")
     })?;
