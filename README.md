@@ -112,7 +112,7 @@ Implementation details and module map: [architecture.md](architecture.md) (v3 cu
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v18+)
+- [Node.js](https://nodejs.org/) (20.19+ or 22.12+; required by Vite 8)
 - [Rust](https://www.rust-lang.org/tools/install) (latest stable)
 - [Tauri CLI](https://tauri.app/start/prerequisites/)
 

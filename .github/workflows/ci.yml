@@ -28,6 +28,10 @@ jobs:
       # Compiles the whole src/ ES-module graph and the index.html entry.
       # Fails on syntax errors, duplicate declarations, unresolved imports.
       - run: npm run vite:build
+      # Exercises the Android-only Vite transforms without requiring the
+      # native Android/Gradle toolchain.
+      - run: npm run vite:build:android
+      - run: npm run verify:android-bundle
 
   tier1:
     name: Tier 1 logic tests (headless)
