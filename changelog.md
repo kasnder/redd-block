@@ -10,6 +10,37 @@ SCHEDULES), then platform-specific notes under nested headings:
 `#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
 description.` Legacy flat lists still work.
 
+## v3.8.8
+
+### BRANDING
+
+- **A proper hello from Centre for Digital Habits.** Existing users now get a
+  one-time announcement on first launch explaining the new app name and that
+  the Reduce Digital Distraction Project is now
+  **Centre for Digital Habits** ([digitalhabits.org](https://digitalhabits.org)).
+
+### BY PLATFORM
+
+#### DESKTOP
+
+- **Release notes render properly.** Links, *italics*, and **bold** in the
+  update banner's "What's new" panel now display correctly instead of as raw
+  markdown.
+
+##### macOS
+
+- **Fixed: start at login.** v3.8.7 could shut itself down when macOS launched
+  it at login, so the app didn't auto-start after a restart. Blocking now
+  resumes automatically at login again — this update is recommended for
+  everyone on Mac.
+- **Nicer name everywhere.** System dialogs, notifications, and the Dock now
+  show the app as "Digital Habits: Blocker".
+
+##### Windows
+
+- **Startup cleanup.** A leftover "ReDD Blocker" startup entry from before the
+  rename is now removed automatically.
+
 ## v3.8.7
 
 ### BRANDING
