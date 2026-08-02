@@ -1274,6 +1274,7 @@ export function updateOnboardingVisibility() {
 
 export function activeExclusiveOnboardingScreenId() {
     const screenIds = [
+        'rebrand-onboarding',
         'welcome-onboarding',
         'fda-onboarding',
         'migration-onboarding',
@@ -1286,6 +1287,7 @@ export function activeExclusiveOnboardingScreenId() {
 
 export function showExclusiveOnboardingScreen(activeId) {
     const screenIds = [
+        'rebrand-onboarding',
         'welcome-onboarding',
         'eula-onboarding',
         'fda-onboarding',

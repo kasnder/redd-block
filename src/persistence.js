@@ -90,14 +90,18 @@ export async function loadData() {
     }
 }
 
-function shouldCreateDefaultBlocklist() {
+// True when this install has been through onboarding before — the signal
+// that distinguishes an existing (upgrading) user from a fresh install.
+export function hasSeenAnyOnboarding() {
     const settings = state.appData?.settings || {};
-    const hasSeenOnboarding =
-        settings.onboardingComplete === true
+    return settings.onboardingComplete === true
         || settings.welcomeOnboardingShown === true
         || settings.eulaAcceptedRevision != null
         || settings.eulaAcceptedAt != null;
-    return !hasSeenOnboarding;
+}
+
+function shouldCreateDefaultBlocklist() {
+    return !hasSeenAnyOnboarding();
 }
 
 // The first-launch default "Distractions" space. Shared by loadData and the

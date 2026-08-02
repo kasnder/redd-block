@@ -3,7 +3,7 @@
 import { state, appState } from './state.js';
 import { invoke } from '@tauri-apps/api/core';
 import { tSettings } from './i18n.js';
-import { saveData } from './persistence.js';
+import { hasSeenAnyOnboarding, saveData } from './persistence.js';
 import {
     AUTOMATION_BROWSER_KEYS, BROWSER_STORE_LINKS, bannerHeadlineKey, browserIconUrl,
     browserUsesAutomation, ensureSafariExtensionFdaBeforeSetup, invalidateMigrationMacCopyCache,
@@ -13,8 +13,8 @@ import {
     syncMigrationPostHeader, updateBehaviourChangeBanner, wireEnforcementToggle,
 } from './enforcement.js';
 import {
-    applyEulaOnboardingLanguage, applyMigrationOverlayStaticCopy, applyWelcomeOnboardingLanguage,
-    resetWelcomeDemoPanel,
+    applyEulaOnboardingLanguage, applyMigrationOverlayStaticCopy, applyRebrandOnboardingLanguage,
+    applyWelcomeOnboardingLanguage, resetWelcomeDemoPanel,
 } from './app.js';
 import { showExclusiveOnboardingScreen, updateOnboardingVisibility } from './blocking-platform.js';
 
@@ -121,11 +121,75 @@ export async function persistWelcomeOnboardingShown() {
 }
 
 export async function runInitialOnboardingSequence() {
+    if (!state.isIOS && !state.isAndroid) {
+        if (shouldShowRebrandNotice()) {
+            await presentRebrandNotice();
+        } else if (!hasSeenRebrandNotice()) {
+            // Fresh install: mark the rename notice as seen without showing
+            // it, so completing onboarding later never retriggers it.
+            await persistRebrandNoticeShown();
+        }
+    }
     if (!state.isIOS && !hasWelcomeOnboardingBeenShown()) {
         await presentWelcomeOnboarding();
         await persistWelcomeOnboardingShown();
     }
     updateOnboardingVisibility();
+}
+
+// ---- Digital Habits rename notice ------------------------------------------
+//
+// One-time announcement for users upgrading from ReDD Blocker: the app on
+// disk is now "Digital Habits Blocker" and the organisation behind it is
+// now the Centre for Digital Habits. Desktop-only — mobile users see the
+// rename in their app store update. Fresh installs never see it (the flag
+// is persisted silently on first run, see runInitialOnboardingSequence).
+//
+// Persistence: `state.appData.settings.digitalHabitsRebrandNoticeShown`.
+export function hasSeenRebrandNotice() {
+    return state.appData?.settings?.digitalHabitsRebrandNoticeShown === true;
+}
+
+export function shouldShowRebrandNotice() {
+    if (state.isIOS || state.isAndroid) return false;
+    return hasSeenAnyOnboarding() && !hasSeenRebrandNotice();
+}
+
+export async function persistRebrandNoticeShown() {
+    if (!state.appData.settings) state.appData.settings = {};
+    state.appData.settings.digitalHabitsRebrandNoticeShown = true;
+    try {
+        await saveData();
+    } catch (e) {
+        console.warn('[rebrand-notice] persist failed:', e);
+    }
+}
+
+export async function presentRebrandNotice() {
+    const overlay = document.getElementById('rebrand-onboarding');
+    const btn = document.getElementById('rebrand-onboarding-continue-btn');
+    if (!overlay || !btn) return;
+
+    showExclusiveOnboardingScreen('rebrand-onboarding');
+    document.getElementById('main-content')?.classList.add('hidden');
+    document.getElementById('now-blocking-row')?.classList.add('hidden');
+    // Mirror the main title bar's window-control visibility (shown on
+    // Windows) since this overlay covers the app's own title bar.
+    const mainControlsHidden =
+        document.getElementById('window-controls')?.classList.contains('hidden') ?? true;
+    document.getElementById('rebrand-window-controls')?.classList.toggle('hidden', mainControlsHidden);
+    applyRebrandOnboardingLanguage();
+
+    await new Promise((resolve) => {
+        const onClick = async () => {
+            btn.removeEventListener('click', onClick);
+            await persistRebrandNoticeShown();
+            overlay.classList.add('hidden');
+            updateOnboardingVisibility();
+            resolve();
+        };
+        btn.addEventListener('click', onClick);
+    });
 }
 
 export function presentWelcomeOnboarding(onContinue) {
@@ -796,4 +860,9 @@ export function wireMigrationPostPhase(onboardingState) {
             void returnFromExtensionSetupOnboarding();
         });
     }
+}
+if (import.meta.env.DEV) {
+    /** Dev only: `previewRebrandNotice()` in the webview console.
+     *  Note: clicking Continue persists the shown-flag to real app data. */
+    window.previewRebrandNotice = () => { void presentRebrandNotice(); };
 }

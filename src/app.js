@@ -413,6 +413,28 @@ function setupEventListeners() {
         tauriAPI.closeWindow();
     });
 
+    // Rebrand-notice overlay covers the main title bar, so it carries its
+    // own window controls (visible on Windows only, mirroring the main set).
+    document.getElementById('rebrand-titlebar-minimize')?.addEventListener('click', () => {
+        tauriAPI.minimizeWindow();
+    });
+    document.getElementById('rebrand-titlebar-maximize')?.addEventListener('click', async () => {
+        await tauriAPI.maximizeWindow();
+        const syncIcons = async () => {
+            const maximized = await getCurrentWindow().isMaximized().catch(() => false);
+            const maxIcon = document.getElementById('rebrand-maximize-icon');
+            const restoreIcon = document.getElementById('rebrand-restore-icon');
+            if (maxIcon) maxIcon.style.display = maximized ? 'none' : '';
+            if (restoreIcon) restoreIcon.style.display = maximized ? '' : 'none';
+        };
+        await syncIcons();
+        // State may settle asynchronously on Windows — refresh once more.
+        setTimeout(() => { void syncIcons(); }, 100);
+    });
+    document.getElementById('rebrand-titlebar-close')?.addEventListener('click', () => {
+        tauriAPI.closeWindow();
+    });
+
     const eulaCheckbox = document.getElementById('eula-agree-checkbox');
     const eulaContinueBtn = document.getElementById('eula-continue-btn');
     if (eulaCheckbox && eulaContinueBtn) {
@@ -2795,6 +2817,29 @@ export function applyEulaOnboardingLanguage() {
 }
 
 /** Welcome onboarding screen — localized in the same way as the EULA screen. */
+export function applyRebrandOnboardingLanguage() {
+    const icon = document.getElementById('rebrand-onboarding-app-icon');
+    if (icon) {
+        icon.src = logoReddShieldUrl;
+        icon.alt = '';
+    }
+
+    const title = document.getElementById('rebrand-onboarding-title');
+    if (title) title.innerHTML = tSettings('rebrandNoticeTitleHtml');
+
+    const subtitle = document.getElementById('rebrand-onboarding-subtitle');
+    if (subtitle) subtitle.textContent = tSettings('rebrandNoticeSubtitle');
+
+    const body1 = document.getElementById('rebrand-onboarding-body-1');
+    if (body1) body1.innerHTML = tSettings('rebrandNoticeBody1Html');
+
+    const body2 = document.getElementById('rebrand-onboarding-body-2');
+    if (body2) body2.innerHTML = tSettings('rebrandNoticeBody2Html');
+
+    const continueBtn = document.getElementById('rebrand-onboarding-continue-btn');
+    if (continueBtn) continueBtn.textContent = tSettings('rebrandNoticeContinueBtn');
+}
+
 export function applyWelcomeOnboardingLanguage() {
     const shieldLogo = document.getElementById('welcome-onboarding-shield-logo');
     if (shieldLogo) {
@@ -3513,6 +3558,7 @@ export function applySettingsLanguage() {
     applyMigrationOverlayStaticCopy();
     applyEulaOnboardingLanguage();
     applyWelcomeOnboardingLanguage();
+    applyRebrandOnboardingLanguage();
     applySafariFdaOnboardingLanguage();
     setHtml('ios-screentime-onboarding-title', tSettings('welcomeOnboardingTitle'));
     setText('ios-screentime-onboarding-note', tSettings('eulaProjectBlurb'));

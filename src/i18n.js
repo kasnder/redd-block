@@ -83,6 +83,16 @@ export const SETTINGS_TRANSLATIONS = {
         eulaWelcomeIconAlt: 'Digital Habits: Blocker app icon',
         eulaProjectBlurb:
             'Developed by the Centre for Digital Habits, with researchers at the University of Oxford and University of Maastricht. Centre for Digital Habits is a not-for-profit creating open-source digital focus tools.',
+        // One-time rename notice for users upgrading from ReDD Blocker
+        rebrandNoticeTitleHtml:
+            'ReDD Blocker is now <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
+        rebrandNoticeSubtitle:
+            'Same app, new name — your blocklists, schedules, and settings are all unchanged.',
+        rebrandNoticeBody1Html:
+            'We’ve renamed the app because the team behind it — previously the <strong>Reduce Digital Distraction Project</strong> — is now known as the <strong>Centre for Digital Habits</strong> (<a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org">digitalhabits.org</a>).',
+        rebrandNoticeBody2Html:
+            'On your computer, the app is now called <strong>“Digital Habits Blocker”</strong> — it’s the same app you had installed, just under its new name.',
+        rebrandNoticeContinueBtn: 'Continue',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to Digital Habits: Blocker',
         welcomeOnboardingSubtitle:
@@ -922,6 +932,16 @@ export const SETTINGS_TRANSLATIONS = {
         eulaWelcomeIconAlt: 'Digital Habits: Blocker-appikon',
         eulaProjectBlurb:
             'Udviklet af Centre for Digital Habits sammen med forskere ved University of Oxford og Maastricht University. Centre for Digital Habits er en non-profit, der skaber open source digitale fokusværktøjer.',
+        // One-time rename notice for users upgrading from ReDD Blocker
+        rebrandNoticeTitleHtml:
+            'ReDD Blocker hedder nu <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
+        rebrandNoticeSubtitle:
+            'Samme app, nyt navn — dine bloklister, tidsplaner og indstillinger er uændrede.',
+        rebrandNoticeBody1Html:
+            'Vi har givet appen nyt navn, fordi holdet bag den — tidligere <strong>Reduce Digital Distraction Project</strong> — nu hedder <strong>Centre for Digital Habits</strong> (<a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org">digitalhabits.org</a>).',
+        rebrandNoticeBody2Html:
+            'På din computer hedder appen nu <strong>”Digital Habits Blocker”</strong> — det er den samme app, du havde installeret, bare med sit nye navn.',
+        rebrandNoticeContinueBtn: 'Fortsæt',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til <em>Digital Habits: Blocker</em>',
         welcomeOnboardingSubtitle:
@@ -1732,6 +1752,15 @@ export const SETTINGS_TRANSLATIONS = {
         eulaAcceptSaveFailedAlert: '无法保存你的同意状态。请重试后继续。',
         eulaWelcomeIconAlt: 'Digital Habits: Blocker 应用图标',
         eulaProjectBlurb: '由 Centre for Digital Habits 开发，并与牛津大学和马斯特里赫特大学的研究人员合作。Centre for Digital Habits 是一个非营利项目，致力于创建开源数字专注工具。',
+        // One-time rename notice for users upgrading from ReDD Blocker
+        rebrandNoticeTitleHtml:
+            'ReDD Blocker 现已更名为 <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
+        rebrandNoticeSubtitle: '应用不变，只是换了新名字——你的所有列表、日程和设置都保持不变。',
+        rebrandNoticeBody1Html:
+            '应用更名是因为其背后的团队——原 <strong>Reduce Digital Distraction Project</strong>——现已更名为 <strong>Centre for Digital Habits</strong>（<a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org">digitalhabits.org</a>）。',
+        rebrandNoticeBody2Html:
+            '在你的电脑上，应用现在名为 <strong>“Digital Habits Blocker”</strong>——就是你之前安装的那个应用，只是换了新名字。',
+        rebrandNoticeContinueBtn: '继续',
         welcomeOnboardingTitle: '欢迎使用 <em>Digital Habits: Blocker</em>',
         welcomeOnboardingSubtitle: '为平静专注留出空间，阻止让你分心的应用和网站。',
         welcomeHowHeading: '开始步骤（我们会一步步引导你）',

@@ -9,6 +9,55 @@
 </head>
 
 <body>
+    <!-- One-time rename announcement for users upgrading from ReDD Blocker.
+         Shown before anything else on the first launch after the Digital
+         Habits rebrand; fresh installs never see it (the shown-flag is set
+         silently on first run). Copy applied by applyRebrandOnboardingLanguage. -->
+    <div id="rebrand-onboarding" class="onboarding-screen hidden">
+        <div class="eula-title-bar" data-tauri-drag-region aria-hidden="true">
+            <div id="rebrand-window-controls" class="window-controls hidden">
+                <button id="rebrand-titlebar-minimize" class="win-btn" title="Minimize">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <rect x="0" y="5" width="12" height="1" fill="currentColor" />
+                    </svg>
+                </button>
+                <button id="rebrand-titlebar-maximize" class="win-btn" title="Maximize">
+                    <svg id="rebrand-maximize-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"
+                        xmlns="http://www.w3.org/2000/svg">
+                        <rect x="1" y="1" width="10" height="10" stroke="currentColor" stroke-width="1.2" fill="none" />
+                    </svg>
+                    <svg id="rebrand-restore-icon" width="12" height="12" viewBox="0 0 12 12" fill="none"
+                        xmlns="http://www.w3.org/2000/svg" style="display: none;">
+                        <rect x="2" y="2" width="8" height="8" stroke="currentColor" stroke-width="1.2" fill="none" />
+                        <rect x="0" y="0" width="8" height="8" stroke="currentColor" stroke-width="1.2" fill="none" />
+                    </svg>
+                </button>
+                <button id="rebrand-titlebar-close" class="win-btn close-btn" title="Close">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M1 1L11 11M11 1L1 11" stroke="currentColor" stroke-width="1.5"
+                            stroke-linecap="round" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <div class="eula-onboarding-scroll">
+            <div class="onboarding-content legal-onboarding-content rebrand-onboarding-content">
+                <div class="onboarding-icon rebrand-onboarding-icon">
+                    <img id="rebrand-onboarding-app-icon" src="" alt=""
+                        class="onboarding-app-icon">
+                </div>
+                <h1 id="rebrand-onboarding-title">ReDD Blocker is now <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span></h1>
+                <p id="rebrand-onboarding-subtitle" class="rebrand-onboarding-subtitle">Same app, new name — your blocklists, schedules, and settings are all unchanged.</p>
+                <div class="rebrand-definition-card">
+                    <p id="rebrand-onboarding-body-1" class="rebrand-definition-body"></p>
+                    <hr class="rebrand-definition-divider" aria-hidden="true">
+                    <p id="rebrand-onboarding-body-2" class="rebrand-definition-footnote"></p>
+                </div>
+                <button id="rebrand-onboarding-continue-btn" type="button"
+                    class="modal-btn primary-btn onboarding-primary-btn rebrand-onboarding-continue-btn">Continue</button>
+            </div>
+        </div>
+    </div>
     <div class="app-container">
         <!-- Title Bar -->
         <div class="title-bar" data-tauri-drag-region>
