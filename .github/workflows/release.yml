@@ -608,6 +608,14 @@ jobs:
             --version "${{ steps.meta.outputs.version }}" \
             --macos-pkg "$PKG"
 
+      # Note: pre-rename clients (<= v3.8.7) poll the OLD Pages path
+      # https://ulyngs.github.io/redd-block/latest-versions.json, which is
+      # served by the ulyngs/ulyngs.github.io stub repo. Its sync workflow
+      # mirrors docs/latest-versions.json + docs/changelog.md from this repo
+      # every 6 hours (or on manual dispatch), so legacy clients see this
+      # release within that window. Do NOT create a repo named
+      # ulyngs/redd-block — it would break the release-download redirects
+      # those same clients rely on.
       - name: Commit latest-versions.json
         if: >-
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
