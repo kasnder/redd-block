@@ -95,7 +95,7 @@ pub fn uninstall_self_macos(
     if let Err(e) = app.autolaunch().disable() {
         log::warn!("uninstall_self_macos: autostart.disable failed: {e}");
     }
-    scrub_stale_autostart_plists();
+    scrub_all_autostart_plists();
 
     // 2. Remove per-browser native-messaging manifests + their
     //    enclosing NativeMessagingHosts directories if empty. Same
@@ -282,8 +282,24 @@ fn app_bundle_path() -> Option<String> {
 /// or dirs. We don't trust any one filename pattern because
 /// `tauri-plugin-autostart`'s plist naming has shifted between
 /// versions (e.g. `Fristed.plist` vs `redd-block.plist`).
+///
+/// Legacy plists only — safe to call at startup. The uninstall path
+/// uses [`scrub_all_autostart_plists`], which also removes the current
+/// bundle's plist.
 #[cfg(target_os = "macos")]
 pub(crate) fn scrub_stale_autostart_plists() {
+    scrub_autostart_plists(false);
+}
+
+/// Uninstall-only: also removes the CURRENT bundle's LaunchAgent.
+/// Never call at startup — see `should_scrub_autostart_plist`.
+#[cfg(target_os = "macos")]
+pub(crate) fn scrub_all_autostart_plists() {
+    scrub_autostart_plists(true);
+}
+
+#[cfg(target_os = "macos")]
+fn scrub_autostart_plists(include_current: bool) {
     use std::fs;
     use std::io::Read;
 
@@ -309,11 +325,11 @@ pub(crate) fn scrub_stale_autostart_plists() {
         if let Ok(mut f) = fs::File::open(&path) {
             let _ = f.read_to_string(&mut content);
         }
-        if !should_scrub_autostart_plist(filename, &content) {
+        if !should_scrub_autostart_plist(filename, &content, include_current) {
             continue;
         }
         log::info!(
-            "scrub_stale_autostart_plists: bootout + remove {}",
+            "scrub_autostart_plists(include_current={include_current}): bootout + remove {}",
             path.display()
         );
         let _ = Command::new("launchctl")
@@ -326,7 +342,7 @@ pub(crate) fn scrub_stale_autostart_plists() {
 }
 
 #[cfg(target_os = "macos")]
-fn should_scrub_autostart_plist(filename: &str, content: &str) -> bool {
+fn should_scrub_autostart_plist(filename: &str, content: &str, include_current: bool) -> bool {
     let lower = filename.to_ascii_lowercase();
     if lower.contains("reddblock") || lower.contains("redd-block") {
         return true;
@@ -337,10 +353,22 @@ fn should_scrub_autostart_plist(filename: &str, content: &str) -> bool {
     if lower == "fristed.plist" {
         return true;
     }
-    content.contains("/Applications/Fristed.app")
+    if content.contains("/Applications/Fristed.app")
         || content.contains("/Applications/ReDD Block.app")
         || content.contains("/Applications/ReDD Blocker.app")
-        || content.contains("/Applications/Digital Habits Blocker.app")
+    {
+        return true;
+    }
+    // The CURRENT bundle's plist may only be scrubbed on uninstall
+    // (include_current). The startup self-heal must never match it:
+    // when the app was launched at login *by* that plist, `launchctl
+    // bootout` on it terminates the running job — i.e. the app kills
+    // itself mid-startup and launch-at-login silently stops working.
+    include_current
+        && content.contains(&format!(
+            "/Applications/{}.app",
+            crate::product_identity::PRODUCT_DIR_NAME
+        ))
 }
 
 /// Spawn a detached `bash` that waits a couple of seconds for our
