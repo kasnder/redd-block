@@ -11,8 +11,8 @@ use tauri::{AppHandle, Emitter};
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
-const GITHUB_RELEASES: &str = "https://github.com/ulyngs/redd-block/releases/download";
-const LATEST_VERSIONS_URL: &str = "https://ulyngs.github.io/redd-block/latest-versions.json";
+const GITHUB_RELEASES: &str = "https://github.com/ulyngs/digital-habits-blocker/releases/download";
+const LATEST_VERSIONS_URL: &str = "https://ulyngs.github.io/digital-habits-blocker/latest-versions.json";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

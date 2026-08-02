@@ -39,7 +39,7 @@ const INTRO = `Hi folks,
 
 This update comes with some helpful improvements!`;
 
-const SIGNOFF = `Please keep suggesting improvements to the app - you can do so at https://github.com/ulyngs/redd-block
+const SIGNOFF = `Please keep suggesting improvements to the app - you can do so at https://github.com/ulyngs/digital-habits-blocker
 
 We hope you're enjoying Digital Habits: Blocker!
 

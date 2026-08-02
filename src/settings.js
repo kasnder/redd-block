@@ -26,7 +26,7 @@ import {
 
 export function setupHelpMenuLinks() {
     tauriAPI.onMenuHelpReportIssue(() => {
-        openExternal('https://github.com/ulyngs/redd-block/issues');
+        openExternal('https://github.com/ulyngs/digital-habits-blocker/issues');
     }).catch(() => { });
 
     tauriAPI.onMenuHelpContactUs(() => {

@@ -7,8 +7,8 @@ import changelogMarkdown from '../changelog.md?raw';
  */
 
 const REMOTE_CHANGELOG_URLS = [
-    'https://ulyngs.github.io/redd-block/changelog.md',
-    'https://raw.githubusercontent.com/ulyngs/redd-block/main/changelog.md',
+    'https://ulyngs.github.io/digital-habits-blocker/changelog.md',
+    'https://raw.githubusercontent.com/ulyngs/digital-habits-blocker/main/changelog.md',
 ];
 
 function escapeRegExp(value) {

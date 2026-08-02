@@ -127,7 +127,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeFooter1Html:
             'Built by <a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Centre for Digital Habits</a>, a not-for-profit creating open-source digital focus tools &amp; training. In collaboration with researchers at the University of Oxford and University of Maastricht.',
         welcomeFooter2Html:
-            '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
+            '<a href="https://github.com/ulyngs/digital-habits-blocker" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">View the source code on GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Get started',
         // Migration / extension onboarding overlay
         migrationPreWelcomeTitle: 'Welcome to Digital Habits: Blocker 2.0',
@@ -456,7 +456,7 @@ export const SETTINGS_TRANSLATIONS = {
             'Closing {apps} now — saving any pending dialogs in them…',
         appBlockingListMoreFmt: '{n} more',
         settingsFeedbackFooterHtml:
-            'Feedback or suggestions? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a> or email <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>.',
+            'Feedback or suggestions? <a href="https://github.com/ulyngs/digital-habits-blocker/issues" target="_blank" rel="noopener noreferrer">Open an issue on GitHub</a> or email <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>.',
         madeWith: 'Made with',
         by: 'by',
         footerOrgLabel: 'digitalhabits.org',
@@ -976,7 +976,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeFooter1Html:
             'Udviklet af <a href="https://digitalevaner.dk" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Center for Digitale Vaner</a>, en non-profit, der bygger open source digitale fokusværktøjer og kurser. I samarbejde med forskere ved University of Oxford og Maastricht University.',
         welcomeFooter2Html:
-            '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
+            '<a href="https://github.com/ulyngs/digital-habits-blocker" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Se kildekoden på GitHub</a>.',
         welcomeOnboardingContinueBtn: 'Start',
         // Migration / extension onboarding overlay
         migrationPreWelcomeTitle: 'Velkommen til Digital Habits: Blocker 2.0',
@@ -1288,7 +1288,7 @@ export const SETTINGS_TRANSLATIONS = {
             'Lukker {apps} nu — giver eventuelle åbne dialoger tid i dem…',
         appBlockingListMoreFmt: '{n} flere',
         settingsFeedbackFooterHtml:
-            'Feedback eller forslag? <a href="https://github.com/ulyngs/redd-block/issues" target="_blank" rel="noopener noreferrer">Opret et issue på GitHub</a> eller skriv til <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>.',
+            'Feedback eller forslag? <a href="https://github.com/ulyngs/digital-habits-blocker/issues" target="_blank" rel="noopener noreferrer">Opret et issue på GitHub</a> eller skriv til <a href="mailto:team@digitalhabits.org">team@digitalhabits.org</a>.',
         madeWith: 'Lavet med',
         by: 'af',
         footerOrgLabel: 'digitalevaner.dk',
@@ -1785,7 +1785,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeDemoFullscreenExitAriaLabel: '退出全屏',
         welcomeDemoCloseLabel: '关闭',
         welcomeFooter1Html: '由 <a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Centre for Digital Habits</a> 开发，这是一个创建开源数字专注工具和培训的非营利项目。与牛津大学和马斯特里赫特大学研究人员合作。',
-        welcomeFooter2Html: '<a href="https://github.com/ulyngs/redd-block" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">在 GitHub 查看源代码</a>。',
+        welcomeFooter2Html: '<a href="https://github.com/ulyngs/digital-habits-blocker" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">在 GitHub 查看源代码</a>。',
         welcomeOnboardingContinueBtn: '开始使用',
         migrationPreWelcomeTitle: '欢迎使用 Digital Habits: Blocker 2.0',
         migrationPreSubtitle: '需要完成一次清理才能结束升级。',
