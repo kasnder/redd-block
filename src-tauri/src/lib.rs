@@ -787,6 +787,8 @@ pub fn run() {
                 use tauri_plugin_autostart::ManagerExt;
                 #[cfg(target_os = "macos")]
                 crate::commands::uninstall::scrub_stale_autostart_plists();
+                #[cfg(target_os = "windows")]
+                crate::windows_login::scrub_legacy_autostart_run_values();
                 log::info!("tcc-probe: about to call autolaunch().enable() (LaunchAgent plist write)");
                 if let Err(e) = app.autolaunch().enable() {
                     log::warn!("autostart enable failed: {e}");
