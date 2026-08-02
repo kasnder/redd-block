@@ -19,13 +19,38 @@ function escapeHtml(text) {
     return String(text)
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }
 
-/** Inline `**bold**` in already-escaped text. */
+/** `**bold**`, `*italics*` / `_italics_` in already-escaped text. */
+function formatEmphasisHtml(escaped) {
+    return escaped
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/(^|[^*\w])\*([^*\s](?:[^*]*[^*\s])?)\*(?!\*)/g, '$1<em>$2</em>')
+        .replace(/(^|[\s(])_([^_\s](?:[^_]*[^_\s])?)_(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>');
+}
+
+/**
+ * Inline markdown — `**bold**`, `*italics*`, `[label](https://url)` —
+ * in already-escaped text. Only http(s)/mailto link targets are
+ * rendered; anything else stays as literal text. Anchors are swapped
+ * out for placeholders while emphasis runs so `*`/`_` inside a URL
+ * can't corrupt the markup.
+ */
 export function formatChangelogInlineHtml(text) {
     const escaped = escapeHtml(text);
-    return escaped.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    /** @type {string[]} */
+    const anchors = [];
+    const withPlaceholders = escaped.replace(
+        /\[([^\]]+)\]\(((?:https?:\/\/|mailto:)[^\s()]+)\)/g,
+        (_match, label, url) => {
+            anchors.push(`<a href="${url}" target="_blank" rel="noopener noreferrer" data-external-url="${url}">${formatEmphasisHtml(label)}</a>`);
+            return `\u0000${anchors.length - 1}\u0000`;
+        },
+    );
+    return formatEmphasisHtml(withPlaceholders)
+        .replace(/\u0000(\d+)\u0000/g, (_match, index) => anchors[Number(index)]);
 }
 
 function parseBulletItem(text) {
@@ -329,7 +354,7 @@ function renderItemsListHtml(items) {
             ? `<span class="update-banner-notes-item-body">${formatChangelogInlineHtml(item.body)}</span>`
             : '';
         return `<li class="update-banner-notes-item">
-            <span class="update-banner-notes-item-title"><strong>${escapeHtml(item.title)}</strong></span>
+            <span class="update-banner-notes-item-title"><strong>${formatChangelogInlineHtml(item.title)}</strong></span>
             ${bodyHtml}
         </li>`;
     }).join('');

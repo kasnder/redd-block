@@ -716,6 +716,16 @@ body.dark-mode .title-bar{
     gap: 16px;
 }
 
+.update-banner-notes-content a{
+    color: var(--accent-color, #14b8a6);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.update-banner-notes-content a:hover{
+    color: var(--accent-hover, #0d9488);
+}
+
 .update-banner-notes-summary{
     display: flex;
     flex-direction: column;
