@@ -2820,8 +2820,9 @@ export function applyEulaOnboardingLanguage() {
 export function applyRebrandOnboardingLanguage() {
     const icon = document.getElementById('rebrand-onboarding-app-icon');
     if (icon) {
+        // Match EULA / welcome: bare shield mark, not the square app-icon tile.
         icon.src = logoReddShieldUrl;
-        icon.alt = '';
+        icon.alt = tSettings('eulaWelcomeIconAlt');
     }
 
     const title = document.getElementById('rebrand-onboarding-title');

@@ -7995,10 +7995,13 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled){
     margin-bottom: 22px;
 }
 
-#rebrand-onboarding .onboarding-app-icon {
-    width: 88px;
+/* Same bare shield as EULA / welcome (no cream tile, radius, or shadow). */
+#rebrand-onboarding .rebrand-onboarding-logo {
+    width: auto;
     height: 88px;
-    border-radius: 22px;
+    margin: 0 auto;
+    border-radius: 0;
+    box-shadow: none;
 }
 
 .rebrand-onboarding-subtitle {
@@ -8885,7 +8888,10 @@ body.dark-mode .welcome-demo-toggle:hover{
     }
 }
 
-.onboarding-content h1:not(#migration-post-header-title){
+/* Keep #rebrand-onboarding out: its title uses the lighter Georgia 500 look
+   shared with To-Do / Focus rename notices (this rule would otherwise win via
+   equal specificity + later cascade and force weight 700). */
+.onboarding-screen:not(#rebrand-onboarding) .onboarding-content h1:not(#migration-post-header-title){
     font-size: 24px;
     font-weight: 700;
     color: var(--text-secondary);

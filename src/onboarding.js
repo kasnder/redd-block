@@ -34,8 +34,6 @@ export async function resetDevOnlyEulaAcceptance() {
     state.forceShowEulaThisSession = !state.isIOS && !state.isAndroid && isLocalDevRun();
 }
 
-
-
 export function getAcceptedEulaRevision() {
     const rawRevision = state.appData?.settings?.eulaAcceptedRevision;
     if (Number.isInteger(rawRevision) && rawRevision > 0) {
@@ -140,7 +138,7 @@ export async function runInitialOnboardingSequence() {
 // ---- Digital Habits rename notice ------------------------------------------
 //
 // One-time announcement for users upgrading from ReDD Blocker: the app on
-// disk is now "Digital Habits Blocker" and the organisation behind it is
+// disk is now "Digital Habits: Blocker" and the organisation behind it is
 // now the Centre for Digital Habits. Desktop-only — mobile users see the
 // rename in their app store update. Fresh installs never see it (the flag
 // is persisted silently on first run, see runInitialOnboardingSequence).
