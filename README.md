@@ -170,7 +170,7 @@ npm run build:mac-all
 # Windows: NSIS/MSI installers (x64 + ARM64) — direct download / S3
 npm run build:win
 
-# Windows: Microsoft Store (MSIX for Partner Center upload; same pipeline as redd-do)
+# Windows: Microsoft Store (MSIX for Partner Center upload; same pipeline as digital-habits-to-do)
 npm run build:win-store
 
 # iOS: Build IPA for App Store upload (via Transporter)
@@ -189,7 +189,7 @@ For Store builds, set `WINDOWS_IDENTITY_NAME` and `WINDOWS_PUBLISHER` in `.env` 
 **Local sideload:** `build:win-store` MSIX files are unsigned (Partner Center signs on upload). Sign and install in an **elevated** PowerShell (cert goes in `LocalMachine\TrustedPeople`):
 
 ```powershell
-npm run sign:win-store-msix -- -MsixPath "for-distribution/aarch64-pc-windows-msvc/ReDD_Block_3.1.5.0_arm64.msix" -Install
+npm run sign:win-store-msix -- -MsixPath "for-distribution/aarch64-pc-windows-msvc/Digital-Habits-Blocker_3.1.5.0_arm64.msix" -Install
 ```
 
 Also turn on **Settings → System → For developers → Developer Mode**. If `0x800B0109` persists, remove old packages first: `Get-AppxPackage *ReDDBlock* | Remove-AppxPackage`.

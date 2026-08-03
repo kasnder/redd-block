@@ -1,4 +1,4 @@
-# ReddBlock Pre-Release Test Checklist
+# Digital Habits: Blocker Pre-Release Test Checklist
 
 ## Before Each Release
 
