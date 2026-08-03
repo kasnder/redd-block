@@ -1,14 +1,20 @@
 !macro NSIS_HOOK_PREINSTALL
   ; Best-effort cleanup of a legacy direct-install app so the direct
   ; Digital Habits Blocker installer leaves only one desktop app installed.
-  ; Intentionally scoped to direct NSIS/MSI installs; MSIX does not run
-  ; these hooks. We do NOT touch shared ProgramData storage here.
+  ; Intentionally scoped to direct NSIS installs; MSIX does not run these
+  ; hooks. We do NOT touch shared ProgramData storage here.
   ;
-  ; Tauri's bundle already runs elevated for per-machine installs, so
-  ; deleting the old app directory is safe to attempt here. For current-
-  ; user installs we still try the standard local app roots.
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference = ''SilentlyContinue''; $paths = @(); if ($env:ProgramFiles) { $paths += (Join-Path $env:ProgramFiles ''ReDD Block''); $paths += (Join-Path $env:ProgramFiles ''ReDD Blocker'') }; if ($env:ProgramW6432) { $paths += (Join-Path $env:ProgramW6432 ''ReDD Block''); $paths += (Join-Path $env:ProgramW6432 ''ReDD Blocker'') }; if ($env:LOCALAPPDATA) { $paths += (Join-Path $env:LOCALAPPDATA ''Programs\ReDD Block''); $paths += (Join-Path $env:LOCALAPPDATA ''Programs\ReDD Blocker'') }; foreach ($path in ($paths | Select-Object -Unique)) { if (-not (Test-Path -LiteralPath $path)) { continue }; Get-Process | Where-Object { $_.Path -and $_.Path -like ($path + ''\*'') } | Stop-Process -Force; Remove-Item -LiteralPath $path -Recurse -Force }"'
+  ; Why this exists: Tauri NSIS keys install dir / shortcuts / Uninstall
+  ; registry by productName. After the rename to "Digital Habits Blocker",
+  ; the built-in upgrade path never finds "ReDD Blocker" and would leave
+  ; the old app behind. This hook runs the old uninstaller (when present)
+  ; and falls back to deleting known legacy install dirs / shortcuts /
+  ; Run values. See windows/legacy-preinstall.ps1.
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\legacy-preinstall.ps1" "${__FILEDIR__}\legacy-preinstall.ps1"
+  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\legacy-preinstall.ps1"'
   Pop $0
+  Delete "$PLUGINSDIR\legacy-preinstall.ps1"
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
