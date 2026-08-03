@@ -618,7 +618,7 @@ export const BROWSER_STORE_LINKS = {
     chrome: { label: 'Chrome', url: 'https://chromewebstore.google.com/detail/redd-focus-hide-distracti/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
     brave: { label: 'Brave', url: 'https://chromewebstore.google.com/detail/redd-focus-hide-distracti/hhblkhfdjijdinijakbmcpkmdfhoadcd' },
     edge: { label: 'Edge', url: 'https://microsoftedge.microsoft.com/addons/detail/redd-focus-hide-distract/gmjfgjdhnhcegfelcddbdljdffiaepam' },
-    firefox: { label: 'Firefox', url: 'https://addons.mozilla.org/en-US/firefox/addon/reddfocus/' },
+    firefox: { label: 'Firefox', url: 'https://addons.mozilla.org/en-US/firefox/addon/digitalhabits-focus/' },
     safari: { label: 'Safari', url: 'macappstore://apps.apple.com/app/id1660218371' },
 };
 

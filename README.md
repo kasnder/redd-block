@@ -44,7 +44,7 @@ flowchart LR
 | Browser | How blocking works | Extension setup |
 |---------|-------------------|-----------------|
 | Safari, Chrome, Brave, Edge | **Automation** (Apple Events) — Digital Habits: Blocker redirects blocked tabs | Digital Habits: Blocker prompts for Automation in System Settings → Privacy & Security → Automation |
-| Firefox | Digital Habits: Focus extension | Install manually from the [Firefox Add-ons store](https://addons.mozilla.org/) — Digital Habits: Blocker does **not** auto-install on macOS |
+| Firefox | Digital Habits: Focus extension | Install manually from the [Digital Habits: Focus Firefox add-on](https://addons.mozilla.org/en-US/firefox/addon/digitalhabits-focus/) — Digital Habits: Blocker does **not** auto-install on macOS |
 
 **Windows**
 

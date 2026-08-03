@@ -104,7 +104,7 @@ pub const EDGE_UPDATE_URL: &str = CHROMIUM_UPDATE_URL;
 /// AMO URL Firefox fetches the XPI from when the policy is in place.
 /// Always-redirects to the latest signed release.
 pub const FIREFOX_AMO_XPI_URL: &str =
-    "https://addons.mozilla.org/firefox/downloads/latest/reddfocus/latest.xpi";
+    "https://addons.mozilla.org/firefox/downloads/latest/digitalhabits-focus/latest.xpi";
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum BrowserTarget {

@@ -208,7 +208,7 @@ directories anymore — XPIs placed there sit forever doing nothing.
 ```json
 { "policies": { "ExtensionSettings": { "<gecko-id>": {
   "installation_mode": "force_installed",
-  "install_url": "https://addons.mozilla.org/firefox/downloads/latest/reddfocus/latest.xpi"
+  "install_url": "https://addons.mozilla.org/firefox/downloads/latest/digitalhabits-focus/latest.xpi"
 }}}}
 ```
 
@@ -347,7 +347,7 @@ Two options:
   acceptable since we can re-bundle on each Digital Habits: Blocker release.
 
 - **Download on first run** — fetch from
-  `https://addons.mozilla.org/firefox/downloads/latest/reddfocus/latest.xpi`
+  `https://addons.mozilla.org/firefox/downloads/latest/digitalhabits-focus/latest.xpi`
   the first time we install the hint for Firefox. Always current.
   Requires network; slows onboarding.
 
