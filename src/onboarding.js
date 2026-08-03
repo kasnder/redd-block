@@ -34,6 +34,12 @@ export async function resetDevOnlyEulaAcceptance() {
     state.forceShowEulaThisSession = !state.isIOS && !state.isAndroid && isLocalDevRun();
 }
 
+export async function resetDevOnlyRebrandNoticeShown() {
+    // Same rationale as resetDevOnlyEulaAcceptance: keep the rename notice
+    // easy to preview/tweak by forcing it on every dev launch (desktop only).
+    state.forceShowRebrandNoticeThisSession = !state.isIOS && !state.isAndroid && isLocalDevRun();
+}
+
 
 
 export function getAcceptedEulaRevision() {
@@ -144,6 +150,8 @@ export async function runInitialOnboardingSequence() {
 // now the Centre for Digital Habits. Desktop-only — mobile users see the
 // rename in their app store update. Fresh installs never see it (the flag
 // is persisted silently on first run, see runInitialOnboardingSequence).
+// Always shown on `npm run dev` (desktop) via resetDevOnlyRebrandNoticeShown,
+// mirroring resetDevOnlyEulaAcceptance.
 //
 // Persistence: `state.appData.settings.digitalHabitsRebrandNoticeShown`.
 export function hasSeenRebrandNotice() {
@@ -152,6 +160,7 @@ export function hasSeenRebrandNotice() {
 
 export function shouldShowRebrandNotice() {
     if (state.isIOS || state.isAndroid) return false;
+    if (state.forceShowRebrandNoticeThisSession) return true;
     return hasSeenAnyOnboarding() && !hasSeenRebrandNotice();
 }
 
@@ -183,6 +192,7 @@ export async function presentRebrandNotice() {
     await new Promise((resolve) => {
         const onClick = async () => {
             btn.removeEventListener('click', onClick);
+            state.forceShowRebrandNoticeThisSession = false;
             await persistRebrandNoticeShown();
             overlay.classList.add('hidden');
             updateOnboardingVisibility();

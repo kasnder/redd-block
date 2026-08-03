@@ -95,6 +95,7 @@ export const state = {
     lastMigrationHowtoCopyKey: '',
     extensionSetupPausedForBackNavigation: false,
     forceShowEulaThisSession: false,
+    forceShowRebrandNoticeThisSession: false,
 };
 
 // Alias for use inside functions whose local parameter is also named `state`
