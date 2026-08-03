@@ -224,15 +224,21 @@ fn emit_progress(app: &AppHandle, bytes_received: u64, total_bytes: Option<u64>)
     );
 }
 
-/// Keep the Let's go warning UI on screen, but briefly drop always-on-top
-/// so the system installer can appear above it. When the installer exits
-/// (user cancelled), restore always-on-top if the warning is still active.
+/// Keep the Let's go warning UI on screen, but drop Floating / always-on-top
+/// so the system installer can appear above it. Yield is recorded even if
+/// the shell is not up yet — if Let's go appears mid-install, it stays
+/// below Installer. When the installer exits (user cancelled), restore
+/// always-on-top if the warning is still active.
+///
+/// Installer focus-stealing (`activate`) only runs while the Let's go shell
+/// is visible. Without that shell, the installer behaves normally and can
+/// sit behind other windows.
 fn schedule_installer_zorder_handoff(
     app: &AppHandle,
     installer_alive: impl Fn() -> bool + Send + 'static,
     activate: impl Fn() + Send + 'static,
 ) {
-    let yielded = crate::commands::yield_blocking_warning_zorder_for_installer(app);
+    crate::commands::yield_blocking_warning_zorder_for_installer(app);
     let app = app.clone();
     std::thread::Builder::new()
         .name("installer-zorder-handoff".into())
@@ -240,15 +246,30 @@ fn schedule_installer_zorder_handoff(
             const APPEAR_TIMEOUT: Duration = Duration::from_secs(20);
             const MAX_WAIT: Duration = Duration::from_secs(60 * 30);
             const POLL: Duration = Duration::from_millis(400);
+            // Only while Let's go is up — keeps Installer above the shell
+            // without dominating focus when the shell is not showing.
+            const REACTIVATE_EVERY: Duration = Duration::from_secs(3);
 
             let started = Instant::now();
             let mut saw_installer = false;
+            let mut last_activate = Instant::now()
+                .checked_sub(REACTIVATE_EVERY)
+                .unwrap_or_else(Instant::now);
 
             loop {
                 let alive = installer_alive();
                 if alive {
                     saw_installer = true;
-                    activate();
+                    // Natural z-order when Let's go is down; only force-front
+                    // while the full-screen warning shell would otherwise bury
+                    // Installer behind Floating/always-on-top.
+                    if crate::app_watcher::blocking_warning_shell_active() {
+                        let force = crate::commands::take_installer_activate_request();
+                        if force || last_activate.elapsed() >= REACTIVATE_EVERY {
+                            activate();
+                            last_activate = Instant::now();
+                        }
+                    }
                 } else if saw_installer {
                     break;
                 } else if started.elapsed() >= APPEAR_TIMEOUT {
@@ -263,9 +284,7 @@ fn schedule_installer_zorder_handoff(
                 std::thread::sleep(POLL);
             }
 
-            if yielded {
-                crate::commands::restore_blocking_warning_zorder_after_installer(&app);
-            }
+            crate::commands::restore_blocking_warning_zorder_after_installer(&app);
         })
         .ok();
 }

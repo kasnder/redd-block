@@ -270,49 +270,95 @@ pub fn show_blocking_warning_shell_without_stealing_focus(_app: &AppHandle) {}
 /// window above normal windows and on every desktop Space — including
 /// when a blocked app is in macOS fullscreen, where the countdown would
 /// otherwise be invisible on another Space.
+///
+/// When an in-app installer has asked us to yield z-order, the Let's go
+/// shell still joins all Spaces and keeps its full-monitor frame, but it
+/// does **not** take Floating / always-on-top — otherwise Installer.app
+/// (normal window level) stays buried behind the shell.
 pub fn set_blocking_warning_attention(app: &AppHandle, active: bool) {
     let Some(w) = app.get_webview_window("main") else {
         return;
     };
-    let _ = w.set_always_on_top(active);
+    let yield_for_installer = active && installer_zorder_yield_active();
+    let always_on_top = active && !yield_for_installer;
+    let _ = w.set_always_on_top(always_on_top);
+    // Keep Space joining for the full-screen shell even while yielded —
+    // flipping `visible_on_all_workspaces` off is what warps the frame
+    // when focus moves to the follow-instructions dialog / Installer.
     let _ = w.set_visible_on_all_workspaces(active);
 
     #[cfg(target_os = "macos")]
-    apply_macos_blocking_warning_panel_mode(app, active);
+    apply_macos_blocking_warning_panel_mode(app, active, yield_for_installer);
+
+    if active {
+        set_aux_blocking_warning_always_on_top(app, always_on_top);
+        if yield_for_installer {
+            // Shell `orderFront` / resize can cover Installer; ask the
+            // handoff thread to re-front it on the next poll.
+            request_installer_activate();
+        }
+    }
 }
 
 /// How many in-app installer launches currently need the warning shell to
 /// yield z-order. Ref-counted so a second Reinstall click cannot restore
 /// always-on-top while an earlier installer is still open.
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+///
+/// Depth is tracked even when the Let's go shell is not yet visible: if
+/// the shell appears while the installer is still open, attention must
+/// stay yielded so Floating is not re-applied on top of Installer.
 static INSTALLER_ZORDER_YIELD_DEPTH: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(0);
 
-/// Drop always-on-top / floating level so an external installer can appear
-/// above Digital Habits: Blocker — without dismissing the Let's go UI or
-/// touching the warning refcount. Returns whether a yield was applied (so
-/// the caller can pair it with [`restore_blocking_warning_zorder_after_installer`]).
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub fn yield_blocking_warning_zorder_for_installer(app: &AppHandle) -> bool {
+/// Set when the Let's go shell (re)appears during an installer yield so the
+/// handoff thread can re-front Installer after our `orderFront`.
+static INSTALLER_ACTIVATE_REQUESTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+fn installer_zorder_yield_active() -> bool {
+    use std::sync::atomic::Ordering;
+    INSTALLER_ZORDER_YIELD_DEPTH.load(Ordering::SeqCst) > 0
+}
+
+/// True when the handoff thread should bring the installer forward now
+/// (clears the one-shot request).
+pub fn take_installer_activate_request() -> bool {
+    use std::sync::atomic::Ordering;
+    INSTALLER_ACTIVATE_REQUESTED.swap(false, Ordering::SeqCst)
+}
+
+fn request_installer_activate() {
+    use std::sync::atomic::Ordering;
+    INSTALLER_ACTIVATE_REQUESTED.store(true, Ordering::SeqCst);
+}
+
+/// Mark that an external installer needs to sit above the Let's go shell.
+/// Always pairs with [`restore_blocking_warning_zorder_after_installer`].
+///
+/// Does **not** dismiss the Let's go UI, change its geometry, or touch the
+/// warning refcount. If the shell is already up, drops only Floating /
+/// always-on-top while keeping Space-joining collection behavior so the
+/// full-screen frame does not warp.
+pub fn yield_blocking_warning_zorder_for_installer(app: &AppHandle) {
     use std::sync::atomic::Ordering;
 
-    if !crate::app_watcher::blocking_warning_shell_active() {
-        return false;
-    }
     let prev = INSTALLER_ZORDER_YIELD_DEPTH.fetch_add(1, Ordering::SeqCst);
-    if prev == 0 {
-        log::info!("blocking warning: yielding z-order for installer");
-        set_blocking_warning_attention(app, false);
-        set_aux_blocking_warning_always_on_top(app, false);
+    if prev != 0 {
+        return;
     }
-    true
+    log::info!("blocking warning: yielding z-order for installer");
+    if crate::app_watcher::blocking_warning_shell_active() {
+        // Re-apply attention with yield depth > 0 → Normal level, no AOT,
+        // same collection behavior / geometry. Ask the handoff thread to
+        // front Installer only while this shell is up.
+        request_installer_activate();
+        set_blocking_warning_attention(app, true);
+    }
 }
 
 /// Re-apply always-on-top after the installer has exited, but only if the
 /// Let's go warning is still active (user cancelled install instead of
-/// proceeding). No-op when we never yielded, or when another installer
-/// launch still holds the yield.
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
+/// proceeding). No-op when another installer launch still holds the yield.
 pub fn restore_blocking_warning_zorder_after_installer(app: &AppHandle) {
     use std::sync::atomic::Ordering;
 
@@ -329,10 +375,8 @@ pub fn restore_blocking_warning_zorder_after_installer(app: &AppHandle) {
     }
     log::info!("blocking warning: restoring z-order after installer");
     set_blocking_warning_attention(app, true);
-    set_aux_blocking_warning_always_on_top(app, true);
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
 fn set_aux_blocking_warning_always_on_top(app: &AppHandle, active: bool) {
     let labels = BLOCKING_WARNING_AUX_WINDOWS
         .lock()
@@ -354,10 +398,17 @@ fn set_aux_blocking_warning_always_on_top(app: &AppHandle, active: bool) {
 /// * `NSWindowStyleMaskNonactivatingPanel` — the panel can come to the
 ///   front without making Digital Habits: Blocker the active app, so the user can keep
 ///   typing into the save dialog of the blocked app.
-/// * `PanelLevel::Floating` — sits above normal windows.
+/// * `PanelLevel::Floating` — sits above normal windows (skipped while an
+///   installer yield is active so Installer.app can appear above the shell).
 /// * `FullScreenAuxiliary` collection behavior — the missing piece that
 ///   lets the panel join and float over a third-party fullscreen Space
 ///   (`canJoinAllSpaces` alone is not enough).
+///
+/// While `yield_for_installer` is set we keep NonactivatingPanel + the
+/// Space-joining collection behavior and only drop to `PanelLevel::Normal`.
+/// Clearing collection behavior (the old yield path) relocates the
+/// full-monitor frame when focus moves — that's the "Let's go warped off
+/// the edges" bug.
 ///
 /// On exit we restore the regular main-window style mask + level +
 /// default collection behavior so the app behaves normally again.
@@ -368,7 +419,11 @@ fn set_aux_blocking_warning_always_on_top(app: &AppHandle, active: bool) {
 /// `set_always_on_top` / `set_visible_on_all_workspaces` do this for you;
 /// the tauri-nspanel panel API does not.)
 #[cfg(target_os = "macos")]
-fn apply_macos_blocking_warning_panel_mode(app: &AppHandle, active: bool) {
+fn apply_macos_blocking_warning_panel_mode(
+    app: &AppHandle,
+    active: bool,
+    yield_for_installer: bool,
+) {
     use tauri_nspanel::{
         objc2_app_kit::NSWindowStyleMask, CollectionBehavior, ManagerExt, PanelLevel, StyleMask,
     };
@@ -400,7 +455,13 @@ fn apply_macos_blocking_warning_panel_mode(app: &AppHandle, active: bool) {
 
         if active {
             panel.set_style_mask(base_mask | NSWindowStyleMask::NonactivatingPanel);
-            panel.set_level(PanelLevel::Floating.value());
+            panel.set_level(if yield_for_installer {
+                PanelLevel::Normal.value()
+            } else {
+                PanelLevel::Floating.value()
+            });
+            // Keep this collection behavior for the whole shell lifetime —
+            // including installer yield — so the full-monitor geometry stays put.
             panel.set_collection_behavior(
                 CollectionBehavior::new()
                     .can_join_all_spaces()
@@ -543,11 +604,14 @@ fn create_aux_blocking_warning_windows(app: &AppHandle, main_x: i32, main_y: i32
         let warning_size = monitor_logical_size(monitor);
         let html = aux_blocking_warning_html();
         let url = WebviewUrl::External("about:blank".parse().unwrap());
+        // Match main-window yield: stay on all Spaces, but don't float above
+        // Installer while an in-app reinstall is in progress.
+        let always_on_top = !installer_zorder_yield_active();
         let builder = WebviewWindowBuilder::new(app, &label, url)
             .title("")
             .decorations(false)
             .resizable(false)
-            .always_on_top(true)
+            .always_on_top(always_on_top)
             .visible_on_all_workspaces(true)
             .inner_size(warning_size.width, warning_size.height)
             .position(pos.x as f64, pos.y as f64)
