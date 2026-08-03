@@ -224,8 +224,100 @@ fn emit_progress(app: &AppHandle, bytes_received: u64, total_bytes: Option<u64>)
     );
 }
 
+/// Keep the Let's go warning UI on screen, but briefly drop always-on-top
+/// so the system installer can appear above it. When the installer exits
+/// (user cancelled), restore always-on-top if the warning is still active.
+fn schedule_installer_zorder_handoff(
+    app: &AppHandle,
+    installer_alive: impl Fn() -> bool + Send + 'static,
+    activate: impl Fn() + Send + 'static,
+) {
+    let yielded = crate::commands::yield_blocking_warning_zorder_for_installer(app);
+    let app = app.clone();
+    std::thread::Builder::new()
+        .name("installer-zorder-handoff".into())
+        .spawn(move || {
+            const APPEAR_TIMEOUT: Duration = Duration::from_secs(20);
+            const MAX_WAIT: Duration = Duration::from_secs(60 * 30);
+            const POLL: Duration = Duration::from_millis(400);
+
+            let started = Instant::now();
+            let mut saw_installer = false;
+
+            loop {
+                let alive = installer_alive();
+                if alive {
+                    saw_installer = true;
+                    activate();
+                } else if saw_installer {
+                    break;
+                } else if started.elapsed() >= APPEAR_TIMEOUT {
+                    log::warn!("update: installer UI did not appear within {:?}", APPEAR_TIMEOUT);
+                    break;
+                }
+
+                if started.elapsed() >= MAX_WAIT {
+                    log::warn!("update: giving up waiting for installer exit after {:?}", MAX_WAIT);
+                    break;
+                }
+                std::thread::sleep(POLL);
+            }
+
+            if yielded {
+                crate::commands::restore_blocking_warning_zorder_after_installer(&app);
+            }
+        })
+        .ok();
+}
+
 #[cfg(target_os = "macos")]
-fn launch_installer(path: &Path) -> Result<(), String> {
+fn macos_installer_app_running() -> bool {
+    use cocoa::base::{id, nil};
+    use cocoa::foundation::NSString;
+    use objc::{class, msg_send, sel, sel_impl};
+
+    unsafe {
+        let bundle_id = NSString::alloc(nil).init_str("com.apple.installer");
+        let apps: id = msg_send![
+            class!(NSRunningApplication),
+            runningApplicationsWithBundleIdentifier: bundle_id
+        ];
+        if apps == nil {
+            return false;
+        }
+        let count: usize = msg_send![apps, count];
+        count > 0
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn activate_macos_installer_app() {
+    use cocoa::base::{id, nil};
+    use cocoa::foundation::NSString;
+    use objc::{class, msg_send, sel, sel_impl};
+
+    unsafe {
+        let bundle_id = NSString::alloc(nil).init_str("com.apple.installer");
+        let apps: id = msg_send![
+            class!(NSRunningApplication),
+            runningApplicationsWithBundleIdentifier: bundle_id
+        ];
+        if apps == nil {
+            return;
+        }
+        let count: usize = msg_send![apps, count];
+        if count == 0 {
+            return;
+        }
+        let app: id = msg_send![apps, objectAtIndex: 0usize];
+        // NSApplicationActivateAllWindows | NSApplicationActivateIgnoringOtherApps
+        let options: u64 = 1 | 2;
+        let _: cocoa::base::BOOL = msg_send![app, activateWithOptions: options];
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn launch_installer(app: &AppHandle, path: &Path) -> Result<(), String> {
     if let Some(path_str) = path.to_str() {
         let _ = std::process::Command::new("/usr/bin/xattr")
             .args(["-d", "com.apple.quarantine", path_str])
@@ -237,22 +329,113 @@ fn launch_installer(path: &Path) -> Result<(), String> {
         .status()
         .map_err(|e| format!("Could not open installer: {e}"))?;
 
-    if status.success() {
-        Ok(())
-    } else {
-        Err("Could not open installer".into())
+    if !status.success() {
+        return Err("Could not open installer".into());
+    }
+
+    schedule_installer_zorder_handoff(app, macos_installer_app_running, activate_macos_installer_app);
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn process_is_alive(pid: u32) -> bool {
+    use sysinfo::{Pid, ProcessesToUpdate, System};
+
+    let pid = Pid::from_u32(pid);
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::Some(&[pid]), true);
+    sys.process(pid).is_some()
+}
+
+/// Bring every visible top-level window for `pid` forward — including owned
+/// dialogs such as NSIS's "app is running" MessageBox (which
+/// [`crate::commands::activate_external_process_by_pid`] skips because they
+/// have an owner).
+#[cfg(target_os = "windows")]
+fn foreground_all_visible_windows_for_pid(target_pid: u32) {
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM};
+    use windows::Win32::System::Threading::AttachThreadInput;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsIconic, IsWindowVisible,
+        SetForegroundWindow, SetWindowPos, ShowWindow, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE,
+        SWP_NOSIZE, SWP_SHOWWINDOW, SW_RESTORE,
+    };
+
+    struct FindCtx {
+        target_pid: u32,
+        hwnds: Vec<HWND>,
+    }
+
+    unsafe extern "system" fn collect(hwnd: HWND, lparam: LPARAM) -> BOOL {
+        let ctx = &mut *(lparam.0 as *mut FindCtx);
+        if !IsWindowVisible(hwnd).as_bool() {
+            return BOOL(1);
+        }
+        let mut pid = 0u32;
+        GetWindowThreadProcessId(hwnd, Some(&mut pid));
+        if pid == ctx.target_pid {
+            ctx.hwnds.push(hwnd);
+        }
+        BOOL(1)
+    }
+
+    unsafe {
+        let mut ctx = FindCtx {
+            target_pid,
+            hwnds: Vec::new(),
+        };
+        let ptr = (&mut ctx) as *mut FindCtx as isize;
+        let _ = EnumWindows(Some(collect), LPARAM(ptr));
+
+        let fg = GetForegroundWindow();
+        let mut fg_tid = 0u32;
+        if fg != HWND::default() {
+            let mut _fg_pid = 0u32;
+            fg_tid = GetWindowThreadProcessId(fg, Some(&mut _fg_pid));
+        }
+
+        for hwnd in ctx.hwnds {
+            if IsIconic(hwnd).as_bool() {
+                let _ = ShowWindow(hwnd, SW_RESTORE);
+            }
+            let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE;
+            let _ = SetWindowPos(hwnd, Some(HWND_TOP), 0, 0, 0, 0, flags);
+
+            let mut _win_pid = 0u32;
+            let tgt_tid = GetWindowThreadProcessId(hwnd, Some(&mut _win_pid));
+            if fg_tid != 0 {
+                let _ = AttachThreadInput(fg_tid, tgt_tid, true);
+            }
+            let _ = SetForegroundWindow(hwnd);
+            if fg_tid != 0 {
+                let _ = AttachThreadInput(fg_tid, tgt_tid, false);
+            }
+        }
     }
 }
 
 #[cfg(target_os = "windows")]
-fn launch_installer(path: &Path) -> Result<(), String> {
+fn launch_installer(app: &AppHandle, path: &Path) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
 
     const DETACHED_PROCESS: u32 = 0x00000008;
-    std::process::Command::new(path)
+    let child = std::process::Command::new(path)
         .creation_flags(DETACHED_PROCESS)
         .spawn()
         .map_err(|e| format!("Could not open installer: {e}"))?;
+    let pid = child.id();
+    // Detached process — dropping Child must not wait/kill it.
+    drop(child);
+
+    schedule_installer_zorder_handoff(
+        app,
+        move || process_is_alive(pid),
+        move || {
+            crate::commands::activate_external_process_by_pid(pid);
+            foreground_all_visible_windows_for_pid(pid);
+        },
+    );
     Ok(())
 }
 
@@ -279,7 +462,7 @@ pub async fn download_and_run_update(app: AppHandle, version: String) -> Result<
         log::info!("update: installer checksum verified");
     }
 
-    launch_installer(&dest)?;
+    launch_installer(&app, &dest)?;
 
     log::info!("update: opened installer at {}", dest.display());
     Ok(())

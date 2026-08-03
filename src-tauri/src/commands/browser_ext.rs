@@ -281,6 +281,71 @@ pub fn set_blocking_warning_attention(app: &AppHandle, active: bool) {
     apply_macos_blocking_warning_panel_mode(app, active);
 }
 
+/// How many in-app installer launches currently need the warning shell to
+/// yield z-order. Ref-counted so a second Reinstall click cannot restore
+/// always-on-top while an earlier installer is still open.
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+static INSTALLER_ZORDER_YIELD_DEPTH: std::sync::atomic::AtomicU32 =
+    std::sync::atomic::AtomicU32::new(0);
+
+/// Drop always-on-top / floating level so an external installer can appear
+/// above Digital Habits: Blocker — without dismissing the Let's go UI or
+/// touching the warning refcount. Returns whether a yield was applied (so
+/// the caller can pair it with [`restore_blocking_warning_zorder_after_installer`]).
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub fn yield_blocking_warning_zorder_for_installer(app: &AppHandle) -> bool {
+    use std::sync::atomic::Ordering;
+
+    if !crate::app_watcher::blocking_warning_shell_active() {
+        return false;
+    }
+    let prev = INSTALLER_ZORDER_YIELD_DEPTH.fetch_add(1, Ordering::SeqCst);
+    if prev == 0 {
+        log::info!("blocking warning: yielding z-order for installer");
+        set_blocking_warning_attention(app, false);
+        set_aux_blocking_warning_always_on_top(app, false);
+    }
+    true
+}
+
+/// Re-apply always-on-top after the installer has exited, but only if the
+/// Let's go warning is still active (user cancelled install instead of
+/// proceeding). No-op when we never yielded, or when another installer
+/// launch still holds the yield.
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub fn restore_blocking_warning_zorder_after_installer(app: &AppHandle) {
+    use std::sync::atomic::Ordering;
+
+    let prev = INSTALLER_ZORDER_YIELD_DEPTH
+        .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+            Some(v.saturating_sub(1))
+        })
+        .unwrap_or(0);
+    if prev != 1 {
+        return;
+    }
+    if !crate::app_watcher::blocking_warning_shell_active() {
+        return;
+    }
+    log::info!("blocking warning: restoring z-order after installer");
+    set_blocking_warning_attention(app, true);
+    set_aux_blocking_warning_always_on_top(app, true);
+}
+
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+fn set_aux_blocking_warning_always_on_top(app: &AppHandle, active: bool) {
+    let labels = BLOCKING_WARNING_AUX_WINDOWS
+        .lock()
+        .ok()
+        .map(|g| g.clone())
+        .unwrap_or_default();
+    for label in labels {
+        if let Some(window) = app.get_webview_window(&label) {
+            let _ = window.set_always_on_top(active);
+        }
+    }
+}
+
 /// Switch the main window between "regular app window" and "redd-do-style
 /// pop-out NSPanel" modes. The window's underlying class is already an
 /// NSPanel subclass (see `MainPanel` in `lib.rs`); here we only flip the
