@@ -91,7 +91,7 @@ export const SETTINGS_TRANSLATIONS = {
         rebrandNoticeBody1Html:
             'We’ve renamed the app because our team — previously the <strong>Reduce Digital Distraction Project</strong> — is now known as <strong>Centre for Digital Habits</strong> (<a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org">digitalhabits.org</a>).',
         rebrandNoticeBody2Html:
-            'On your computer, the app is now called <strong>“Digital Habits Blocker”</strong>.',
+            'On your computer, the app is now called <strong>“Digital Habits: Blocker”</strong>.',
         rebrandNoticeContinueBtn: 'Continue',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Welcome to Digital Habits: Blocker',
@@ -940,7 +940,7 @@ export const SETTINGS_TRANSLATIONS = {
         rebrandNoticeBody1Html:
             'Vi har givet appen nyt navn, fordi vores team — tidligere <strong>Reduce Digital Distraction Project</strong> — nu hedder <strong>Centre for Digital Habits</strong> (<a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org">digitalhabits.org</a>).',
         rebrandNoticeBody2Html:
-            'På din computer hedder appen nu <strong>”Digital Habits Blocker”</strong>.',
+            'På din computer hedder appen nu <strong>”Digital Habits: Blocker”</strong>.',
         rebrandNoticeContinueBtn: 'Fortsæt',
         // Welcome onboarding (before EULA)
         welcomeOnboardingTitle: 'Velkommen til <em>Digital Habits: Blocker</em>',
@@ -1759,7 +1759,7 @@ export const SETTINGS_TRANSLATIONS = {
         rebrandNoticeBody1Html:
             '应用更名是因为我们的团队——原 <strong>Reduce Digital Distraction Project</strong>——现已更名为 <strong>Centre for Digital Habits</strong>（<a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link" data-external-url="https://digitalhabits.org">digitalhabits.org</a>）。',
         rebrandNoticeBody2Html:
-            '在你的电脑上，应用现在名为 <strong>“Digital Habits Blocker”</strong>。',
+            '在你的电脑上，应用现在名为 <strong>“Digital Habits: Blocker”</strong>。',
         rebrandNoticeContinueBtn: '继续',
         welcomeOnboardingTitle: '欢迎使用 <em>Digital Habits: Blocker</em>',
         welcomeOnboardingSubtitle: '为平静专注留出空间，阻止让你分心的应用和网站。',
