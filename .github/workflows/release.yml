@@ -670,6 +670,25 @@ jobs:
           echo "Release notes:"
           cat release-notes.md
 
+      # Pre-rename clients (<= v3.8.7) construct legacy asset filenames
+      # (redd-blocker-{v}.pkg, redd-blocker_{v}_{arch}-setup.exe) when
+      # downloading updates via the redirecting ulyngs/redd-block release
+      # URLs. Attach byte-identical copies under those names so their
+      # sha256 check against latest-versions.json still passes.
+      - name: Stage legacy-named installer aliases
+        if: >-
+          (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
+          (github.event_name == 'workflow_dispatch' && inputs.create_github_release)
+        run: |
+          set -euo pipefail
+          V="${{ steps.meta.outputs.version }}"
+          cp "for-distribution/Digital-Habits-Blocker-${V}.pkg" "for-distribution/redd-blocker-${V}.pkg"
+          for arch in x64 arm64; do
+            src="for-distribution/Digital-Habits-Blocker_${V}_${arch}-setup.exe"
+            [ -f "$src" ] && cp "$src" "for-distribution/redd-blocker_${V}_${arch}-setup.exe"
+          done
+          ls -la for-distribution/redd-blocker*
+
       - name: Create GitHub Release
         if: >-
           (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')) ||
@@ -684,6 +703,8 @@ jobs:
             for-distribution/Digital-Habits-Blocker_*-setup.exe
             for-distribution/Digital-Habits-Blocker_*.msix
             for-distribution/Digital-Habits-Blocker_*.ipa
+            for-distribution/redd-blocker-*.pkg
+            for-distribution/redd-blocker_*-setup.exe
           draft: false
           prerelease: false
           make_latest: true
