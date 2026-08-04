@@ -171,8 +171,8 @@ export async function presentRebrandNotice() {
     showExclusiveOnboardingScreen('rebrand-onboarding');
     document.getElementById('main-content')?.classList.add('hidden');
     document.getElementById('now-blocking-row')?.classList.add('hidden');
-    // Mirror the main title bar's window-control visibility (shown on
-    // Windows) since this overlay covers the app's own title bar.
+    // Mirror the main title bar's window-control visibility. On Windows the
+    // native OS caption buttons are used, so both custom sets stay hidden.
     const mainControlsHidden =
         document.getElementById('window-controls')?.classList.contains('hidden') ?? true;
     document.getElementById('rebrand-window-controls')?.classList.toggle('hidden', mainControlsHidden);

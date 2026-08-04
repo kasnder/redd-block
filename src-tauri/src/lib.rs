@@ -591,7 +591,10 @@ pub fn run() {
                 }
             }
 
-            // Create main window on Windows
+            // Create main window on Windows — keep native decorations so the
+            // system min/max/close buttons work. Custom HTML window controls
+            // are not used on Windows (they were incorrectly positioned and
+            // competed with the real caption buttons).
             #[cfg(target_os = "windows")]
             {
                 let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
@@ -599,7 +602,7 @@ pub fn run() {
                     .inner_size(840.0, 750.0)
                     .min_inner_size(400.0, 360.0)
                     .resizable(true)
-                    .decorations(false) // Hide native title bar, use custom controls
+                    .decorations(true)
                     .icon(tauri::include_image!("icons/128x128.png"))?
                     .center();
 

@@ -431,10 +431,22 @@ body.mac .title-bar{
     padding-left: 0;
 }
 
-/* Windows: chrome buttons sit on the right; flip the safe insets. */
+/* Windows: native caption buttons live in the OS title bar (outside the
+   webview), so the in-app title bar only needs normal side padding. */
 body.windows{
     --title-bar-center-safe-inset-start: 16px;
-    --title-bar-center-safe-inset-end: 100px;
+    --title-bar-center-safe-inset-end: 16px;
+}
+
+/* Windows: the in-app `.title-bar` only hosts BLOCKING NOW chips. When that
+   row is hidden (onboarding, idle with nothing upcoming), collapse the strip
+   so it doesn't leave an empty band under the native OS title bar. */
+body.windows:not(:has(#now-blocking-row:not(.hidden))) {
+    --title-bar-height: 0px;
+}
+
+body.windows .title-bar:not(:has(#now-blocking-row:not(.hidden))) {
+    display: none;
 }
 
 .app-title{
@@ -448,6 +460,12 @@ body.windows{
 .title-bar>.window-controls{
     display: flex;
     -webkit-app-region: no-drag;
+}
+
+/* Windows uses native OS caption buttons — never paint the custom set. */
+body.windows .title-bar > .window-controls,
+body.windows #window-controls {
+    display: none !important;
 }
 
 /* Window controls only — `.now-blocking-chip` also contains `button` for ⋯. */
@@ -7938,6 +7956,14 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled){
     position: relative;
     -webkit-app-region: drag;
     cursor: move;
+}
+
+/* Windows uses the native OS title bar for window controls + dragging, so
+   the rebrand overlay does not need its own chrome strip (or the custom
+   min/max/close buttons that used to appear on the left). */
+body.windows #rebrand-onboarding .eula-title-bar,
+body.windows #rebrand-window-controls {
+    display: none !important;
 }
 
 #rebrand-onboarding .eula-onboarding-scroll {
