@@ -8131,7 +8131,7 @@ body.dark-mode .rebrand-definition-divider {
 
 .welcome-onboarding-layout {
     width: 100%;
-    max-width: 560px;
+    max-width: 600px;
     display: flex;
     flex-direction: column;
     align-items: stretch;
@@ -8163,7 +8163,7 @@ body:not(.ios) .eula-onboarding-inner {
 }
 
 body:not(.ios) .eula-onboarding-inner{
-    max-width: 560px;
+    max-width: 600px;
 }
 
 body.ios .eula-onboarding-inner {
@@ -8352,7 +8352,7 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
 
 .welcome-onboarding-title-row{
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: flex-start;
     gap: 12px;
     margin: 0 0 8px;
@@ -8375,6 +8375,10 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     text-align: left;
 }
 
+body:not(.ios) .welcome-onboarding-header .welcome-onboarding-title-text{
+    margin-top: 5px;
+}
+
 .welcome-onboarding-title-text h1{
     margin-bottom: 0;
 }
@@ -8385,6 +8389,8 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
     height: auto;
     flex-shrink: 0;
     margin: 0;
+    /* Optically center the shield against the title line. */
+    margin-top: 2px;
 }
 
 /* The iOS EULA title (#eula-welcome-title-ios) is deliberately NOT in this
@@ -8425,14 +8431,21 @@ body:not(.ios) #eula-onboarding .onboarding-focus-card.welcome-onboarding-card{
 }
 
 .welcome-onboarding-subtitle {
-    margin: 6px 0 0;
+    margin: 4px 0 0;
     max-width: none;
-    font-size: 13px;
+    font-size: 12px;
     line-height: 1.45;
     color: var(--text-muted);
-    white-space: pre-line;
-    text-wrap: balance;
+    white-space: normal;
+    text-wrap: wrap;
     text-align: left;
+}
+
+/* Desktop welcome/EULA: keep the English subtitle on one line under the title. */
+body:not(.ios) .welcome-onboarding-title-text > .welcome-onboarding-subtitle {
+    margin-left: 2px;
+    white-space: nowrap;
+    text-wrap: nowrap;
 }
 
 .welcome-onboarding-card{
@@ -14942,7 +14955,7 @@ body.android #settings-latest-version-wrap {
     margin-top: 0;
 }
 
-/* Gap above Advanced options (Stop Difficulty form-group sits above). */
+/* Gap above Advanced options (emoji/color form-groups sit above). */
 #blocklist-modal .form-group:has(+ .blocklist-advanced-toggle){
     margin-bottom: 12px;
 }

@@ -571,7 +571,7 @@ export const SETTINGS_TRANSLATIONS = {
         overrideCountTimeEstimateDa: '~{minutes} {unit}',
         totalCharacters: 'total characters',
         totalWords: 'total words',
-        color: 'Color',
+        color: 'Colour',
         emoji: 'Emoji',
         advancedOptions: 'Advanced options',
         listBlockedOnCard: 'Show names of blocked websites & apps in the overview',
