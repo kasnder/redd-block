@@ -134,7 +134,7 @@ Implementation details and module map: [architecture.md](architecture.md) (v3 cu
 ```bash
 # Clone the repository
 git clone https://github.com/ulyngs/digital-habits-blocker.git
-cd redd-block
+cd digital-habits-blocker
 
 # Install dependencies
 npm install

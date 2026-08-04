@@ -50,7 +50,7 @@ entitlements, and the extension bundle IDs (com.reddblock.monitor,
 com.reddblock.shieldconfiguration) already exist from manual releases —
 nothing to change there.
 
-## GitHub Actions secrets
+## GitHub Actions secrets (`ulyngs/digital-habits-blocker`)
 
 | Secret | Source |
 | --- | --- |
