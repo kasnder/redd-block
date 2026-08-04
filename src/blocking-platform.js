@@ -1656,10 +1656,8 @@ export function detectPlatform() {
             document.getElementById('window-controls')?.classList.add('hidden');
         } else {
             document.body.classList.add('windows');
-            // Native Windows caption buttons are used — never show the custom
-            // HTML min/max/close set (it was rendering in the wrong corner and
-            // fighting the real system buttons).
-            document.getElementById('window-controls')?.classList.add('hidden');
+            // Show custom HTML controls on Windows (frameless window)
+            document.getElementById('window-controls')?.classList.remove('hidden');
         }
     }
     updateManageSectionVisibility();

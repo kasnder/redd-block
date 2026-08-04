@@ -431,22 +431,11 @@ body.mac .title-bar{
     padding-left: 0;
 }
 
-/* Windows: native caption buttons live in the OS title bar (outside the
-   webview), so the in-app title bar only needs normal side padding. */
+/* Windows: chrome buttons sit on the right; reserve space so BLOCKING NOW
+   stays clear of them (same idea as mac traffic-light insets). */
 body.windows{
     --title-bar-center-safe-inset-start: 16px;
-    --title-bar-center-safe-inset-end: 16px;
-}
-
-/* Windows: the in-app `.title-bar` only hosts BLOCKING NOW chips. When that
-   row is hidden (onboarding, idle with nothing upcoming), collapse the strip
-   so it doesn't leave an empty band under the native OS title bar. */
-body.windows:not(:has(#now-blocking-row:not(.hidden))) {
-    --title-bar-height: 0px;
-}
-
-body.windows .title-bar:not(:has(#now-blocking-row:not(.hidden))) {
-    display: none;
+    --title-bar-center-safe-inset-end: 100px;
 }
 
 .app-title{
@@ -456,20 +445,23 @@ body.windows .title-bar:not(:has(#now-blocking-row:not(.hidden))) {
     letter-spacing: 0.5px;
 }
 
-/* Window Controls */
-.title-bar>.window-controls{
+/* Window Controls — pin to top-right like Digital Habits: To-Do (do not leave
+   them in the title-bar grid flow or they wrap to the left). */
+.title-bar > .window-controls,
+#rebrand-onboarding .eula-title-bar > .window-controls{
+    position: absolute;
+    top: 0;
+    right: 0;
+    height: 100%;
     display: flex;
+    align-items: center;
     -webkit-app-region: no-drag;
 }
 
-/* Windows uses native OS caption buttons — never paint the custom set. */
-body.windows .title-bar > .window-controls,
-body.windows #window-controls {
-    display: none !important;
-}
-
 /* Window controls only — `.now-blocking-chip` also contains `button` for ⋯. */
-.title-bar > .window-controls button{
+.title-bar > .window-controls button,
+#rebrand-onboarding .eula-title-bar > .window-controls button,
+.win-btn{
     appearance: none;
     padding: 0;
     margin: 0;
@@ -477,25 +469,32 @@ body.windows #window-controls {
     display: inline-flex;
     justify-content: center;
     align-items: center;
-    width: 30px;
-    height: 30px;
+    width: 46px;
+    height: 100%;
+    min-height: 30px;
     background-color: transparent;
     color: var(--text-primary);
     cursor: pointer;
     transition: background 0.1s, color 0.1s;
 }
 
-.title-bar > .window-controls button:hover{
+.title-bar > .window-controls button:hover,
+#rebrand-onboarding .eula-title-bar > .window-controls button:hover,
+.win-btn:hover{
     background: rgba(0, 0, 0, 0.1);
 }
 
-.title-bar > .window-controls button.close-btn:hover{
+.title-bar > .window-controls button.close-btn:hover,
+#rebrand-onboarding .eula-title-bar > .window-controls button.close-btn:hover,
+.win-btn.close-btn:hover{
     background: #e81123;
     color: white;
 }
 
 /* Dark mode adjustments */
-body.dark-mode .title-bar > .window-controls button:hover{
+body.dark-mode .title-bar > .window-controls button:hover,
+body.dark-mode #rebrand-onboarding .eula-title-bar > .window-controls button:hover,
+body.dark-mode .win-btn:hover{
     background: rgba(255, 255, 255, 0.1);
 }
 
@@ -7949,6 +7948,35 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled){
     overflow: hidden;
 }
 
+/* Windows: narrow/compact layout turns modals into fullscreen sheets (z-index
+   200). Keep every onboarding screen above that, and suppress main/modal UI
+   so nothing can bleed through underneath. Leave the in-app title bar exposed
+   so custom min/max/close stay usable (same idea as mac traffic lights). */
+body.windows .onboarding-screen:not(.hidden) {
+    position: fixed;
+    top: var(--title-bar-height);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100000;
+}
+
+/* Rebrand has its own top chrome + window controls, so it covers the full
+   webview including the main title bar. */
+body.windows #rebrand-onboarding.onboarding-screen:not(.hidden) {
+    top: 0;
+}
+
+body.windows:has(.onboarding-screen:not(.hidden)) #main-content,
+body.windows:has(.onboarding-screen:not(.hidden)) .modal-overlay {
+    display: none !important;
+}
+
+/* Keep the real title-bar controls above non-rebrand onboarding. */
+body.windows:has(.onboarding-screen:not(.hidden):not(#rebrand-onboarding)) .title-bar {
+    z-index: 100001;
+}
+
 #rebrand-onboarding .eula-title-bar {
     flex-shrink: 0;
     min-height: 42px;
@@ -7956,14 +7984,6 @@ body.dark-mode .onboarding-screen .modal-btn.primary-btn:hover:not(:disabled){
     position: relative;
     -webkit-app-region: drag;
     cursor: move;
-}
-
-/* Windows uses the native OS title bar for window controls + dragging, so
-   the rebrand overlay does not need its own chrome strip (or the custom
-   min/max/close buttons that used to appear on the left). */
-body.windows #rebrand-onboarding .eula-title-bar,
-body.windows #rebrand-window-controls {
-    display: none !important;
 }
 
 #rebrand-onboarding .eula-onboarding-scroll {
