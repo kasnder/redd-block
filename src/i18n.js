@@ -1627,7 +1627,7 @@ export const SETTINGS_TRANSLATIONS = {
         undo: 'Fortryd',
         // Settings
         settingsTitle: 'Indstillinger',
-        settingsDone: 'Færdig',
+        settingsDone: 'Gem',
         settingsGeneralHeading: 'Generelt',
         settingsManageHeading: 'Administrér',
         settingsOverrideAllHint: 'Afslutter alle aktive blokeringer med det samme.',

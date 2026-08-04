@@ -14551,7 +14551,8 @@ body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #w
 #settings-modal .settings-row-control:has(#theme-select),
 #settings-modal .settings-row-control:has(.settings-zoom-control),
 #settings-modal .settings-row-control:has(.settings-override-all-btn),
-#settings-modal .settings-row-control.settings-uninstall-btn-wrap{
+#settings-modal .settings-row-control.settings-uninstall-btn-wrap,
+#settings-modal .settings-row-control.settings-blocklists-io-btns{
     width: var(--settings-control-width);
     flex-shrink: 0;
 }
@@ -14597,12 +14598,6 @@ body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #w
     min-width: 0;
 }
 
-#settings-modal .settings-row-control.settings-blocklists-io-btns{
-    width: auto;
-    max-width: 100%;
-    justify-self: end;
-}
-
 #settings-modal .settings-modal-divider{
     grid-column: 1 / -1;
     border-top: 1px solid var(--border-color-light);
@@ -14611,15 +14606,16 @@ body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #w
 
 .settings-blocklists-io-btns{
     display: flex;
+    flex-direction: column;
+    align-items: stretch;
     gap: 6px;
     min-width: 0;
-    justify-content: flex-end;
+    justify-self: end;
 }
 
 #settings-modal .settings-blocklists-io-btn{
-    flex: 0 1 auto;
+    width: 100%;
     min-width: 0;
-    width: auto;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -14648,24 +14644,6 @@ body.windows .settings-panel-rows > #settings-override-all-row:not(.hidden) ~ #w
     flex-shrink: 0;
     width: 13px;
     height: 13px;
-}
-
-@media (max-width: 640px) {
-    .settings-blocklists-io-btns{
-        width: 100%;
-        flex-direction: column;
-        align-items: stretch;
-        justify-content: flex-start;
-    }
-
-    #settings-modal .settings-row-control.settings-blocklists-io-btns{
-        width: 100%;
-        justify-self: stretch;
-    }
-
-    #settings-modal .settings-blocklists-io-btn{
-        width: 100%;
-    }
 }
 
 /* Shared “Cold Turkey” style: bordered pill + double chevron
