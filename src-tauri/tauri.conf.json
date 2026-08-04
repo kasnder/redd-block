@@ -47,7 +47,7 @@
     "longDescription": "Digital Habits: Blocker helps you stay focused by blocking distracting websites and apps. Create blocklists, schedule blocks, and use override challenges to stay committed.",
     "macOS": {
       "entitlements": "entitlements.macos.plist",
-      "signingIdentity": "Developer ID Application: Reduce Digital Distraction Ltd (JD647S9RT6)",
+      "signingIdentity": "Developer ID Application: Centre for Digital Habits CIC (JD647S9RT6)",
       "hardenedRuntime": true,
       "minimumSystemVersion": "11.0",
       "frameworks": [
