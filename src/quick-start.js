@@ -43,9 +43,9 @@ import { setBlocklistModalMode } from './list-mode.js';
 export { isQuickStartBlocklist };
 
 const QS_OVERRIDE_TYPE = 'random-words';
-const QS_DEFAULT_SLIDER = 3; // ~20 chars on the linear 5…500 scale
+const QS_DEFAULT_SLIDER = 3; // ~20 chars on the linear 5…1000 scale
 const QS_DEFAULT_DURATION_MINS = 60;
-const QS_MAX_OVERRIDE_CHARS = 500;
+const QS_MAX_OVERRIDE_CHARS = 1000;
 const QS_COLOR = '#B8D1DE';
 const QS_EMOJI = QUICK_START_EMOJI;
 

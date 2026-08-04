@@ -538,7 +538,7 @@ export const SETTINGS_TRANSLATIONS = {
         editBlocklist: 'Edit focus space',
         quickStartTitle: 'Quick start',
         quickStartDefaultName: 'Quick start',
-        quickStartEffortLabel: 'Effort to override',
+        quickStartEffortLabel: 'Difficulty to override',
         quickStartEffortEasy: 'Easy',
         quickStartEffortHard: 'Hard',
         quickStartEffortSummary: 'Type {count} characters · ~{minutes} min',
