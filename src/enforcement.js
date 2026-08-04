@@ -60,7 +60,7 @@ export function setSettingsEnforcementSectionExpanded(expanded) {
 
 export function resetSettingsEnforcementSection() {
     if (__ANDROID_BUILD__) return;
-    setSettingsEnforcementSectionExpanded(false);
+    setSettingsEnforcementSectionExpanded(true);
     setSettingsBlockingMethodExpanded(false);
 }
 

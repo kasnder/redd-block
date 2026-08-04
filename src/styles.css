@@ -3158,7 +3158,7 @@ body.ios:not(.ios-phone) .modal-overlay .uninstall-app-btn{
     body.ios:not(.ios-phone) .modal-overlay .settings-feedback-footer,
 body.ios:not(.ios-phone) .modal-overlay #settings-modal .settings-feedback-footer{
         gap: calc(10px * var(--ipad-s));
-        margin-top: calc(16px * var(--ipad-s));
+        margin: 0;
         padding: calc(12px * var(--ipad-s)) calc(14px * var(--ipad-s));
         border-radius: calc(10px * var(--ipad-s));
     }
@@ -14966,16 +14966,12 @@ body.dark-mode #settings-modal-title{
     display: flex;
     align-items: flex-start;
     gap: 10px;
-    margin-top: 16px;
+    margin: 0;
     padding: 12px 14px;
     background: #e9f0ed;
     border: 1px solid #ccd8d2;
     border-radius: 10px;
     color: #2d5a4c;
-}
-
-body:not(.ios) #settings-modal .settings-feedback-footer{
-    margin-bottom: 12px;
 }
 
 .settings-feedback-footer{
