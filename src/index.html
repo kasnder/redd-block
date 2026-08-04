@@ -1057,7 +1057,7 @@
                             <button id="add-blocklist-btn"
                                     class="blocklists-create-btn blocklists-create-btn--primary"
                                     type="button"
-                                    title="New space">
+                                    title="Block">
                                 <span class="blocklists-create-btn-icon" aria-hidden="true">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                                         stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -1065,20 +1065,21 @@
                                         <line x1="5" y1="12" x2="19" y2="12"></line>
                                     </svg>
                                 </span>
-                                <span id="add-blocklist-btn-label">New space</span>
+                                <span id="add-blocklist-btn-label">Block</span>
                             </button>
-                            <button id="quick-start-btn"
+                            <button id="allow-only-blocklist-btn"
                                     class="blocklists-create-btn blocklists-create-btn--secondary"
                                     type="button"
-                                    title="Quick start"
-                                    aria-label="Quick start">
+                                    title="Allow"
+                                    aria-label="Allow">
                                 <span class="blocklists-create-btn-icon" aria-hidden="true">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-                                        <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z"></path>
+                                        stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                        <line x1="12" y1="5" x2="12" y2="19"></line>
+                                        <line x1="5" y1="12" x2="19" y2="12"></line>
                                     </svg>
                                 </span>
-                                <span id="quick-start-btn-label">Quick start</span>
+                                <span id="allow-only-blocklist-btn-label">Allow</span>
                             </button>
                         </div>
                         <div id="blocklists-container" class="blocklists-container">
@@ -1151,7 +1152,19 @@
         <!-- Blocklist Modal -->
         <div id="blocklist-modal" class="modal-overlay hidden">
             <div class="modal-content">
-                <h3 id="modal-title">Create focus space</h3>
+                <div class="blocklist-modal-heading">
+                    <div class="blocklist-modal-title-row">
+                        <h3 id="modal-title">Block</h3>
+                        <div id="blocklist-create-kind-tabs" class="blocklist-create-kind-tabs hidden" role="group"
+                            aria-label="Create as new list or quick start">
+                            <button type="button" class="blocklist-create-kind-tab active" data-kind="new-list"
+                                id="blocklist-kind-new-list">New list</button>
+                            <button type="button" class="blocklist-create-kind-tab" data-kind="quick-start"
+                                id="blocklist-kind-quick-start">Quick start</button>
+                        </div>
+                    </div>
+                    <p id="blocklist-modal-mode-desc" class="blocklist-modal-mode-desc hidden"></p>
+                </div>
 
                 <div id="active-blocklist-warning" class="warning-banner hidden">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
@@ -1164,32 +1177,10 @@
                     <span id="active-blocklist-warning-text">This focus space is active. Some settings are locked.</span>
                 </div>
 
-                <div class="form-group">
+                <div class="form-group" id="blocklist-name-group">
                     <label for="blocklist-name" id="blocklist-name-label">Name</label>
                     <input type="text" id="blocklist-name" maxlength="60"
                         placeholder="e.g., Social Media" class="form-input">
-                </div>
-
-                <div class="form-group mode-sentence-group" id="blocklist-mode-group">
-                    <label id="blocklist-mode-label" class="mode-sentence-label">Mode</label>
-                    <div class="mode-sentence-card">
-                        <p class="mode-sentence">
-                            <span id="blocklist-mode-sentence-before">When this list is active,</span>
-                            <span class="mode-toggle mode-toggle--inline" id="blocklist-mode-toggle" role="group"
-                                aria-labelledby="blocklist-mode-label">
-                                <button type="button" class="mode-btn radio-option active" data-mode="blocklist"
-                                    id="blocklist-mode-blocklist">
-                                    <span class="mode-btn-label" id="blocklist-mode-blocklist-label">block</span>
-                                </button>
-                                <button type="button" class="mode-btn radio-option" data-mode="allowlist"
-                                    id="blocklist-mode-allowlist">
-                                    <span class="mode-btn-label" id="blocklist-mode-allowlist-label">only allow</span>
-                                </button>
-                            </span>
-                            <span id="blocklist-mode-sentence-after">its sites and apps.</span>
-                        </p>
-                        <p class="mode-sentence-hint" id="blocklist-mode-hint">The sites and apps on your list will be blocked — everything else works as usual.</p>
-                    </div>
                 </div>
 
                 <div class="form-group" id="blocklist-websites-group">
@@ -1260,6 +1251,7 @@
                             </div>
                         </div>
                     </div>
+                    <p id="blocklist-websites-allow-hint" class="allowlist-scope-hint hidden" aria-live="polite"></p>
                     <span id="website-input-error" class="input-error-msg hidden">Please enter a valid domain (e.g.
                         reddit.com)</span>
                 </div>
@@ -1294,6 +1286,48 @@
                                 </svg>
                                 <span class="browse-btn-caption" id="modal-browse-apps-caption"></span>
                             </button>
+                        </div>
+                    </div>
+                    <p id="blocklist-apps-allow-hint" class="allowlist-scope-hint hidden" aria-live="polite"></p>
+                </div>
+
+                <div id="blocklist-quick-start-options" class="blocklist-quick-start-options hidden">
+                    <div class="form-group">
+                        <label id="quick-start-duration-label">For how long?</label>
+                        <div class="quick-start-duration-btns" id="quick-start-duration-btns">
+                            <button type="button" class="quick-start-duration-btn" data-mins="15"
+                                id="quick-start-duration-15">15m</button>
+                            <button type="button" class="quick-start-duration-btn" data-mins="30"
+                                id="quick-start-duration-30">30m</button>
+                            <button type="button" class="quick-start-duration-btn active" data-mins="60"
+                                id="quick-start-duration-60">1 hour</button>
+                            <button type="button" class="quick-start-duration-btn" data-mins="120"
+                                id="quick-start-duration-120">2 hours</button>
+                            <button type="button" class="quick-start-duration-btn quick-start-duration-btn-always"
+                                data-mode="always" id="quick-start-duration-always">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+                                    <line x1="12" y1="2" x2="12" y2="12"></line>
+                                </svg>
+                                <span id="quick-start-duration-always-label">Until I stop</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <div class="quick-start-effort-header">
+                            <label id="quick-start-effort-label">Effort to override</label>
+                            <span class="quick-start-effort-summary" id="quick-start-effort-summary">Type 20 characters · ~1
+                                min</span>
+                        </div>
+                        <div class="quick-start-effort-slider-wrap">
+                            <input type="range" id="quick-start-effort-slider" class="quick-start-effort-slider" min="0"
+                                max="100" value="3" step="1" aria-labelledby="quick-start-effort-label">
+                            <div class="quick-start-effort-ends">
+                                <span id="quick-start-effort-easy">Easy</span>
+                                <span id="quick-start-effort-hard">Hard</span>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1569,45 +1603,6 @@
                                 </svg>
                                 <span class="browse-btn-caption" id="quick-start-browse-apps-caption"></span>
                             </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label id="quick-start-duration-label">For how long?</label>
-                    <div class="quick-start-duration-btns" id="quick-start-duration-btns">
-                        <button type="button" class="quick-start-duration-btn" data-mins="15"
-                            id="quick-start-duration-15">15m</button>
-                        <button type="button" class="quick-start-duration-btn" data-mins="30"
-                            id="quick-start-duration-30">30m</button>
-                        <button type="button" class="quick-start-duration-btn active" data-mins="60"
-                            id="quick-start-duration-60">1 hour</button>
-                        <button type="button" class="quick-start-duration-btn" data-mins="120"
-                            id="quick-start-duration-120">2 hours</button>
-                        <button type="button" class="quick-start-duration-btn quick-start-duration-btn-always"
-                            data-mode="always" id="quick-start-duration-always">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
-                                <line x1="12" y1="2" x2="12" y2="12"></line>
-                            </svg>
-                            <span id="quick-start-duration-always-label">Until I stop</span>
-                        </button>
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <div class="quick-start-effort-header">
-                        <label id="quick-start-effort-label">Effort to override</label>
-                        <span class="quick-start-effort-summary" id="quick-start-effort-summary">Type 20 characters · ~1
-                            min</span>
-                    </div>
-                    <div class="quick-start-effort-slider-wrap">
-                        <input type="range" id="quick-start-effort-slider" class="quick-start-effort-slider" min="0"
-                            max="100" value="3" step="1" aria-labelledby="quick-start-effort-label">
-                        <div class="quick-start-effort-ends">
-                            <span id="quick-start-effort-easy">Easy</span>
-                            <span id="quick-start-effort-hard">Hard</span>
                         </div>
                     </div>
                 </div>
@@ -2458,8 +2453,111 @@
                         </div>
                     </section>
 
+                    <section id="settings-manage-section" class="settings-section hidden" aria-labelledby="settings-manage-heading">
+                        <h4 id="settings-manage-heading" class="settings-section-heading">Manage</h4>
+                        <div class="settings-panel">
+                        <div class="settings-panel-rows">
+                            <div id="settings-override-all-row" class="settings-row settings-override-all-contents hidden">
+                                <div class="settings-row-copy">
+                                    <span id="settings-override-all-label" class="settings-row-label">Stop all blocks &amp; schedules</span>
+                                    <span id="settings-override-all-hint" class="settings-row-hint">Ends every active block right now.</span>
+                                </div>
+                                <div class="settings-row-control">
+                                    <button id="override-all-btn" class="settings-override-all-btn" type="button">
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
+                                            </path>
+                                            <path d="M12 9v4"></path>
+                                            <path d="M12 17h.01"></path>
+                                        </svg>
+                                        <span id="settings-override-all-btn-label">Stop all</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="uninstall-app-row" class="settings-row settings-uninstall-contents macos-only">
+                                <div class="settings-row-copy">
+                                    <span id="settings-uninstall-label" class="settings-row-label">Uninstall Digital Habits: Blocker</span>
+                                    <span id="settings-uninstall-hint" class="settings-row-hint">Your blocklists are kept on disk.</span>
+                                </div>
+                                <div class="settings-row-control settings-uninstall-btn-wrap">
+                                    <button id="uninstall-app-btn" class="uninstall-app-btn" type="button">
+                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                            <path d="M3 6h18"></path>
+                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
+                                            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                        </svg>
+                                        <span id="settings-uninstall-btn-label">Uninstall…</span>
+                                    </button>
+                                    <span id="uninstall-app-hint" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
+                                </div>
+                            </div>
+
+                            <div id="windows-uninstall-app-row" class="settings-row settings-uninstall-contents settings-uninstall-windows-row windows-only">
+                                <div class="settings-row-copy">
+                                    <span id="settings-windows-uninstall-label" class="settings-row-label">Uninstall Digital Habits: Blocker</span>
+                                    <span id="settings-windows-uninstall-hint" class="settings-row-hint"></span>
+                                </div>
+                                <div class="settings-row-control settings-uninstall-btn-wrap">
+                                    <button id="windows-uninstall-open-settings-btn" class="uninstall-app-btn" type="button">
+                                        <span id="settings-windows-uninstall-btn-label">Open settings</span>
+                                    </button>
+                                    <span id="windows-uninstall-app-hint" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
+                                </div>
+                            </div>
+                        </div>
+                        </div>
+                    </section>
+
+
+                    <section id="settings-help-section" class="settings-section settings-help-section desktop-only" aria-labelledby="settings-help-label">
+                        <h4 id="settings-help-label" class="settings-section-heading">Something not working?</h4>
+                        <div class="settings-help-actions">
+                            <button id="settings-setup-btn" class="settings-help-btn" type="button">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                                <span id="settings-setup-btn-label">Setup</span>
+                            </button>
+                            <button id="settings-onboarding-btn" class="settings-help-btn" type="button">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" />
+                                    <path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z" />
+                                    <path d="M16 17h4" />
+                                    <path d="M4 13h4" />
+                                </svg>
+                                <span id="settings-onboarding-btn-label">Onboarding</span>
+                            </button>
+                            <button id="diagnostics-btn" class="settings-help-btn" type="button">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path
+                                        d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2">
+                                    </path>
+                                </svg>
+                                <span id="settings-diagnostics-btn-label">Diagnostics</span>
+                            </button>
+                        </div>
+                    </section>
+
                     <section id="settings-enforcement-panel" class="settings-section desktop-only">
-                        <h4 id="settings-enforcement-heading" class="settings-section-heading">Enforcement</h4>
+                        <button id="settings-enforcement-section-toggle" type="button"
+                            class="settings-enforcement-toggle"
+                            aria-expanded="false"
+                            aria-controls="settings-enforcement-content">
+                            <h4 id="settings-enforcement-heading" class="settings-section-heading">Enforcement</h4>
+                            <svg class="settings-enforcement-chevron" width="14" height="14" viewBox="0 0 24 24"
+                                fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+                                stroke-linejoin="round" aria-hidden="true">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </button>
+                        <div id="settings-enforcement-content" class="settings-enforcement-content hidden">
                         <div class="settings-panel">
                         <div class="settings-panel-rows">
                             <div class="settings-row">
@@ -2575,99 +2673,9 @@
                             </div>
                         </div>
                         </div>
-                    </section>
-
-                    <section id="settings-manage-section" class="settings-section hidden" aria-labelledby="settings-manage-heading">
-                        <h4 id="settings-manage-heading" class="settings-section-heading">Manage</h4>
-                        <div class="settings-panel">
-                        <div class="settings-panel-rows">
-                            <div id="settings-override-all-row" class="settings-row settings-override-all-contents hidden">
-                                <div class="settings-row-copy">
-                                    <span id="settings-override-all-label" class="settings-row-label">Stop all blocks &amp; schedules</span>
-                                    <span id="settings-override-all-hint" class="settings-row-hint">Ends every active block right now.</span>
-                                </div>
-                                <div class="settings-row-control">
-                                    <button id="override-all-btn" class="settings-override-all-btn" type="button">
-                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                            <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3">
-                                            </path>
-                                            <path d="M12 9v4"></path>
-                                            <path d="M12 17h.01"></path>
-                                        </svg>
-                                        <span id="settings-override-all-btn-label">Stop all</span>
-                                    </button>
-                                </div>
-                            </div>
-
-                            <div id="uninstall-app-row" class="settings-row settings-uninstall-contents macos-only">
-                                <div class="settings-row-copy">
-                                    <span id="settings-uninstall-label" class="settings-row-label">Uninstall Digital Habits: Blocker</span>
-                                    <span id="settings-uninstall-hint" class="settings-row-hint">Your blocklists are kept on disk.</span>
-                                </div>
-                                <div class="settings-row-control settings-uninstall-btn-wrap">
-                                    <button id="uninstall-app-btn" class="uninstall-app-btn" type="button">
-                                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                            <path d="M3 6h18"></path>
-                                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path>
-                                            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                                        </svg>
-                                        <span id="settings-uninstall-btn-label">Uninstall…</span>
-                                    </button>
-                                    <span id="uninstall-app-hint" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
-                                </div>
-                            </div>
-
-                            <div id="windows-uninstall-app-row" class="settings-row settings-uninstall-contents settings-uninstall-windows-row windows-only">
-                                <div class="settings-row-copy">
-                                    <span id="settings-windows-uninstall-label" class="settings-row-label">Uninstall Digital Habits: Blocker</span>
-                                    <span id="settings-windows-uninstall-hint" class="settings-row-hint"></span>
-                                </div>
-                                <div class="settings-row-control settings-uninstall-btn-wrap">
-                                    <button id="windows-uninstall-open-settings-btn" class="uninstall-app-btn" type="button">
-                                        <span id="settings-windows-uninstall-btn-label">Open settings</span>
-                                    </button>
-                                    <span id="windows-uninstall-app-hint" class="enforcement-switch-tooltip hidden" role="tooltip"></span>
-                                </div>
-                            </div>
-                        </div>
                         </div>
                     </section>
 
-
-                    <section id="settings-help-section" class="settings-section settings-help-section desktop-only" aria-labelledby="settings-help-label">
-                        <h4 id="settings-help-label" class="settings-section-heading">Something not working?</h4>
-                        <div class="settings-help-actions">
-                            <button id="settings-setup-btn" class="settings-help-btn" type="button">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>
-                                    <circle cx="12" cy="12" r="3"></circle>
-                                </svg>
-                                <span id="settings-setup-btn-label">Setup</span>
-                            </button>
-                            <button id="settings-onboarding-btn" class="settings-help-btn" type="button">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path d="M4 16v-2.38C4 11.5 2.97 10.5 3 8c.03-2.72 1.49-6 4.5-6C9.37 2 10 3.8 10 5.5c0 3.11-2 5.66-2 8.68V16a2 2 0 1 1-4 0Z" />
-                                    <path d="M20 20v-2.38c0-2.12 1.03-3.12 1-5.62-.03-2.72-1.49-6-4.5-6C14.63 6 14 7.8 14 9.5c0 3.11 2 5.66 2 8.68V20a2 2 0 1 0 4 0Z" />
-                                    <path d="M16 17h4" />
-                                    <path d="M4 13h4" />
-                                </svg>
-                                <span id="settings-onboarding-btn-label">Onboarding</span>
-                            </button>
-                            <button id="diagnostics-btn" class="settings-help-btn" type="button">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                    stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                                    <path
-                                        d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2">
-                                    </path>
-                                </svg>
-                                <span id="settings-diagnostics-btn-label">Diagnostics</span>
-                            </button>
-                        </div>
-                    </section>
                 </div>
 
                 <!-- Version Info -->

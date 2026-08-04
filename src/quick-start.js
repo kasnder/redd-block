@@ -434,6 +434,53 @@ export async function settlePendingQuickStart() {
     await clearPendingQuickStart({ keepIfStarted: true });
 }
 
+/**
+ * Arm the Quick start confirm/cancel lifecycle for a draft already in
+ * `state.appData.blocklists`, then select it for startBlock().
+ */
+export function armPendingQuickStart(blocklistId) {
+    pendingQuickStart = {
+        blocklistId,
+        previous: {
+            id: state.selectedBlocklistId,
+            alwaysOn: state.isAlwaysOnMode,
+            duration: state.targetDurationMinutes,
+            endHour: state.selectedEndHour,
+            endMinute: state.selectedEndMinute,
+            userEditedEnd: state.userEditedEndTime,
+        },
+    };
+    state.selectedBlocklistId = blocklistId;
+}
+
+/** Override character/word count from the embedded Quick start effort slider. */
+export function getQuickStartOverrideCount() {
+    return sliderToOverrideCount(qsEffortSlider);
+}
+
+/** Apply the Quick start duration chips to the main scheduler start state. */
+export function applyQuickStartDurationToSchedulerState() {
+    state.isAlwaysOnMode = qsAlwaysOn;
+    state.userEditedEndTime = false;
+    if (!qsAlwaysOn) {
+        state.targetDurationMinutes = qsDurationMins;
+        const end = new Date(Date.now() + qsDurationMins * 60 * 1000);
+        state.selectedEndHour = end.getHours();
+        state.selectedEndMinute = end.getMinutes();
+    }
+}
+
+/** Reset duration chips + effort slider when opening / switching to Quick start. */
+export function resetEmbeddedQuickStartControls() {
+    qsDurationMins = QS_DEFAULT_DURATION_MINS;
+    qsAlwaysOn = false;
+    qsEffortSlider = QS_DEFAULT_SLIDER;
+    const slider = document.getElementById('quick-start-effort-slider');
+    if (slider) slider.value = String(qsEffortSlider);
+    updateDurationButtons();
+    updateEffortSummary();
+}
+
 async function startQuickStart() {
     confirmWebsiteInput();
     confirmAppInput();
@@ -624,7 +671,8 @@ export function setupQuickStart() {
     if (qsWired) return;
     qsWired = true;
 
-    document.getElementById('quick-start-btn')?.addEventListener('click', () => openQuickStartModal());
+    // Entry button removed from My Blocklists (replaced by Allow only create).
+    // Modal + wiring kept for any remaining internal open paths.
     document.getElementById('close-quick-start-btn')?.addEventListener('click', () => closeQuickStartModal());
 
     document.getElementById('quick-start-modal')?.addEventListener('click', (e) => {

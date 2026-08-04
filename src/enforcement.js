@@ -50,13 +50,32 @@ export function setSettingsBlockingMethodExpanded(expanded) {
     content.classList.toggle('hidden', !expanded);
 }
 
+export function setSettingsEnforcementSectionExpanded(expanded) {
+    const toggle = document.getElementById('settings-enforcement-section-toggle');
+    const content = document.getElementById('settings-enforcement-content');
+    if (!toggle || !content) return;
+    toggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+    content.classList.toggle('hidden', !expanded);
+}
+
 export function resetSettingsEnforcementSection() {
     if (__ANDROID_BUILD__) return;
+    setSettingsEnforcementSectionExpanded(false);
     setSettingsBlockingMethodExpanded(false);
 }
 
 export function setupSettingsEnforcementSection() {
     if (__ANDROID_BUILD__) return;
+
+    const sectionToggle = document.getElementById('settings-enforcement-section-toggle');
+    if (sectionToggle && sectionToggle.dataset.bound !== '1') {
+        sectionToggle.dataset.bound = '1';
+        sectionToggle.addEventListener('click', () => {
+            const isOpen = sectionToggle.getAttribute('aria-expanded') === 'true';
+            setSettingsEnforcementSectionExpanded(!isOpen);
+        });
+    }
+
     const toggle = document.getElementById('settings-blocking-method-toggle');
     if (!toggle || toggle.dataset.bound === '1') return;
     toggle.dataset.bound = '1';

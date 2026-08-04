@@ -37,6 +37,7 @@ import {
     normalizeBlocklist,
     collectActiveIOSManualBlockPayload,
     isQuickStartBlocklist,
+    QUICK_START_EMOJI,
 } from './blocklist-utils.js';
 import { openInstalledAppsPicker } from './apps-picker.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, handleDurationInputChange, handleDurationQuickBtn, handlePopoverOutsideClick, handleTimePartClick, initializeTimeInputs, pad, parseEndTimeBoundedInt, scrollElementWithinContainer, scrollPopoverOptionIntoView, setupEndTimeDirectInputs, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
@@ -95,12 +96,23 @@ import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, clos
 import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, undoDelete, deleteBlocklist, clearPendingScheduleDraft, pendingDelete, saveBlocklistOrderFromDOM, getBlocklistScheduleDraft, saveBlocklistScheduleDraft, isBlocklistCurrentlyActive } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
-    setBlocklistModalMode,
+    getBlocklistCreateKind,
+    setBlocklistCreateKind,
+    syncBlocklistCreateKindUi,
     syncModalAppPlaceholder,
     syncModalWebsitePlaceholder,
+    updateAllowlistScopeHints,
     updateBlocklistModalModeLabels,
 } from './list-mode.js';
-import { setupQuickStart, applyQuickStartLanguage } from './quick-start.js';
+import { countIOSScreenTimeSelectionItems } from './list-presentation.js';
+import {
+    setupQuickStart,
+    applyQuickStartLanguage,
+    armPendingQuickStart,
+    getQuickStartOverrideCount,
+    applyQuickStartDurationToSchedulerState,
+    resetEmbeddedQuickStartControls,
+} from './quick-start.js';
 import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelectedControlState, renderNowBlockingRow, renderScheduleAlwaysOnRow, renderScheduleVisibilityChips, renderWeekBlocks, renderBlocklistSelector, getCalendarSegmentLayout, layoutOverlappingBlocks } from './render.js';
 import { formatTitleBarScheduleStartWhen, hasAnyEnforcedBlocks, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, pickEarliestUpcomingScheduledBlock, refreshDesktopHelperStatus, resolveOneShotOccurrences, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
@@ -706,17 +718,28 @@ function setupEventListeners() {
     // Start block button
     document.getElementById('start-block-btn').addEventListener('click', startBlock);
 
-    // Add blocklist button
+    // Add blocklist / allow-only buttons (mode chosen by entry point, not in-dialog)
     document.getElementById('add-blocklist-btn').addEventListener('click', () => openBlocklistModal());
+    document.getElementById('allow-only-blocklist-btn')?.addEventListener('click', () => {
+        openBlocklistModal(null, { mode: 'allowlist' });
+    });
 
-    setupQuickStart();
-
-    document.querySelectorAll('#blocklist-mode-toggle .mode-btn').forEach((btn) => {
+    document.querySelectorAll('#blocklist-create-kind-tabs .blocklist-create-kind-tab').forEach((btn) => {
         btn.addEventListener('click', () => {
-            if (btn.disabled || btn.classList.contains('disabled')) return;
-            setBlocklistModalMode(btn.dataset.mode);
+            const kind = btn.dataset.kind;
+            setBlocklistCreateKind(kind);
+            if (kind === 'quick-start' && !state.editingBlocklistId) {
+                resetEmbeddedQuickStartControls();
+            }
+            syncBlocklistCreateKindUi({ isCreate: !state.editingBlocklistId });
+            if (kind !== 'quick-start') {
+                const type = document.getElementById('override-type')?.value || 'random-words';
+                applyOverrideTypeUi(type);
+            }
         });
     });
+
+    setupQuickStart();
 
     // Onboarding
     // Onboarding removed — default blocklist created in loadData()
@@ -1625,11 +1648,14 @@ function setupModalListeners() {
         closeBlocklistModal();
     });
 
-    // Save button
+    // Save / Quick-start primary button
     document.getElementById('save-blocklist-btn').addEventListener('click', () => {
+        const isQuickCreate = !state.editingBlocklistId && getBlocklistCreateKind() === 'quick-start';
         const nameInput = document.getElementById('blocklist-name');
-        const name = truncateBlocklistName(nameInput.value.trim());
-        const nameEmpty = !name;
+        const name = isQuickCreate
+            ? tSettings('quickStartDefaultName')
+            : truncateBlocklistName(nameInput.value.trim());
+        const nameEmpty = !isQuickCreate && !name;
         if (nameEmpty) {
             nameInput.classList.add('input-error');
         } else {
@@ -1645,11 +1671,13 @@ function setupModalListeners() {
             if (result?.websiteInvalid) websiteInvalid = true;
         }
 
-        const overrideType = document.getElementById('override-type').value;
+        const overrideType = isQuickCreate
+            ? 'random-words'
+            : document.getElementById('override-type').value;
         const customTextArea = document.getElementById('custom-override-text');
-        const customText = normalizeCustomOverrideText(customTextArea.value);
-        customTextArea.value = customText;
-        const customEmpty = overrideType === 'custom' && !customText;
+        const customText = isQuickCreate ? '' : normalizeCustomOverrideText(customTextArea.value);
+        if (!isQuickCreate) customTextArea.value = customText;
+        const customEmpty = !isQuickCreate && overrideType === 'custom' && !customText;
         const customErrorEl = document.getElementById('custom-override-text-error');
         if (customEmpty) {
             customTextArea.classList.add('input-error');
@@ -1664,7 +1692,7 @@ function setupModalListeners() {
 
         if (nameEmpty || websiteInvalid || customEmpty) return;
 
-        nameInput.value = name;
+        if (!isQuickCreate) nameInput.value = name;
 
         const pendingApp = modalAppInput.value.trim();
         if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
@@ -1680,17 +1708,33 @@ function setupModalListeners() {
             modalAppInput.value = '';
         }
 
+        if (isQuickCreate
+            && modalWebsites.length === 0
+            && modalApps.length === 0
+            && !modalIOSScreenTimeSelection) {
+            alert(tSettings('quickStartNeedItems'));
+            return;
+        }
+
         const mode = getSelectedBlocklistModalMode();
         const overrideCountInput = document.getElementById('override-count');
-        const maxDifficultyChecked = document.getElementById('override-max-difficulty-checkbox').checked;
-        const overrideCount = maxDifficultyChecked
-            ? getMaxOverrideCharsForType(overrideType)
-            : normalizeOverrideCount(overrideCountInput.value, overrideType);
-        overrideCountInput.value = overrideCount;
+        const maxDifficultyChecked = isQuickCreate
+            ? false
+            : document.getElementById('override-max-difficulty-checkbox').checked;
+        const overrideCount = isQuickCreate
+            ? getQuickStartOverrideCount()
+            : (maxDifficultyChecked
+                ? getMaxOverrideCharsForType(overrideType)
+                : normalizeOverrideCount(overrideCountInput.value, overrideType));
+        if (!isQuickCreate) overrideCountInput.value = overrideCount;
         const selectedSwatch = document.querySelector('.color-swatch.selected');
-        const color = selectedSwatch ? selectedSwatch.dataset.color : null;
+        const color = isQuickCreate
+            ? '#B8D1DE'
+            : (selectedSwatch ? selectedSwatch.dataset.color : null);
         const selectedEmoji = document.querySelector('.emoji-swatch.selected');
-        const emoji = selectedEmoji ? selectedEmoji.dataset.emoji : '📱';
+        const emoji = isQuickCreate
+            ? QUICK_START_EMOJI
+            : (selectedEmoji ? selectedEmoji.dataset.emoji : '📱');
 
         const showItemDetails = document.getElementById('show-item-details-checkbox').checked;
         // Preserve the blocklist's existing schedule visibility (toggled via the chips above the
@@ -1698,7 +1742,9 @@ function setupModalListeners() {
         const existingBlocklistForSave = state.editingBlocklistId
             ? state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId)
             : null;
-        const alwaysShowInSchedule = existingBlocklistForSave?.alwaysShowInSchedule !== false;
+        const alwaysShowInSchedule = isQuickCreate
+            ? false
+            : (existingBlocklistForSave?.alwaysShowInSchedule !== false);
 
         const overrideDifficultyPayload = {
             type: overrideType,
@@ -1729,7 +1775,9 @@ function setupModalListeners() {
             overrideDifficulty: overrideDifficultyPayload,
         };
         // Preserve Quick start / promoted-ordinary flag across edit saves.
-        if (existingBlocklistForSave?.isQuickStart === false) {
+        if (isQuickCreate) {
+            blocklist.isQuickStart = true;
+        } else if (existingBlocklistForSave?.isQuickStart === false) {
             blocklist.isQuickStart = false;
         } else if (isQuickStartBlocklist(existingBlocklistForSave)) {
             blocklist.isQuickStart = true;
@@ -1778,6 +1826,13 @@ function setupModalListeners() {
         renderWeekBlocks(); // Refresh calendar so colour / emoji / name changes propagate
         renderNowBlockingRow(); // Title-bar chips read emoji/name from freshly saved blocklist
         renderScheduleAlwaysOnRow();
+
+        if (isQuickCreate) {
+            applyQuickStartDurationToSchedulerState();
+            armPendingQuickStart(blocklist.id);
+            startBlock();
+            return;
+        }
 
         if (wasNewBlocklist) {
             // New focus space: land on enter (sheet on iOS iPhone, inline elsewhere).
@@ -1881,7 +1936,19 @@ function setupModalListeners() {
 
         syncModalWebsitePlaceholder();
         syncModalAppPlaceholder();
+        const appCount = modalApps.length + countIOSScreenTimeSelectionItems(
+            modalIOSScreenTimeSelection,
+            true,
+        );
+        updateAllowlistScopeHints(modalWebsites.length, appCount);
     };
+    window.getModalAllowlistScopeCounts = () => ({
+        websites: modalWebsites.length,
+        apps: modalApps.length + countIOSScreenTimeSelectionItems(
+            modalIOSScreenTimeSelection,
+            true,
+        ),
+    });
     window.restoreBlocklistModalTagBridges = () => {
         window.modalApps = modalApps;
         window.renderModalTags = renderModalTags;
@@ -3197,6 +3264,17 @@ export function applySettingsLanguage() {
     setText('add-blocklist-btn-label', tSettings('addFocusSpaceBtn'));
     const addBlocklistBtn = document.getElementById('add-blocklist-btn');
     if (addBlocklistBtn) addBlocklistBtn.title = tSettings('addFocusSpaceBtn');
+    setText('allow-only-blocklist-btn-label', tSettings('allowOnlyBtn'));
+    const allowOnlyBtn = document.getElementById('allow-only-blocklist-btn');
+    if (allowOnlyBtn) {
+        allowOnlyBtn.title = tSettings('allowOnlyBtn');
+        allowOnlyBtn.setAttribute('aria-label', tSettings('allowOnlyBtn'));
+    }
+    setText('blocklist-kind-new-list', tSettings('createKindNewList'));
+    setText('blocklist-kind-quick-start', tSettings('createKindQuickStart'));
+    const createKindTabs = document.getElementById('blocklist-create-kind-tabs');
+    if (createKindTabs) createKindTabs.setAttribute('aria-label', tSettings('createKindTabsAria'));
+    syncBlocklistCreateKindUi({ isCreate: !state.editingBlocklistId });
     const createActions = document.querySelector('.blocklists-create-actions');
     if (createActions) createActions.setAttribute('aria-label', tSettings('blocklistsCreateActionsAria'));
     applyQuickStartLanguage();
@@ -3284,23 +3362,18 @@ export function applySettingsLanguage() {
     // Blocklist modal
     const modalTitle = document.getElementById('modal-title');
     if (modalTitle) {
-        modalTitle.textContent = state.editingBlocklistId ? tSettings('editBlocklist') : tSettings('createBlocklist');
+        if (state.editingBlocklistId) {
+            modalTitle.textContent = tSettings('editBlocklist');
+        } else {
+            modalTitle.textContent = tSettings(
+                getSelectedBlocklistModalMode() === 'allowlist'
+                    ? 'createAllowlist'
+                    : 'createBlocklist',
+            );
+        }
     }
     setText('active-blocklist-warning-text', tSettings('activeBlocklistWarning'));
     setText('blocklist-name-label', tSettings('name'));
-    setText('blocklist-mode-label', tSettings('blocklistModeLabel'));
-    setText('blocklist-mode-sentence-before', tSettings('blocklistModeSentenceBefore'));
-    setText('blocklist-mode-sentence-after', tSettings('blocklistModeSentenceAfter'));
-    setText('blocklist-mode-blocklist-label', tSettings('blocklistModeBlocklist'));
-    setText('blocklist-mode-allowlist-label', tSettings('blocklistModeAllowlist'));
-    setText(
-        'blocklist-mode-hint',
-        tSettings(
-            getSelectedBlocklistModalMode() === 'allowlist'
-                ? 'allowlistModeHint'
-                : 'blocklistModeHint',
-        ),
-    );
     updateBlocklistModalModeLabels(getSelectedBlocklistModalMode());
     setText('override-difficulty-label', tSettings('overrideDifficulty'));
     setText('override-method-label', tSettings('overrideMethod'));
@@ -3315,7 +3388,6 @@ export function applySettingsLanguage() {
     setText('blocklist-emoji-label', tSettings('emoji'));
     setText('blocklist-color-label', tSettings('color'));
     setText('blocklist-advanced-options-label', tSettings('advancedOptions'));
-    setText('show-item-details-label', tSettings('listBlockedOnCard'));
     setText('websites-import-menu-text-file-label', tSettings('importWebsitesFromFile'));
     setText('websites-import-menu-section-label', tSettings('importWebsitesPreMadeList'));
     setText('websites-import-menu-email', tSettings('importPresetEmail'));

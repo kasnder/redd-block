@@ -3782,9 +3782,9 @@ body.handset-device .week-calendar-section{
     z-index: 25;
     background: var(--container-bg);
     padding-top: 10px;
-    padding-bottom: 6px;
+    padding-bottom: 2px;
     margin-top: 0;
-    margin-bottom: 8px;
+    margin-bottom: 4px;
     width: 100%;
     box-sizing: border-box;
     min-height: 0;
@@ -5038,6 +5038,13 @@ body.dark-mode .day-row.weekend{
 .quick-select-row .time-label,
 #schedule-segments-heading{
     font-size: 14px;
+}
+
+/* Long duration / schedule prompts read better in sentence case than all-caps. */
+#quick-select-label,
+#schedule-segments-heading{
+    text-transform: none;
+    letter-spacing: normal;
 }
 
 .quick-select-row .duration-quick-btns{
@@ -10617,6 +10624,10 @@ body.dark-mode #migration-onboarding .migration-copy-chip.copied{
     font-style: italic;
 }
 
+#eula-onboarding .legal-onboarding-note{
+    font-style: normal;
+}
+
 .legal-onboarding-link{
     color: inherit;
     font-weight: inherit;
@@ -11453,6 +11464,7 @@ body.ios #blocklist-modal .tags-input-container .browse-btn-caption {
     padding: 0 4px 2px;
     font-size: 13px;
     line-height: 1.45;
+    font-style: italic;
     color: var(--text-muted);
 }
 
@@ -11721,6 +11733,14 @@ body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .mob
 body.enter-scheduler-modal-open:not(.handset-device) #enter-scheduler-modal .modal-buttons,
 body.desktop-compact-layout .mobile-fullscreen-modal .mobile-modal-title-source{
     display: none;
+}
+
+/* Keep New list / Quick start tabs visible under the sticky mobile header when
+   the dialog title itself is moved into .mobile-modal-header. */
+body.desktop-compact-layout #blocklist-modal.mobile-fullscreen-modal .blocklist-modal-title-row,
+body.handset-device #blocklist-modal.mobile-fullscreen-modal .blocklist-modal-title-row{
+    justify-content: flex-end;
+    margin-top: 0;
 }
 
 body.desktop-compact-layout #enter-scheduler-modal.mobile-fullscreen-modal .modal-buttons{
@@ -12542,7 +12562,131 @@ body.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-content{
 }
 
 #blocklist-modal #modal-title{
-    margin-top: 0;
+    margin: 0;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.blocklist-modal-heading{
+    margin: 0 0 12px;
+}
+
+.blocklist-modal-title-row{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+}
+
+.blocklist-modal-mode-desc{
+    margin: 6px 0 0;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-muted);
+}
+
+.blocklist-modal-mode-desc strong{
+    color: var(--text-primary);
+    font-weight: 650;
+}
+
+.allowlist-scope-hint{
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    margin: 8px 0 0;
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
+.allowlist-scope-hint.hidden{
+    display: none;
+}
+
+.allowlist-scope-hint-icon{
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    margin-top: 1px;
+}
+
+.allowlist-scope-hint-text{
+    min-width: 0;
+}
+
+.allowlist-scope-hint--active{
+    color: var(--text-muted);
+}
+
+.allowlist-scope-hint--active .allowlist-scope-hint-icon{
+    color: var(--text-muted);
+    opacity: 0.9;
+}
+
+.allowlist-scope-hint--active strong{
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.allowlist-scope-hint--empty{
+    color: #3f6f4f;
+}
+
+.allowlist-scope-hint--empty .allowlist-scope-hint-icon{
+    color: #16a34a;
+}
+
+.allowlist-scope-hint--empty strong{
+    color: #15803d;
+    font-weight: 700;
+}
+
+body.dark-mode .allowlist-scope-hint--empty{
+    color: #86efac;
+}
+
+body.dark-mode .allowlist-scope-hint--empty .allowlist-scope-hint-icon,
+body.dark-mode .allowlist-scope-hint--empty strong{
+    color: #4ade80;
+}
+
+.blocklist-create-kind-tabs{
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 8px;
+    background: var(--redd-warm-grey);
+}
+
+.blocklist-create-kind-tab{
+    flex: 0 0 auto;
+    padding: 6px 12px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.blocklist-create-kind-tab.active{
+    background: var(--primary-btn-bg);
+    color: var(--primary-btn-text);
+}
+
+.blocklist-create-kind-tabs.hidden{
+    display: none;
+}
+
+.blocklist-quick-start-options.hidden{
+    display: none;
 }
 
 #blocklist-modal .form-group > label{

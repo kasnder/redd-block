@@ -339,9 +339,10 @@ export function normalizeCustomOverrideText(value) {
 }
 
 export function getTypingCharsPerMinuteForType(type) {
+    // Estimates only. Desktop max counts are sized for ~TARGET_MAX_OVERRIDE_MINUTES
+    // at these rates (random-words/custom: 7500 = 250×30; gibberish: ~5000 at 150).
     if (type === 'gibberish') return 150;
-    if (type === 'custom') return 250; // Same assumption as random-words
-    return 200; // random-words: used only for estimated time
+    return 250; // random-words and custom
 }
 
 export function getMaxOverrideCharsForType(type) {

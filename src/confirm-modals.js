@@ -28,8 +28,18 @@ import {
     shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval,
 } from './app.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
-import { setBlocklistModalMode, setConfirmModalBlockingLabel, isBlocklistAllowlistMode } from './list-mode.js';
-import { discardPendingQuickStart, settlePendingQuickStart } from './quick-start.js';
+import {
+    setBlocklistModalMode,
+    setBlocklistCreateKind,
+    syncBlocklistCreateKindUi,
+    setConfirmModalBlockingLabel,
+    isBlocklistAllowlistMode,
+} from './list-mode.js';
+import {
+    discardPendingQuickStart,
+    settlePendingQuickStart,
+    resetEmbeddedQuickStartControls,
+} from './quick-start.js';
 
 export const START_CONFIRM_ICON_GLOBE = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>`;
 export const START_CONFIRM_ICON_APP = `<svg class="start-confirm-blocking-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2"></rect><path d="M10 4v4"></path><path d="M2 8h20"></path><path d="M6 4v4"></path></svg>`;
@@ -2445,7 +2455,7 @@ export function applyModalBlocklistTint(hexColor) {
 }
 
 // Open blocklist modal
-export function openBlocklistModal(blocklist = null) {
+export function openBlocklistModal(blocklist = null, options = {}) {
     // Keep narrow-desktop sheet chrome in sync before showing create/edit.
     syncEnterSchedulerSheetLayout();
     // Quick Start temporarily reuses the apps/tag bridge; restore the blocklist
@@ -2465,8 +2475,16 @@ export function openBlocklistModal(blocklist = null) {
         }
     }
 
-    document.getElementById('modal-title').textContent = blocklist ? tSettings('editBlocklist') : tSettings('createBlocklist');
-    setBlocklistModalMode(blocklist?.mode || 'blocklist');
+    const mode = blocklist?.mode === 'allowlist' || options.mode === 'allowlist'
+        ? 'allowlist'
+        : 'blocklist';
+    document.getElementById('modal-title').textContent = blocklist
+        ? tSettings('editBlocklist')
+        : tSettings(mode === 'allowlist' ? 'createAllowlist' : 'createBlocklist');
+    setBlocklistModalMode(mode);
+    setBlocklistCreateKind('new-list');
+    resetEmbeddedQuickStartControls();
+    syncBlocklistCreateKindUi({ isCreate: !blocklist });
 
     const modalName = truncateBlocklistName(blocklist?.name || '');
     document.getElementById('blocklist-name').value = modalName;
