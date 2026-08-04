@@ -18,26 +18,48 @@ impl Default for WebAutomationState {
 }
 
 /// Resolve the bundled block page to a `file://` base URL (no query
-/// string). The page is staged at `<resources>/blocked/blocked.html` by
-/// the bundler (see `bundle.resources` in tauri.conf.json). We log loudly
-/// if it's missing so a bad bundle path shows up immediately in dev
-/// rather than as silent redirects to a 404.
+/// string). Packaged builds stage it at `<resources>/blocked/blocked.html`
+/// (`bundle.resources` in tauri.conf.json). In `tauri dev` / `npm run dev`,
+/// `resource_dir()` often fails with "unknown path", so we fall back to the
+/// `src-tauri/blocked/` sources next to this crate.
 fn resolve_block_page_url(app: &AppHandle) -> Option<String> {
-    let dir = match app.path().resource_dir() {
-        Ok(d) => d,
-        Err(e) => {
+    let bundled = app
+        .path()
+        .resource_dir()
+        .map_err(|e| {
             log::warn!("web_automation: cannot resolve resource dir: {e}");
-            return None;
+            e
+        })
+        .ok()
+        .map(|d| d.join("blocked").join("blocked.html"));
+
+    if let Some(ref page) = bundled {
+        if page.is_file() {
+            return Some(web_automation::path_to_file_url(page));
         }
-    };
-    let page = dir.join("blocked").join("blocked.html");
-    if !page.exists() {
+    }
+
+    let dev_page = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("blocked")
+        .join("blocked.html");
+    if dev_page.is_file() {
+        log::info!(
+            "web_automation: using dev block page at {}",
+            dev_page.display()
+        );
+        return Some(web_automation::path_to_file_url(&dev_page));
+    }
+
+    if let Some(page) = bundled {
         log::warn!(
             "web_automation: bundled block page not found at {} — redirects will 404",
             page.display()
         );
+        return Some(web_automation::path_to_file_url(&page));
     }
-    Some(web_automation::path_to_file_url(&page))
+
+    log::warn!("web_automation: no block page URL (resource dir missing and no src-tauri/blocked fallback)");
+    None
 }
 
 /// Start the automation watcher if not already running. Idempotent.
