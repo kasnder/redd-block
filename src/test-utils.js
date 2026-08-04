@@ -243,8 +243,8 @@ function compareDifficulties(a, b) {
     if (!a) return b;
     if (!b) return a;
 
-    const MAX_CHARS_RANDOM_WORDS = 7500;  // 250 * 30, match app.js getMaxOverrideCharsForType
-    const MAX_CHARS_GIBBERISH = 5000;    // match app.js getMaxOverrideCharsForType
+    const MAX_CHARS_RANDOM_WORDS = 7500;  // match getMaxOverrideCharsForType
+    const MAX_CHARS_GIBBERISH = 5000;    // match getMaxOverrideCharsForType
 
     const getEffectiveCount = (difficulty) => {
         if (difficulty.type === 'custom' && typeof difficulty.customText === 'string') {

@@ -190,8 +190,6 @@ export const DEFAULT_OVERRIDE_COUNT = 10;
 export const TARGET_MAX_OVERRIDE_MINUTES = 30;
 /** iOS random-words / gibberish: max word count (random-words: 2500 letters at max; gibberish: 3000). */
 export const MAX_IOS_OVERRIDE_WORD_COUNT = 500;
-/** iOS word-count override UI: ~30 min at max (500 words). */
-export const IOS_OVERRIDE_WORDS_PER_MINUTE = MAX_IOS_OVERRIDE_WORD_COUNT / TARGET_MAX_OVERRIDE_MINUTES;
 /** When character count >= this, preview text is frozen (no more regeneration) for random words and gibberish. */
 export const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
 
@@ -339,10 +337,9 @@ export function normalizeCustomOverrideText(value) {
 }
 
 export function getTypingCharsPerMinuteForType(type) {
-    // Estimates only. Desktop max counts are sized for ~TARGET_MAX_OVERRIDE_MINUTES
-    // at these rates (random-words/custom: 7500 = 250×30; gibberish: ~5000 at 150).
-    if (type === 'gibberish') return 150;
-    return 250; // random-words and custom
+    // Estimates only (not locked to max char counts).
+    if (type === 'gibberish') return 100;
+    return 200; // random-words and custom
 }
 
 export function getMaxOverrideCharsForType(type) {
@@ -427,12 +424,11 @@ export function getOverrideEstimatedMinutes(type, count, customText) {
     const normalizedCount = Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
     if (normalizedCount <= 0) return 0;
 
-    if (usesMobileWordCountForOverrideType(type)) {
-        return Math.ceil(normalizedCount / IOS_OVERRIDE_WORDS_PER_MINUTE);
-    }
-
     const charCount = getOverrideGeneratedCharCount(type, count);
-    const cpm = getTypingCharsPerMinuteForType(type);
+    // Mobile word-count UI still estimates from generated letters, at the random-words rate.
+    const cpm = usesMobileWordCountForOverrideType(type)
+        ? getTypingCharsPerMinuteForType('random-words')
+        : getTypingCharsPerMinuteForType(type);
     return Math.ceil(charCount / cpm);
 }
 
