@@ -1818,6 +1818,11 @@ function setupModalListeners() {
         // Keep live preview while editing, but don't revert after a confirmed save.
         state.blocklistModalPreviewSnapshot = null;
         const wasNewBlocklist = !state.editingBlocklistId;
+        // Arm before re-render so orphan Quick-start prune keeps the draft.
+        if (isQuickCreate) {
+            armPendingQuickStart(blocklist.id);
+            applyQuickStartDurationToSchedulerState();
+        }
         closeBlocklistModal();
 
         // Only update blocklist display without resetting schedule segments
@@ -1828,8 +1833,6 @@ function setupModalListeners() {
         renderScheduleAlwaysOnRow();
 
         if (isQuickCreate) {
-            applyQuickStartDurationToSchedulerState();
-            armPendingQuickStart(blocklist.id);
             startBlock();
             return;
         }

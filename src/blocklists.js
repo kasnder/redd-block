@@ -55,6 +55,7 @@ function pruneOrphanQuickStartBlocklists() {
             .filter((b) => b.endTime > now)
             .map((b) => b.blocklistId),
     );
+    const pendingId = state.pendingQuickStartBlocklistId;
     const before = state.appData.blocklists.length;
     let healed = false;
     state.appData.blocklists = state.appData.blocklists.filter((bl) => {
@@ -63,6 +64,8 @@ function pruneOrphanQuickStartBlocklists() {
             bl.isQuickStart = true;
             healed = true;
         }
+        // Keep drafts armed for start-confirm until the user confirms or cancels.
+        if (pendingId && bl.id === pendingId) return true;
         return activeIds.has(bl.id);
     });
     if (state.appData.blocklists.length !== before || healed) {

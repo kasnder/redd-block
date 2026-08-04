@@ -410,6 +410,7 @@ async function clearPendingQuickStart({ keepIfStarted }) {
     if (!pendingQuickStart) return;
     const { blocklistId, previous } = pendingQuickStart;
     pendingQuickStart = null;
+    state.pendingQuickStartBlocklistId = null;
 
     const now = Date.now();
     const started = state.appData.activeBlocks.some(
@@ -450,6 +451,7 @@ export function armPendingQuickStart(blocklistId) {
             userEditedEnd: state.userEditedEndTime,
         },
     };
+    state.pendingQuickStartBlocklistId = blocklistId;
     state.selectedBlocklistId = blocklistId;
 }
 
@@ -498,19 +500,7 @@ async function startQuickStart() {
         state.appData.blocklists.unshift(blocklist);
         await saveData();
 
-        pendingQuickStart = {
-            blocklistId: blocklist.id,
-            previous: {
-                id: state.selectedBlocklistId,
-                alwaysOn: state.isAlwaysOnMode,
-                duration: state.targetDurationMinutes,
-                endHour: state.selectedEndHour,
-                endMinute: state.selectedEndMinute,
-                userEditedEnd: state.userEditedEndTime,
-            },
-        };
-
-        state.selectedBlocklistId = blocklist.id;
+        armPendingQuickStart(blocklist.id);
         state.isAlwaysOnMode = qsAlwaysOn;
         state.userEditedEndTime = false;
         if (!qsAlwaysOn) {
