@@ -10,6 +10,61 @@ SCHEDULES), then platform-specific notes under nested headings:
 `#### iOS` alongside `#### DESKTOP`. Bullets use `- **Short title.** Longer
 description.` Legacy flat lists still work.
 
+## v3.8.9
+
+### FOCUS SPACES & SCHEDULES
+
+- **Clearer Block vs Allow creation.** Creating a list now leads with Block /
+  Allow, short mode descriptions, and live empty-list hints so you can see
+  what stays available before you add anything.
+- **Create/edit dialog polish.** Emoji and colour sit below Stop Method, with
+  English (UK) "Colour" spelling and a tighter welcome header layout.
+- **Quick Start goes harder (and keeps drafts).** Override difficulty tops out
+  at 1000 characters (~5 minutes of typing), the control is labelled
+  "Difficulty to override", and one-off drafts stay alive through the start
+  confirmation instead of vanishing on re-render.
+- **More realistic typing-time estimates.** Random-words / custom challenges
+  assume ~200 characters per minute and gibberish ~100, so the time hints
+  match typical typing speed more closely.
+
+### SETTINGS
+
+- **Feedback sits at the top.** The feedback / suggestions link moved to the
+  top of Settings so it's easier to find.
+- **Enforcement is clearer and open by default.** The Enforcement section
+  starts expanded, and the auto-close row now says it closes the browser if
+  blocking is *bypassed* (not if "protection stops").
+- **Neater backup controls.** Export / Import stack to match the Settings
+  control column.
+- **Danish copy polish.** Settings close is **Gem**, schedule wording uses
+  *ugeskema*, and related Danish strings are tightened throughout.
+
+### BY PLATFORM
+
+#### DESKTOP
+
+- **Onboarding text wraps cleanly.** Screen titles and subtitles wrap
+  naturally on narrower window widths instead of overflowing awkwardly.
+- **"Let's go!" warnings stay solid.** A cold-start race could leave the
+  full-screen app-block shell up with no warning rows (and make the chrome
+  look dismissible). Missed warnings now replay once listeners attach, and
+  the shell stays non-dismissible while a block is awaiting acknowledgement.
+- **Updates work over an active "Let's go!" shell.** Running an in-app update
+  / reinstall while the warning shell is up no longer hides the installer
+  behind always-on-top chrome or dismisses the warning.
+- **Firefox Focus install URL fixed.** Windows Firefox now pulls Digital
+  Habits: Focus from the correct add-ons listing
+  (`digitalhabits-focus`) instead of the old `reddfocus` path.
+
+##### Windows
+
+- **Frameless title bar like macOS.** Custom min / max / close controls live
+  in the in-app title bar (including onboarding), without doubling up against
+  the default Windows caption buttons.
+- **Clean upgrade from ReDD Blocker.** Installing over a pre-rename Windows
+  build now silently uninstalls the old ReDD Blocker app and clears leftover
+  shortcuts, Run entries, and install dirs that Tauri's rename left behind.
+
 ## v3.8.8
 
 ### BY PLATFORM

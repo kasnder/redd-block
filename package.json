@@ -1,6 +1,6 @@
 {
   "name": "redd-block",
-  "version": "3.8.8",
+  "version": "3.8.9",
   "description": "Digital Habits: Blocker",
   "scripts": {
     "dev": "node ./scripts/ensure-dev-icons.js && npm run tauri -- dev",
