@@ -43,7 +43,7 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Arc, Condvar, Mutex, RwLock};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -139,8 +139,52 @@ const POSTQUIT_GRACE: Duration = Duration::from_secs(10);
 /// transitions every PID currently in `AwaitingUserAck` to `PreQuit`.
 static USER_ACK_PENDING: AtomicBool = AtomicBool::new(false);
 
+/// PIDs currently waiting on the Let's go overlay (`AwaitingUserAck`).
+/// Kept separately from the watcher thread's private `entries` map so the
+/// frontend can replay any `warning-show` events it missed — Tauri events
+/// are fire-and-forget, and on cold start the watcher often emits before
+/// JS has called `listen`.
+static PENDING_WARNING_ACKS: OnceLock<Mutex<HashMap<u32, String>>> = OnceLock::new();
+
+fn pending_warning_acks_map() -> &'static Mutex<HashMap<u32, String>> {
+    PENDING_WARNING_ACKS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 pub fn user_acknowledge_warning() {
     USER_ACK_PENDING.store(true, Ordering::SeqCst);
+    // Acked PIDs leave the overlay path (PreQuit); drop them from the
+    // replay set so a late `list_pending_blocking_warnings` does not
+    // re-raise Let's go after the user already clicked through.
+    if let Ok(mut map) = pending_warning_acks_map().lock() {
+        map.clear();
+    }
+}
+
+/// Snapshot of PIDs still awaiting Let's go — used to seed the frontend
+/// after listeners attach (see `list_pending_blocking_warnings`).
+pub fn pending_warning_acks() -> Vec<PendingBlockingWarning> {
+    match pending_warning_acks_map().lock() {
+        Ok(map) => map
+            .iter()
+            .map(|(&pid, name)| PendingBlockingWarning {
+                pid,
+                name: name.clone(),
+            })
+            .collect(),
+        Err(_) => Vec::new(),
+    }
+}
+
+fn remember_pending_warning_ack(pid: u32, name: &str) {
+    if let Ok(mut map) = pending_warning_acks_map().lock() {
+        map.insert(pid, name.to_string());
+    }
+}
+
+fn forget_pending_warning_ack(pid: u32) {
+    if let Ok(mut map) = pending_warning_acks_map().lock() {
+        map.remove(&pid);
+    }
 }
 
 const PROTECTED: &[&str] = &[
@@ -410,6 +454,14 @@ pub fn start(app: Option<AppHandle>) -> Handle {
 // ---- Event payloads -------------------------------------------------------
 
 /// Emitted once when a PID transitions into the warning phase.
+/// Also returned by [`pending_warning_acks`] for frontend replay.
+#[derive(Clone, Debug, Serialize)]
+pub struct PendingBlockingWarning {
+    pub pid: u32,
+    pub name: String,
+}
+
+/// Emitted once when a PID transitions into the warning phase.
 #[derive(Clone, Debug, Serialize)]
 struct WarningShow {
     pid: u32,
@@ -497,6 +549,7 @@ pub fn blocking_warning_shell_active() -> bool {
 }
 
 fn emit_warning_show(app: Option<&AppHandle>, pid: u32, name: &str, _total_secs: u64) {
+    remember_pending_warning_ack(pid, name);
     blocking_warning_begin(app);
     if let Some(a) = app {
         crate::commands::show_blocking_warning_shell_without_stealing_focus(a);
@@ -513,6 +566,7 @@ fn emit_warning_show(app: Option<&AppHandle>, pid: u32, name: &str, _total_secs:
 }
 
 fn emit_warning_hide(app: Option<&AppHandle>, pid: u32, name: &str, reason: HideReason) {
+    forget_pending_warning_ack(pid);
     if let Some(app) = app {
         let _ = app.emit(
             "app-blocking://warning-hide",

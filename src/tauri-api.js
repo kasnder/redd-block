@@ -146,6 +146,9 @@ export const tauriAPI = {
     /// Restore compact-window warning chrome after a snooze expires.
     reshowBlockingWarning: (pids) => invoke('reshow_blocking_warning', { pids }),
     reconcileBlockingWarningShell: () => invoke('reconcile_blocking_warning_shell'),
+    /// Seed Let's go rows for any PIDs still awaiting ack (covers events
+    /// emitted before JS listeners attached on cold start).
+    listPendingBlockingWarnings: () => invoke('list_pending_blocking_warnings'),
 
     saveOverlayImageAsset: (blocklistId, assetId, sourcePath) =>
         invoke('save_overlay_image_asset', { blocklistId, assetId, sourcePath }),
