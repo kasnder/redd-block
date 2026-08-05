@@ -113,16 +113,20 @@ pub fn reshow_blocking_warning(app: AppHandle, pids: Vec<u32>) {
 /// Restore normal window geometry when the frontend has no warning overlay
 /// to show but the native shell is still expanded (e.g. page reload or a
 /// race before JS listeners attach).
+///
+/// If PIDs are still awaiting Let's go, leave the shell up — the frontend
+/// should seed from [`list_pending_blocking_warnings`] rather than tear
+/// chrome down underneath an in-flight ack.
 #[tauri::command]
 #[cfg(not(target_os = "ios"))]
 pub fn reconcile_blocking_warning_shell(app: AppHandle) {
-    // Always re-assert traffic lights — a startup race can enter panel mode
-    // (and previously hid the buttons) before JS listeners attach, leaving
-    // the normal UI without window controls until a later mode flip.
-    #[cfg(target_os = "macos")]
-    crate::commands::ensure_macos_traffic_lights_visible(&app);
-
-    if crate::app_watcher::blocking_warning_shell_active() {
+    if !app_watcher::pending_warning_acks().is_empty() {
+        return;
+    }
+    if app_watcher::blocking_warning_shell_active() {
+        // Refcount says the shell is up, but nothing is awaiting ack —
+        // force a clean leave so geometry / traffic lights can't stick.
+        app_watcher::force_dismiss_warning_overlay(Some(&app));
         return;
     }
     crate::commands::leave_blocking_warning_compact_window(&app);
@@ -131,6 +135,21 @@ pub fn reconcile_blocking_warning_shell(app: AppHandle) {
 #[tauri::command]
 #[cfg(target_os = "ios")]
 pub fn reconcile_blocking_warning_shell(_app: AppHandle) {}
+
+/// PIDs still waiting on Let's go. The frontend calls this right after
+/// attaching `warning-show` listeners so any events emitted during cold
+/// start (before `listen` was ready) still populate the overlay.
+#[tauri::command]
+#[cfg(not(target_os = "ios"))]
+pub fn list_pending_blocking_warnings() -> Vec<app_watcher::PendingBlockingWarning> {
+    app_watcher::pending_warning_acks()
+}
+
+#[tauri::command]
+#[cfg(target_os = "ios")]
+pub fn list_pending_blocking_warnings() -> Vec<app_watcher::PendingBlockingWarning> {
+    Vec::new()
+}
 
 /// Re-read `redd-block-data.json` and push the effective blocked/allowed
 /// app sets into the watcher. Mirrors the frontend's `updateBlockedApps`

@@ -378,6 +378,41 @@ export function setupAppBlockingWarningOverlay() {
         renderAppBlockingClosedownBanner();
     }).catch(onFail('warning-hide'));
 
+    // Cold-start race: the watcher can emit warning-show (and expand the
+    // shell) before these listeners attach. Tauri events are not queued,
+    // so replay any still-awaiting PIDs from Rust, then reconcile chrome.
+    void tauriAPI
+        .listPendingBlockingWarnings()
+        .then((pending) => {
+            if (!Array.isArray(pending) || pending.length === 0) {
+                return reconcileBlockingWarningShell();
+            }
+            let seeded = false;
+            for (const row of pending) {
+                const pid = Number(row?.pid);
+                if (!Number.isFinite(pid)) continue;
+                if (appBlockingWarningRows.has(pid)) continue;
+                appBlockingWarningRows.set(pid, {
+                    name: row?.name || 'App',
+                });
+                seeded = true;
+            }
+            if (seeded) {
+                console.log(
+                    '[app-blocking-ui] replayed',
+                    appBlockingWarningRows.size,
+                    'pending warning(s) missed before listeners attached',
+                );
+                renderAppBlockingWarningOverlay();
+                renderAppBlockingClosedownBanner();
+            }
+            return reconcileBlockingWarningShell();
+        })
+        .catch((e) => {
+            console.warn('[app-blocking-ui] pending warning replay failed:', e);
+            void reconcileBlockingWarningShell();
+        });
+
     const snoozeBtn = document.getElementById('app-blocking-snooze-btn');
     snoozeBtn?.addEventListener('click', () => {
         appBlockingWarningSnoozeUsed = true;
@@ -416,8 +451,6 @@ export function setupAppBlockingWarningOverlay() {
             .letsGoAcknowledge()
             .catch((e) => console.warn('[app-blocking-ui] lets-go ack:', e));
     });
-
-    void reconcileBlockingWarningShell();
 }
 
 /** Find a blocklist that currently enforces blocking for `appName`
