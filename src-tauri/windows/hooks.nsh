@@ -1,3 +1,9 @@
+; Resolve companion scripts while this file is !include'd by Tauri's
+; installer.nsi. Inside !macro bodies, ${__FILEDIR__} expands to the
+; generated nsis/<arch>/ directory (where installer.nsi lives), not
+; windows/ — so File would miss legacy-preinstall.ps1 at makensis time.
+!define LEGACY_PREINSTALL_PS1 "${__FILEDIR__}\legacy-preinstall.ps1"
+
 !macro NSIS_HOOK_PREINSTALL
   ; Best-effort cleanup of a legacy direct-install app so the direct
   ; Digital Habits Blocker installer leaves only one desktop app installed.
@@ -11,7 +17,7 @@
   ; and falls back to deleting known legacy install dirs / shortcuts /
   ; Run values. See windows/legacy-preinstall.ps1.
   InitPluginsDir
-  File "/oname=$PLUGINSDIR\legacy-preinstall.ps1" "${__FILEDIR__}\legacy-preinstall.ps1"
+  File "/oname=$PLUGINSDIR\legacy-preinstall.ps1" "${LEGACY_PREINSTALL_PS1}"
   nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\legacy-preinstall.ps1"'
   Pop $0
   Delete "$PLUGINSDIR\legacy-preinstall.ps1"
