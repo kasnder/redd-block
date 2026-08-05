@@ -8459,6 +8459,8 @@ body:not(.ios) .welcome-onboarding-header .welcome-onboarding-title-text{
     color: var(--text-primary);
     letter-spacing: -0.02em;
     text-align: left;
+    white-space: normal;
+    overflow-wrap: break-word;
 }
 
 #fda-onboarding-title{
@@ -8470,6 +8472,8 @@ body:not(.ios) .welcome-onboarding-header .welcome-onboarding-title-text{
     color: var(--text-primary);
     letter-spacing: -0.02em;
     text-align: center;
+    white-space: normal;
+    overflow-wrap: break-word;
 }
 
 #migration-post-header-title{
@@ -8481,6 +8485,8 @@ body:not(.ios) .welcome-onboarding-header .welcome-onboarding-title-text{
     color: var(--text-primary);
     letter-spacing: -0.02em;
     text-align: left;
+    white-space: normal;
+    overflow-wrap: break-word;
 }
 
 .welcome-onboarding-subtitle {
@@ -8490,15 +8496,14 @@ body:not(.ios) .welcome-onboarding-header .welcome-onboarding-title-text{
     line-height: 1.45;
     color: var(--text-muted);
     white-space: normal;
+    overflow-wrap: break-word;
     text-wrap: wrap;
     text-align: left;
 }
 
-/* Desktop welcome/EULA: keep the English subtitle on one line under the title. */
+/* Desktop welcome/EULA: slight optical nudge under the title; wrap with the column. */
 body:not(.ios) .welcome-onboarding-title-text > .welcome-onboarding-subtitle {
     margin-left: 2px;
-    white-space: nowrap;
-    text-wrap: nowrap;
 }
 
 .welcome-onboarding-card{
@@ -9025,12 +9030,14 @@ body.ios .ios-screentime-onboarding-content h1 {
 
 #migration-post-header .welcome-onboarding-title-text{
     min-width: 0;
-    max-width: 31em;
+    max-width: none;
 }
 
 #migration-post-header .welcome-onboarding-subtitle,
 #migration-post-header .migration-post-header-subtitle{
     max-width: 100%;
+    white-space: normal;
+    overflow-wrap: break-word;
 }
 
 #migration-post-header .welcome-onboarding-title-row{
