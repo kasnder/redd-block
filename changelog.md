@@ -14,6 +14,56 @@ This update comes with some design improvements and under-the-hood improvements.
 
 ### Branding
 
+- [windows] Upgrading from an older ReDD Blocker installation now removes the
+  old app, shortcuts and related files more cleanly.
+
+### Focus Spaces & Blocking
+
+- When creating a Focus Space, you can now choose Block or Allow first, with
+  clearer descriptions of what each option does.
+- Override challenges can now be up to 1,000 characters, or roughly five
+  minutes of typing.
+- One-off Quick Start settings will no longer disappear when you reach the
+  start confirmation screen.
+- Override typing times now use more realistic typing speeds.
+- [desktop] Fixed an issue where the "Let's go!" screen could appear without
+  its warning details after launch, and it now stays in place until the
+  warnings have been acknowledged.
+- [desktop] App updates will no longer be hidden behind the full-screen
+  "Let's go!" warning.
+
+### Fixes & Polish
+
+- The design of the create / edit Focus Space screen has been improved.
+- The design of the Settings screen has been improved.
+- Danish translations have been improved.
+- [desktop] Onboarding text now fits properly on narrower windows.
+- [windows] The app now uses a cleaner, built-in title bar with its own
+  minimise, maximise and close buttons.
+- [desktop] Fixed the Firefox installation link for Digital Habits: Focus.
+
+### Internal
+
+- CSS minification now works on fresh installs.
+- Release builds now sign with the Centre for Digital Habits CIC Developer ID
+  Application identity.
+- Publish now also uploads installers under the older ReDD Blocker filenames
+  so existing download links keep working.
+- Updated the Windows package publisher display name.
+- Desktop development builds no longer force the Digital Habits rename notice
+  on every launch.
+- Website blocking via Automation keeps working in local macOS development
+  builds.
+- Updated documentation and links to the current repository and product names.
+- Clarified which changelog notes are included for iOS vs desktop App Store
+  submissions.
+
+## v3.8.9 (previous format)
+
+This update comes with some design improvements and under-the-hood improvements.
+
+### Branding
+
 - [windows] **Cleaner upgrades from ReDD Blocker.** Upgrading from an older
   ReDD Blocker installation now removes the old app, shortcuts and related
   files more cleanly.
@@ -34,8 +84,6 @@ This update comes with some design improvements and under-the-hood improvements.
   and it now stays in place until the warnings have been acknowledged.
 - [desktop] **Updates stay visible during "Let's go!".** App updates will no
   longer be hidden behind the full-screen warning.
-- [windows] **Fixed Firefox install link.** Fixed the Firefox installation
-  link for Digital Habits: Focus.
 
 ### Fixes & Polish
 
@@ -45,6 +93,7 @@ This update comes with some design improvements and under-the-hood improvements.
 - [desktop] Onboarding text now fits properly on narrower windows.
 - [windows] The app now uses a cleaner, built-in title bar with its own
   minimise, maximise and close buttons.
+- [desktop] Fixed the Firefox installation link for Digital Habits: Focus.
 
 ### Internal
 

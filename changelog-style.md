@@ -37,7 +37,7 @@ platform limits on the bullet.
 Supported platforms: **macOS**, **Windows**, **iOS**, and **Android**.
 Desktop means macOS + Windows.
 
-Optional tags go at the start of the bullet (before the bold lead-in):
+Optional tags go at the start of the bullet:
 
 | Tag | Meaning |
 | --- | --- |
@@ -49,19 +49,24 @@ Optional tags go at the start of the bullet (before the bold lead-in):
 
 Rules:
 
+- Before tagging, **read the app architecture** (README platform matrix,
+  browser/setup docs, and how the feature actually ships). Tag from where the
+  change reaches users — not from the PR machine, a single test platform, or
+  where the code file lives. Example: a Firefox install-link fix is
+  `[desktop]` because Firefox setup exists on both Windows and macOS, not
+  Windows-only.
 - Tags describe **where users experience the change**, not where the code lives.
 - Omit the tag when the change applies on every supported platform.
 - Prefer the narrowest accurate tag (`[windows]` over `[desktop]` when only Windows is affected).
 - Do not duplicate the same change under multiple sections or with multiple tags.
 
 ```markdown
-- [desktop] **Updates stay visible during "Let's go!".** App updates will no
-  longer be hidden behind the full-screen warning.
-- [macos] **Start at login works again.** After a restart, the app stays
-  running and blocking resumes automatically.
-- [windows] **Cleaner upgrades from ReDD Blocker.** Upgrading from an older
-  installation now removes the old app, shortcuts and related files more
-  cleanly.
+- [desktop] App updates will no longer be hidden behind the full-screen
+  "Let's go!" warning.
+- [macos] After a restart, the app stays running and blocking resumes
+  automatically.
+- [windows] Upgrading from an older ReDD Blocker installation now removes the
+  old app, shortcuts and related files more cleanly.
 ```
 
 Untagged bullets apply everywhere.
@@ -70,24 +75,22 @@ Untagged bullets apply everywhere.
 
 ## Writing style
 
-### Branding, Focus Spaces & Blocking, Performance, Internal
+Write **plain sentences** for every section — including Branding, Focus Spaces &
+Blocking, Performance, Fixes & Polish, and Internal. Do **not** use a bold
+lead-in (`**Short title.** …`). Bold is only for product names or UI labels
+inside the sentence when needed.
 
-Use a **short bold lead-in**, then one or two plain sentences:
+One or two short sentences per bullet. State the change actively and clearly.
+Keep it specific enough that people recognise the change, but not so detailed
+that store notes become repetitive or run over character limits.
 
 ```markdown
-- **Clearer Block and Allow setup.** When creating a Focus Space, you can now
-  choose Block or Allow first, with clearer descriptions of what each option
-  does.
-- [desktop] **More reliable "Let's go!" screen.** Fixed an issue where the
-  "Let's go!" screen could appear without its warning details after launch.
+- When creating a Focus Space, you can now choose Block or Allow first, with
+  clearer descriptions of what each option does.
+- [desktop] Fixed an issue where the "Let's go!" screen could appear without
+  its warning details after launch.
+- The design of the Settings screen has been improved.
 ```
-
-The bold lead-in is a short summary (a few words). The sentence after it must
-still make sense on its own — do not repeat the same idea twice.
-
-### Fixes & Polish
-
-**No bold lead-in.** Write one plain sentence that states the fix or UI change.
 
 For UI/layout polish on a screen, prefer **one short screen-level bullet** over
 listing each control move or label tweak:
@@ -118,7 +121,7 @@ content again”), not when several small layout or copy tweaks landed together.
 ### What to keep specific vs what to fold together
 
 - Keep **behaviour** specific under product headings: difficulty limits, drafts
-  preserved, blocking fixes, install links, typing-time estimates.
+  preserved, blocking fixes, typing-time estimates.
 - Under **Fixes & Polish**, fold related UI/copy tweaks on the **same screen**
   into one bullet that names the screen
   (“The design of the Settings screen has been improved.”).
@@ -137,6 +140,8 @@ Use consistently: **Digital Habits: Blocker**, **Digital Habits: Focus**,
 
 ### Avoid
 
+- Bold lead-ins (`**Short title.** Body…`) — they waste store character budget
+  and read as repetitive once markdown is stripped.
 - Developer or systems jargon: shell, listeners, cold-start race, re-render,
   native messaging, polling, IPC, “under the hood”.
 - Hype or filler: “goes harder”, “stays solid”, “enhancements”, “various
@@ -145,8 +150,6 @@ Use consistently: **Digital Habits: Blocker**, **Digital Habits: Focus**,
   Firefox install link for Digital Habits: Focus” over addon IDs).
 - Putting Settings wording or layout under **Focus Spaces & Blocking** just
   because a row mentions Enforcement or browsers.
-- Bold lead-ins under **Fixes & Polish**, or lead-ins that only restate the
-  body under other sections.
 
 Optional release summary: a leading `> …` blockquote under `## vX.Y.Z` is
 allowed. Store automation may replace it with the standard intro.
@@ -161,9 +164,10 @@ allowed. Store automation may replace it with the standard intro.
 4. Use **Internal** only when there is no meaningful user-facing effect.
 5. Settings copy and layout → **Fixes & Polish**, even if a label mentions
    Enforcement or browsers.
-6. Blocking behaviour (including the “Let’s go!” screen and extension install
-   links) → **Focus Spaces & Blocking**.
-7. Add a platform tag only when the change is not universal.
+6. Blocking behaviour (including the “Let’s go!” screen) → **Focus Spaces &
+   Blocking**. Broken help/install links and similar chrome → **Fixes & Polish**.
+7. Add a platform tag only when the change is not universal — after checking
+   architecture (which platforms that feature actually ships on).
 8. Never list the same change in more than one section.
 
 ### Good vs avoid
@@ -176,6 +180,7 @@ allowed. Store automation may replace it with the standard intro.
 | Renamed “Difficulty to override” on create/edit | **Fixes & Polish** | Fold into “The design of the create / edit Focus Space screen has been improved.” |
 | Listing each Settings control tweak as its own bullet | Avoid | Too granular for Fixes & Polish. |
 | “Let’s go!” appears empty or can be dismissed too early | **Focus Spaces & Blocking** + `[desktop]` | Say “screen” and “warnings”, not “shell” or “listeners”. |
+| Fixed Firefox install link for Digital Habits: Focus | **Fixes & Polish** + `[desktop]` | Link chrome, not blocking behaviour; Firefox setup ships on Windows and macOS. |
 | Meet Digital Habits: Blocker / new icons | **Branding** | Identity. |
 | CI / Partner Center submit plumbing | **Internal** | No user-facing effect. |
 | ~~Missed warnings replay once listeners attach…~~ | Avoid | Too technical. |
@@ -191,7 +196,7 @@ allowed. Store automation may replace it with the standard intro.
 | **GitHub Release** | Exact `## vX.Y.Z` section as markdown: update intro line, all non-empty headings, platform tags, and **Internal** |
 | **Any app-store “What’s New”** | Update intro line + non-empty user-facing sections with headings; **exclude Internal** |
 | **Platform store (Windows / macOS / iOS / Android)** | Untagged bullets + bullets tagged for that platform + parent tags (e.g. macOS store: untagged + `[macos]` + `[desktop]`) |
-| **Platform-specific store text** | Platform tags removed; bold lead-ins kept as plain text (no `*` / other markdown) |
+| **Platform-specific store text** | Platform tags removed; plain sentences (no `*` / other markdown) |
 
 ### Update intro line (required in `changelog.md`)
 
@@ -229,8 +234,8 @@ Hi folks,
 This update comes with some design improvements and under-the-hood improvements.
 
 Focus Spaces & Blocking
-- Clearer Block and Allow setup. When creating a Focus Space…
-- More accurate typing-time estimates. Override typing times…
+- When creating a Focus Space, you can now choose Block or Allow first…
+- Override typing times now use more realistic typing speeds.
 
 Fixes & Polish
 - The design of the create / edit Focus Space screen has been improved.
@@ -248,8 +253,7 @@ Rules for that body:
 - No blank line between a heading and its first bullet
 - No blank line between `Cheers,` and the signature
 - Empty sections omitted; **Internal** omitted
-- Product sections keep the lead-in as plain text after stripping `**`
-- **Fixes & Polish** bullets stay plain sentences
+- Bullets are plain sentences (no bold lead-ins in the source changelog)
 
 Skip empty sections.
 
@@ -274,25 +278,21 @@ This update comes with some useful new features, design improvements, and under-
 
 ### Branding
 
-- **Digital Habits: Focus in setup.** Browser setup now uses the Digital
-  Habits: Focus name consistently.
+- Browser setup now uses the Digital Habits: Focus name consistently.
 
 ### Focus Spaces & Blocking
 
-- **More accurate typing-time estimates.** Override typing times now use more
-  realistic typing speeds.
-- [desktop] **Updates stay visible during "Let's go!".** App updates will no
-  longer be hidden behind the full-screen warning.
-- [macos] **Start at login works again.** After a restart, the app stays
-  running and blocking resumes automatically.
-- [windows] **Cleaner upgrades from ReDD Blocker.** Upgrading from an older
-  installation now removes the old app, shortcuts and related files more
-  cleanly.
+- Override typing times now use more realistic typing speeds.
+- [desktop] App updates will no longer be hidden behind the full-screen
+  "Let's go!" warning.
+- [macos] After a restart, the app stays running and blocking resumes
+  automatically.
+- [windows] Upgrading from an older ReDD Blocker installation now removes the
+  old app, shortcuts and related files more cleanly.
 
 ### Performance
 
-- [desktop] **Lighter on battery.** Blocking uses less power when no blocked
-  apps are running.
+- [desktop] Blocking uses less power when no blocked apps are running.
 
 ### Fixes & Polish
 
@@ -302,11 +302,9 @@ This update comes with some useful new features, design improvements, and under-
 
 ### Internal
 
-- **CSS builds on clean installs.** Added lightningcss so Vite can minify CSS
-  on fresh installs.
-- **Legacy installer names on every release.** Publish now also uploads
-  installers under the older ReDD Blocker filenames so existing download links
-  keep working.
+- CSS minification now works on fresh installs.
+- Publish now also uploads installers under the older ReDD Blocker filenames
+  so existing download links keep working.
 ```
 
 ---
@@ -316,9 +314,8 @@ This update comes with some useful new features, design improvements, and under-
 - [ ] Update intro line under `## vX.Y.Z` — only the parts that apply; **new features** only for genuinely new capabilities
 - [ ] Only approved headings; empty ones omitted
 - [ ] Most specific heading used; **Internal** only when truly invisible
-- [ ] Platform tags only where needed; no `BY PLATFORM` nesting
-- [ ] Bold lead-in + plain sentence(s) for product/behaviour sections; **Fixes & Polish** uses plain sentences only
-- [ ] Related UI tweaks on one screen are one screen-level bullet; behavioural changes stay specific
-- [ ] Settings UI under **Fixes & Polish**; blocking behaviour under **Focus Spaces & Blocking**
+- [ ] Platform tags only where needed; no `BY PLATFORM` nesting; tags checked against app architecture (README / platform matrix)
+- [ ] Plain sentences only — no bold lead-ins; related UI tweaks on one screen are one screen-level bullet
+- [ ] Settings UI / broken links under **Fixes & Polish**; blocking behaviour under **Focus Spaces & Blocking**
 - [ ] Product terminology matches the app
 - [ ] Entries are already fit for public release notes
