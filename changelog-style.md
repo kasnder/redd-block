@@ -236,7 +236,7 @@ Fixes & Polish
 - The design of the create / edit Focus Space screen has been improved.
 - The design of the Settings screen has been improved.
 
-Remember that the app is open source -- keep your feedback and suggestions coming at https://github.com/ulyngs/digital-habits-blocker
+Remember that the app is open source — keep your feedback and suggestions coming at https://github.com/ulyngs/digital-habits-blocker
 
 Cheers,
 Ulrik & all of us at Centre for Digital Habits
