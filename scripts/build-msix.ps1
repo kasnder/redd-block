@@ -40,7 +40,7 @@ if (-not $IdentityName -or -not $Publisher) {
 }
 
 if (-not $PublisherDisplayName) {
-    $PublisherDisplayName = "Centre for Digital Habits CIC"
+    $PublisherDisplayName = "Reduce Digital Distraction Ltd"
 }
 
 Write-Host "  App: Digital Habits: Blocker v$AppVersion" -ForegroundColor White
