@@ -1,7 +1,8 @@
 # App Store submission lane for CI (Release build / App Store submission workflows).
 #
 # Uploads the IPA built by scripts/ios-appstore-build.sh, stamps the iOS
-# "What's new" (from scripts/changelog-to-store-whats-new.js --platform ios),
+# "What's new" (from scripts/changelog-to-store-whats-new.js --platform ios;
+# untagged + [ios] bullets, no Internal — see changelog-style.md),
 # and submits for review with automatic release after approval — the App Store
 # equivalent of scripts/submit-microsoft-store.ps1.
 #

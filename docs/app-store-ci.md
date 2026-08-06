@@ -11,20 +11,58 @@ jobs: an App Store Connect outage does not block desktop distribution.
 ## What goes into iOS "What's new"
 
 [`scripts/changelog-to-store-whats-new.js`](../scripts/changelog-to-store-whats-new.js)
-is run with `--platform ios`. It keeps:
+is run with `--platform ios`. See [`changelog-style.md`](../changelog-style.md)
+for how changelog entries are written.
 
-- Bullets in shared sections (any `###` heading that is not `### BY PLATFORM`,
-  e.g. `### FOCUS SPACES & SCHEDULES`), and
-- Bullets under `#### iOS` inside `### BY PLATFORM`.
+It keeps:
 
-It drops `#### DESKTOP` (including desktop-shared bullets and
-`##### macOS` / `##### Windows`), `#### ANDROID`, `Version:` lines, and
-release-engineering bullets. Output uses the same intro + bullets + sign-off
-format, capped at the App Store's 4,000 character limit.
+- Bullets with **no** platform tag (apply everywhere), and
+- Bullets tagged `[ios]`
+
+from every non-empty user-facing section (**Branding**, **Focus Spaces &
+Blocking**, **Performance**, **Fixes & Polish**, …). It drops:
+
+- The entire **Internal** section
+- Bullets tagged only for other platforms (`[desktop]`, `[macos]`,
+  `[windows]`, `[android]`)
+- Markdown emphasis (keeps the lead-in words: `- Title. Body`)
+- Platform tags themselves
+
+Legacy nested `### BY PLATFORM` → `#### iOS` sections are still understood for
+older changelog entries.
+
+Output shape:
+
+```text
+Hi folks,
+
+This update comes with some design improvements and under-the-hood improvements.
+
+Focus Spaces & Blocking
+- …
+
+Fixes & Polish
+- …
+
+Remember that the app is open source -- keep your feedback and suggestions coming at https://github.com/ulyngs/digital-habits-blocker
+
+Cheers,
+Ulrik & all of us at Centre for Digital Habits
+```
+
+The “This update comes with…” line is copied from `changelog.md` (authors write
+it and delete unused parts — see [`changelog-style.md`](../changelog-style.md)).
+**Useful new features** only when something genuinely new ships; improvements
+and fixes to existing behaviour are design / under-the-hood only. Section
+headings are included; blank line between sections; no blank line after a
+heading or between `Cheers,` and the signature. Capped at the App Store’s
+4,000 character limit.
 
 Other stores use the same script with different filters:
-`--platform windows` → shared + desktop-shared + `##### Windows`;
-`--platform macos` → shared + desktop-shared + `##### macOS`.
+
+- `--platform windows` → untagged + `[desktop]` + `[windows]`
+- `--platform macos` → untagged + `[desktop]` + `[macos]`
+- `--platform android` → untagged + `[android]`
 
 If a release has **no** iOS-facing bullets (desktop-only release), the
 Publish (App Store) job logs a notice and skips submission instead of

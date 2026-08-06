@@ -1,10 +1,42 @@
 import changelogMarkdown from '../changelog.md?raw';
 
 /**
- * @typedef {{ title: string, body: string }} ReleaseNoteItem
+ * @typedef {{ title: string, body: string, tags?: string[] }} ReleaseNoteItem
  * @typedef {{ label: string, items: ReleaseNoteItem[], children: ReleaseNoteGroup[] }} ReleaseNoteGroup
  * @typedef {{ summary: ReleaseNoteItem | null, groups: ReleaseNoteGroup[] }} ParsedReleaseNotes
  */
+
+const PLATFORM_TAG_RE = /^\[(desktop|macos|windows|ios|android)\]\s*/i;
+
+/**
+ * @param {string} text
+ * @returns {{ tags: string[], rest: string }}
+ */
+function takePlatformTags(text) {
+    let rest = String(text || '').trim();
+    /** @type {string[]} */
+    const tags = [];
+    let match = rest.match(PLATFORM_TAG_RE);
+    while (match) {
+        tags.push(match[1].toLowerCase());
+        rest = rest.slice(match[0].length).trim();
+        match = rest.match(PLATFORM_TAG_RE);
+    }
+    return { tags, rest };
+}
+
+/**
+ * @param {string[] | undefined} tags
+ * @param {string} platform
+ */
+function tagsMatchPlatform(tags, platform) {
+    if (!tags || !tags.length) return true;
+    if (tags.includes(platform)) return true;
+    if ((platform === 'windows' || platform === 'macos') && tags.includes('desktop')) {
+        return true;
+    }
+    return false;
+}
 
 const REMOTE_CHANGELOG_URLS = [
     'https://ulyngs.github.io/digital-habits-blocker/changelog.md',
@@ -54,16 +86,20 @@ export function formatChangelogInlineHtml(text) {
 }
 
 function parseBulletItem(text) {
-    const trimmed = String(text || '').trim();
-    if (!trimmed || /^\*\*Version:\*\*/i.test(trimmed)) return null;
+    const { tags, rest } = takePlatformTags(text);
+    const trimmed = rest.trim();
+    if (!trimmed || /^\*\*Version:\*\*/i.test(trimmed) || /^Version:\s*/i.test(trimmed)) {
+        return null;
+    }
 
     const match = trimmed.match(/^\*\*([^*]+)\*\*(.*)$/s);
     if (!match) {
-        return { title: trimmed, body: '' };
+        return { title: trimmed, body: '', tags };
     }
     return {
         title: match[1].trim(),
-        body: match[2].trim(),
+        body: match[2].trim().replace(/^\.\s*/, ''),
+        tags,
     };
 }
 
@@ -155,7 +191,7 @@ export function parseReleaseNotes(markdown, version) {
     const empty = { summary: null, groups: [] };
     if (!normalized || !markdown) return empty;
 
-    const sectionRe = new RegExp(`^## v${escapeRegExp(normalized)}(?:\\s|$)`);
+    const sectionRe = new RegExp(`^## v${escapeRegExp(normalized)}\\s*$`);
     const lines = markdown.split(/\r?\n/);
     let inSection = false;
 
@@ -189,7 +225,7 @@ export function parseReleaseNotes(markdown, version) {
 
     for (const rawLine of lines) {
         const line = rawLine.trimEnd();
-        if (/^## v[0-9]/.test(line)) {
+        if (/^##\s/.test(line)) {
             if (inSection) break;
             if (sectionRe.test(line)) inSection = true;
             continue;
@@ -275,8 +311,11 @@ function labelMatchesPlatform(label, platformKey) {
 }
 
 /**
- * Flatten `### BY PLATFORM` → `#### DESKTOP` for the current device.
- * Cross-platform `###` sections are kept as-is.
+ * Filter release notes for the current device.
+ *
+ * - Drops `### Internal` (GitHub-only).
+ * - Keeps untagged bullets plus `[desktop]` / OS tags that match this device.
+ * - Still flattens legacy `### BY PLATFORM` → `#### DESKTOP` nesting.
  *
  * @param {ParsedReleaseNotes} notes
  * @param {string | null | undefined} platformKey `windows` | `macos` | `ios`
@@ -284,18 +323,46 @@ function labelMatchesPlatform(label, platformKey) {
  */
 export function filterReleaseNotesForPlatform(notes, platformKey) {
     const platform = normalizePlatformKey(platformKey);
-    if (!platform || !notes) {
+    if (!notes) {
         return notes;
     }
 
-  /** @type {ReleaseNoteGroup[]} */
+    /**
+     * @param {ReleaseNoteGroup} group
+     * @returns {ReleaseNoteGroup | null}
+     */
+    const filterTaggedGroup = (group) => {
+        if (normalizeGroupLabel(group.label) === 'internal') {
+            return null;
+        }
+
+        const items = platform
+            ? group.items.filter((item) => tagsMatchPlatform(item.tags, platform))
+            : [...group.items];
+        const children = [];
+        for (const child of group.children || []) {
+            const filteredChild = filterTaggedGroup(child);
+            if (filteredChild) children.push(filteredChild);
+        }
+        if (!items.length && !children.length) return null;
+        return { label: group.label, items, children };
+    };
+
+    /** @type {ReleaseNoteGroup[]} */
     const groups = [];
 
     for (const group of notes.groups || []) {
-        if (normalizeGroupLabel(group.label) !== 'by platform') {
-            groups.push(group);
+        if (normalizeGroupLabel(group.label) === 'internal') {
             continue;
         }
+
+        if (normalizeGroupLabel(group.label) !== 'by platform') {
+            const filtered = filterTaggedGroup(group);
+            if (filtered) groups.push(filtered);
+            continue;
+        }
+
+        if (!platform) continue;
 
         for (const child of group.children || []) {
             // Platform section at the same level as DESKTOP (e.g. `#### iOS`).
@@ -350,9 +417,13 @@ export function releaseNotesHasContent(notes) {
 /** @param {ReleaseNoteItem[]} items */
 function renderItemsListHtml(items) {
     return items.map((item) => {
-        const bodyHtml = item.body
-            ? `<span class="update-banner-notes-item-body">${formatChangelogInlineHtml(item.body)}</span>`
-            : '';
+        // Plain Fixes-and-Polish style: no bold lead-in, only a single sentence.
+        if (!item.body) {
+            return `<li class="update-banner-notes-item">
+            <span class="update-banner-notes-item-body">${formatChangelogInlineHtml(item.title)}</span>
+        </li>`;
+        }
+        const bodyHtml = `<span class="update-banner-notes-item-body">${formatChangelogInlineHtml(item.body)}</span>`;
         return `<li class="update-banner-notes-item">
             <span class="update-banner-notes-item-title"><strong>${formatChangelogInlineHtml(item.title)}</strong></span>
             ${bodyHtml}
