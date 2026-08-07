@@ -114,7 +114,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeStep2TitleIosHtml: 'Allow Screen Time access',
         welcomeStep2BodyIosHtml:
             '<em>Digital Habits: Blocker</em> uses Screen Time to shield apps and websites on iPhone and iPad. We\'ll ask for permission before your first block.',
-        welcomeStep2TitleAndroidHtml: 'Enable Android Accessibility blocking',
+        welcomeStep2TitleAndroidHtml: 'Enable Android Accessibility setting',
         welcomeStep2BodyAndroidHtml:
             '<em>Digital Habits: Blocker</em> uses Android Accessibility to detect blocked apps and websites and show the block screen. We\'ll open Android Settings so you can enable it.',
         welcomeStep3TitleHtml: 'Start blocking! 🥳',
@@ -974,7 +974,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeStep2TitleIosHtml: 'Giv adgang til Screen Time',
         welcomeStep2BodyIosHtml:
             '<em>Digital Habits: Blocker</em> bruger Screen Time til at skærme apps og hjemmesider på iPhone og iPad. Vi beder om tilladelse før din første blokering.',
-        welcomeStep2TitleAndroidHtml: 'Slå Android Accessibility-blokering til',
+        welcomeStep2TitleAndroidHtml: 'Slå Android Accessibility-indstilling til',
         welcomeStep2BodyAndroidHtml:
             '<em>Digital Habits: Blocker</em> bruger Android Accessibility til at registrere blokerede apps og hjemmesider og vise blokeringsskærmen. Vi åbner Android-indstillinger, så du kan slå det til.',
         welcomeStep3TitleHtml: 'Vælg, hvad der skal blokeres',
@@ -1798,7 +1798,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeStep2BodyHtml: '{LOGO}<strong>Digital Habits: Focus</strong> 扩展负责真正阻止网站。能自动安装的浏览器我们会自动处理，并告诉你需要手动完成的步骤。',
         welcomeStep2TitleIosHtml: '允许屏幕使用时间访问',
         welcomeStep2BodyIosHtml: '在 iPhone 和 iPad 上，<em>Digital Habits: Blocker</em> 使用屏幕时间来屏蔽应用和网站。首次阻止前我们会请求权限。',
-        welcomeStep2TitleAndroidHtml: '启用 Android 无障碍阻止',
+        welcomeStep2TitleAndroidHtml: '启用 Android 无障碍设置',
         welcomeStep2BodyAndroidHtml: '<em>Digital Habits: Blocker</em> 使用 Android 无障碍功能来检测被阻止的应用和网站并显示阻止界面。我们会打开 Android 设置以便你启用它。',
         welcomeStep3TitleHtml: '开始阻止吧！🥳',
         welcomeStep3BodyHtml: '选择让你分心的网站和应用，并设置你希望它们不可访问的时间。剩下的交给 <em>Digital Habits: Blocker</em>。',
