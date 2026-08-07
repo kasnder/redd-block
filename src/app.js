@@ -540,7 +540,7 @@ function setupEventListeners() {
         btn.disabled = true;
         btn.textContent = tSettings('androidAccessibilityOpeningBtn');
         if (status) {
-            status.textContent = tSettings('androidAccessibilityReturnStatus');
+            status.textContent = tSettings('androidAccessibilityWaitingStatus');
             status.classList.remove('hidden');
         }
 
@@ -2924,8 +2924,8 @@ export function applyAndroidPermissionsOnboardingLanguage() {
     const status = document.getElementById('android-accessibility-status');
     if (status) {
         status.textContent = status.classList.contains('hidden')
-            ? tSettings('androidAccessibilityWaitingStatus')
-            : tSettings('androidAccessibilityReturnStatus');
+            ? tSettings('androidAccessibilityReturnStatus')
+            : tSettings('androidAccessibilityWaitingStatus');
     }
 
     const note = document.getElementById('android-permissions-onboarding-note');
