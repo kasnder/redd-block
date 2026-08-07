@@ -8883,7 +8883,10 @@ body.dark-mode .eula-back-btn:hover{
 
 /* Footer credit link — no underline (EULA / privacy links in the card keep theirs). */
 #welcome-onboarding-footer-1 .legal-onboarding-link,
-#eula-onboarding-footer-1 .legal-onboarding-link {
+#eula-onboarding-footer-1 .legal-onboarding-link,
+#eula-project-blurb .legal-onboarding-link,
+#ios-screentime-onboarding-note .legal-onboarding-link,
+#android-permissions-onboarding-note .legal-onboarding-link {
     text-decoration: none;
 }
 

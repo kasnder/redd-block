@@ -506,9 +506,8 @@ function setupEventListeners() {
         const note = document.getElementById('ios-screentime-onboarding-note');
         if (!btn) return;
 
-        const originalText = btn.textContent;
         btn.disabled = true;
-        btn.textContent = 'Requesting access...';
+        btn.textContent = tSettings('iosScreentimeRequestingBtn');
 
         const result = await requestScreentimeAuth();
 
@@ -522,15 +521,15 @@ function setupEventListeners() {
             }
         } else if (note) {
             if (result.status === 'denied') {
-                note.textContent = 'Screen Time access was denied. Please tap the button again, or enable Digital Habits: Blocker in Settings > Screen Time > Apps With Screen Time Access.';
+                note.textContent = tSettings('iosScreentimeDeniedNote');
             } else if (result.error) {
-                note.textContent = `Screen Time access failed: ${result.error}`;
+                note.textContent = tSettings('iosScreentimeFailedNoteFmt').replace('{error}', String(result.error));
             }
         }
         updateOnboardingVisibility();
 
         btn.disabled = false;
-        btn.textContent = originalText;
+        btn.textContent = tSettings('iosScreentimeGrantBtn');
     });
 
     document.getElementById('android-accessibility-grant-btn')?.addEventListener('click', async () => {
@@ -538,11 +537,10 @@ function setupEventListeners() {
         const status = document.getElementById('android-accessibility-status');
         if (!btn) return;
 
-        const originalText = btn.textContent;
         btn.disabled = true;
-        btn.textContent = 'Opening Settings...';
+        btn.textContent = tSettings('androidAccessibilityOpeningBtn');
         if (status) {
-            status.textContent = 'Enable Digital Habits: Blocker in Accessibility, then return here.';
+            status.textContent = tSettings('androidAccessibilityReturnStatus');
             status.classList.remove('hidden');
         }
 
@@ -551,11 +549,12 @@ function setupEventListeners() {
         } catch (err) {
             console.error('Failed to open Android accessibility settings:', err);
             if (status) {
-                status.textContent = `Could not open Accessibility settings: ${err}`;
+                status.textContent = tSettings('androidAccessibilityOpenFailedStatusFmt')
+                    .replace('{error}', String(err));
             }
         } finally {
             btn.disabled = false;
-            btn.textContent = originalText;
+            btn.textContent = tSettings('androidAccessibilityGrantBtn');
         }
     });
 
@@ -2886,6 +2885,53 @@ export function applyEulaOnboardingLanguage() {
     }
 }
 
+/** iOS Screen Time permission onboarding — localized from current UI language. */
+export function applyIosScreentimeOnboardingLanguage() {
+    const icon = document.getElementById('ios-screentime-onboarding-app-icon');
+    if (icon) icon.setAttribute('alt', tSettings('eulaWelcomeIconAlt'));
+
+    const title = document.getElementById('ios-screentime-onboarding-title');
+    if (title) title.innerHTML = tSettings('welcomeOnboardingTitle');
+
+    const body = document.getElementById('ios-screentime-onboarding-body');
+    if (body) body.textContent = tSettings('iosScreentimeOnboardingBody');
+
+    const grantBtn = document.getElementById('ios-screentime-grant-btn');
+    if (grantBtn && !grantBtn.disabled) {
+        grantBtn.textContent = tSettings('iosScreentimeGrantBtn');
+    }
+
+    const note = document.getElementById('ios-screentime-onboarding-note');
+    if (note) note.innerHTML = tSettings('eulaProjectBlurb');
+}
+
+/** Android Accessibility permission onboarding — localized from current UI language. */
+export function applyAndroidPermissionsOnboardingLanguage() {
+    const icon = document.getElementById('android-permissions-onboarding-app-icon');
+    if (icon) icon.setAttribute('alt', tSettings('eulaWelcomeIconAlt'));
+
+    const title = document.getElementById('android-permissions-onboarding-title');
+    if (title) title.innerHTML = tSettings('welcomeOnboardingTitle');
+
+    const body = document.getElementById('android-permissions-onboarding-body');
+    if (body) body.textContent = tSettings('androidPermissionsOnboardingBody');
+
+    const grantBtn = document.getElementById('android-accessibility-grant-btn');
+    if (grantBtn && !grantBtn.disabled) {
+        grantBtn.textContent = tSettings('androidAccessibilityGrantBtn');
+    }
+
+    const status = document.getElementById('android-accessibility-status');
+    if (status) {
+        status.textContent = status.classList.contains('hidden')
+            ? tSettings('androidAccessibilityWaitingStatus')
+            : tSettings('androidAccessibilityReturnStatus');
+    }
+
+    const note = document.getElementById('android-permissions-onboarding-note');
+    if (note) note.innerHTML = tSettings('eulaProjectBlurb');
+}
+
 /** Welcome onboarding screen — localized in the same way as the EULA screen. */
 export function applyRebrandOnboardingLanguage() {
     const icon = document.getElementById('rebrand-onboarding-app-icon');
@@ -3636,8 +3682,8 @@ export function applySettingsLanguage() {
     applyWelcomeOnboardingLanguage();
     applyRebrandOnboardingLanguage();
     applySafariFdaOnboardingLanguage();
-    setHtml('ios-screentime-onboarding-title', tSettings('welcomeOnboardingTitle'));
-    setText('ios-screentime-onboarding-note', tSettings('eulaProjectBlurb'));
+    applyIosScreentimeOnboardingLanguage();
+    applyAndroidPermissionsOnboardingLanguage();
 
     if (state.migrationOnboardingActive && state.lastMigrationBrowserState) {
         renderBrowserInstallButtons(state.lastMigrationBrowserState, { force: true });
