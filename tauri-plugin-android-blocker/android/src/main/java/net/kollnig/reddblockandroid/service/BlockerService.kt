@@ -144,51 +144,8 @@ class BlockerService : AccessibilityService() {
         return shouldSkip
     }
 
-    /** Maps browser package names to their URL bar view IDs */
-    private val browserUrlViewIds = mapOf(
-        // Firefox variants
-        "org.mozilla.firefox" to listOf("mozac_browser_toolbar_url_view", "url_bar_title", "ADDRESSBAR_URL_BOX"),
-        "org.mozilla.firefox_beta" to listOf("mozac_browser_toolbar_url_view", "url_bar_title", "ADDRESSBAR_URL_BOX"),
-        "org.mozilla.fenix" to listOf("mozac_browser_toolbar_url_view", "url_bar_title", "ADDRESSBAR_URL_BOX"),
-        "org.mozilla.fenix.nightly" to listOf("mozac_browser_toolbar_url_view", "url_bar_title", "ADDRESSBAR_URL_BOX"),
-        "org.mozilla.focus" to listOf("mozac_browser_toolbar_url_view", "url_bar_title", "ADDRESSBAR_URL_BOX"),
-        // Chrome / Chromium
-        "com.android.chrome" to listOf("url_bar", "origin", "display_url"),
-        "com.chrome.beta" to listOf("url_bar", "display_url"),
-        "org.chromium.chrome" to listOf("url_bar", "display_url"),
-        // Brave
-        "com.brave.browser" to listOf("url_bar", "display_url"),
-        "com.brave.browser_beta" to listOf("url_bar", "display_url"),
-        "com.brave.browser_nightly" to listOf("url_bar", "display_url"),
-        // Samsung Internet
-        "com.sec.android.app.sbrowser" to listOf("location_bar_edit_text"),
-        // Microsoft Edge
-        "com.microsoft.emmx" to listOf("url_bar"),
-        // Opera variants
-        "com.opera.browser" to listOf("url_field"),
-        "com.opera.browser.beta" to listOf("url_field"),
-        "com.opera.mini.native" to listOf("url_field"),
-        "com.opera.mini.native.beta" to listOf("url_field"),
-        "com.opera.touch" to listOf("addressbarEdit"),
-        // Vivaldi
-        "com.vivaldi.browser" to listOf("url_bar", "display_url"),
-        // Kiwi Browser
-        "com.kiwibrowser.browser" to listOf("url_bar", "display_url"),
-        // DuckDuckGo
-        "com.duckduckgo.mobile.android" to listOf("omnibarTextInput"),
-        // Ecosia
-        "com.ecosia.android" to listOf("url_bar"),
-        // Huawei Browser
-        "com.huawei.browser" to listOf("url_bar"),
-        // Android system browser (AOSP)
-        "com.android.browser" to listOf("url"),
-        // Google Search app (in-app browser)
-        "com.google.android.googlequicksearchbox" to listOf("googleapp_srp_search_box_text"),
-    )
-
-    private fun isSupportedBrowser(packageName: String): Boolean {
-        return packageName in browserUrlViewIds
-    }
+    private fun isSupportedBrowser(packageName: String): Boolean =
+        BrowserUrlParser.isSupportedBrowser(packageName)
 
     private fun navigateBrowserToBlank(browserPackage: String) {
         try {
@@ -209,7 +166,7 @@ class BlockerService : AccessibilityService() {
         val root = rootInActiveWindow ?: return null
         try {
             val pkg = event.packageName?.toString() ?: return null
-            val viewIds = browserUrlViewIds[pkg] ?: return null
+            val viewIds = BrowserUrlParser.browserUrlViewIds[pkg] ?: return null
             val knownUrlViewIds = viewIds.map { "$pkg:id/$it" } + viewIds
 
             // First try the standard API with fully-qualified resource IDs
@@ -250,13 +207,7 @@ class BlockerService : AccessibilityService() {
                 val rawText = node.text?.toString()?.takeIf { it.isNotBlank() }
                     ?: node.contentDescription?.toString()
                 if (rawText != null) {
-                    val words = rawText.split("\\s+".toRegex())
-                    for (word in words) {
-                        val cleanWord = word.trimEnd('.', ',')
-                        if (isValidUrlFormat(cleanWord)) {
-                            return cleanWord
-                        }
-                    }
+                    BrowserUrlParser.findUrlInText(rawText)?.let { return it }
                 }
             } finally {
                 node.recycle()
@@ -283,27 +234,9 @@ class BlockerService : AccessibilityService() {
         }
     }
 
-    private fun isValidUrlFormat(text: String): Boolean {
-        val trimmed = text.trim()
-        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) return true
-        if (trimmed.contains(" ") || trimmed.length < 4) return false
-        val domainPattern = Regex("^[a-zA-Z0-9][a-zA-Z0-9.-]*\\.[a-zA-Z]{2,}(/.*)?$")
-        return domainPattern.matches(trimmed)
-    }
-
-    private fun extractDomain(url: String): String? {
-        return try {
-            var normalizedUrl = url.trim()
-            if (!normalizedUrl.startsWith("http://") && !normalizedUrl.startsWith("https://")) {
-                normalizedUrl = "https://$normalizedUrl"
-            }
-            val uri = java.net.URI(normalizedUrl)
-            uri.host?.lowercase()?.removePrefix("www.")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error extracting domain from URL: $url", e)
-            null
-        }
-    }
+    private fun extractDomain(url: String): String? =
+        BrowserUrlParser.extractDomain(url)
+            ?: run { Log.e(TAG, "Error extracting domain from URL: $url"); null }
 
     override fun onInterrupt() {}
 

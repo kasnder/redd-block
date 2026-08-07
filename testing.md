@@ -241,11 +241,38 @@ Run these before merging changes to `web_automation.rs`, `native_host.rs`,
 
 ---
 
+## Android Kotlin unit tests
+
+Android website blocking hinges on reading the URL out of each browser's URL
+bar via the accessibility tree. That parsing lives in
+`tauri-plugin-android-blocker/.../service/BrowserUrlParser.kt` — deliberately
+free of Android framework types so it runs as a plain JVM test:
+
+```
+cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest
+```
+
+`BrowserUrlParserTest` pins **verbatim URL-bar strings dumped from real
+devices** (`adb shell uiautomator dump`), quirks included. This matters because
+a browser-specific quirk here fails *silently*: the browser stays in the
+supported-package map, extraction just returns nothing, and that browser never
+blocks with no error anywhere. That is exactly how Samsung Internet's invisible
+`U+200E` LTR-mark prefix went unnoticed.
+
+**When adding or fixing a browser:** open a site in it, `uiautomator dump` the
+tree, add the raw `text` value of its URL-bar node as a fixture, then verify on
+a device (`logcat -s BlockerService` should log `Blocking website …`). The unit
+test proves parsing; only the device proves the accessibility event actually
+arrives and the friction gate launches.
+
+---
+
 ## Tier Comparison
 
 - **Tier 1 (logic)**: high breadth of logic permutations, zero system mutation.
 - **Tier 2 (integration)**: moderate breadth, Tauri command paths with the `current_blocking` enforcement snapshot as read-back.
 - **Rust unit tests**: enforcement decision logic (URL matching, allowlist composition, payload derivation).
+- **Android Kotlin unit tests**: browser URL-bar parsing (`BrowserUrlParser`), against fixtures dumped from real devices.
 - **Manual checklist**: required for website enforcement, permissions, enforcer, and visual UX.
 
 Recommended stance:

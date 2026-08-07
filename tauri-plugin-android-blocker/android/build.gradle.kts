@@ -36,4 +36,7 @@ dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation(project(":tauri-android"))
+    // JVM unit tests for the pure blocking logic (BrowserUrlParser):
+    //   src-tauri/gen/android/gradlew :tauri-plugin-android-blocker:testDebugUnitTest
+    testImplementation("junit:junit:4.13.2")
 }
