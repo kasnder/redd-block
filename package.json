@@ -59,11 +59,11 @@
     "@tauri-apps/cli": "^2.11.4",
     "dotenv": "^17.4.2",
     "lightningcss": "^1.33.0",
-    "playwright": "^1.62.0",
+    "playwright": "^1.62.1",
     "png-to-ico": "^3.0.2",
     "purgecss": "^8.0.0",
     "rollup-plugin-visualizer": "^7.0.1",
     "sharp": "^0.35.3",
-    "vite": "^8.1.5"
+    "vite": "^8.2.0"
   }
 }
