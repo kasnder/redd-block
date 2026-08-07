@@ -8335,7 +8335,6 @@ body.ios .legal-onboarding-body.eula-ios-blurb,
 
 body.ios .legal-onboarding-body.eula-ios-blurb {
     white-space: pre-line;
-    font-style: italic;
 }
 
 .onboarding-content .onboarding-footnote{
@@ -8343,7 +8342,6 @@ body.ios .legal-onboarding-body.eula-ios-blurb {
     margin-bottom: 0;
     font-size: 14px;
     line-height: 1.45;
-    font-style: italic;
 }
 
 body:not(.ios) .eula-mobile-subtitle{
@@ -8885,12 +8883,11 @@ body.dark-mode .eula-back-btn:hover{
 
 /* Footer credit link — no underline (EULA / privacy links in the card keep theirs). */
 #welcome-onboarding-footer-1 .legal-onboarding-link,
-#eula-onboarding-footer-1 .legal-onboarding-link {
+#eula-onboarding-footer-1 .legal-onboarding-link,
+#eula-project-blurb .legal-onboarding-link,
+#ios-screentime-onboarding-note .legal-onboarding-link,
+#android-permissions-onboarding-note .legal-onboarding-link {
     text-decoration: none;
-}
-
-#eula-onboarding .welcome-footer-line {
-    font-style: italic;
 }
 
 .welcome-footer-line:last-child{
@@ -8980,7 +8977,6 @@ body.dark-mode .welcome-demo-toggle:hover{
     color: var(--text-muted);
     font-size: 15px;
     margin-bottom: 24px;
-    font-style: italic;
 }
 
 .onboarding-focus-card{

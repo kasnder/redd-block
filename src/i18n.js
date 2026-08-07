@@ -86,7 +86,25 @@ export const SETTINGS_TRANSLATIONS = {
         eulaAcceptSaveFailedAlert: 'We could not save your agreement. Please try again to continue.',
         eulaWelcomeIconAlt: 'Digital Habits: Blocker app icon',
         eulaProjectBlurb:
-            'Developed by the Centre for Digital Habits, with researchers at the University of Oxford and University of Maastricht. Centre for Digital Habits is a not-for-profit creating open-source digital focus tools.',
+            'Built by <a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Centre for Digital Habits</a>, a not-for-profit creating open-source digital focus tools &amp; training. In collaboration with researchers at the University of Oxford and University of Maastricht.',
+        // iOS Screen Time permission onboarding
+        iosScreentimeOnboardingBody:
+            'This app uses Apple\'s Screen Time functionality to block distracting websites and apps.',
+        iosScreentimeGrantBtn: 'Grant access to Screen Time',
+        iosScreentimeRequestingBtn: 'Requesting access...',
+        iosScreentimeDeniedNote:
+            'Screen Time access was denied. Please tap the button again, or enable Digital Habits: Blocker in Settings > Screen Time > Apps With Screen Time Access.',
+        iosScreentimeFailedNoteFmt: 'Screen Time access failed: {error}',
+        // Android Accessibility permission onboarding
+        androidPermissionsOnboardingBody:
+            'Digital Habits: Blocker needs the Accessibility permission to detect and block distracting apps and websites.',
+        androidAccessibilityGrantBtn: 'Grant accessibility access',
+        androidAccessibilityOpeningBtn: 'Opening Settings...',
+        androidAccessibilityWaitingStatus:
+            'Waiting for you to enable Digital Habits: Blocker in Accessibility settings…',
+        androidAccessibilityReturnStatus:
+            'Enable Digital Habits: Blocker in Accessibility, then return here.',
+        androidAccessibilityOpenFailedStatusFmt: 'Could not open Accessibility settings: {error}',
         // One-time rename notice for users upgrading from ReDD Blocker
         rebrandNoticeTitleHtml:
             'ReDD Blocker is now <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
@@ -114,7 +132,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeStep2TitleIosHtml: 'Allow Screen Time access',
         welcomeStep2BodyIosHtml:
             '<em>Digital Habits: Blocker</em> uses Screen Time to shield apps and websites on iPhone and iPad. We\'ll ask for permission before your first block.',
-        welcomeStep2TitleAndroidHtml: 'Enable Android Accessibility blocking',
+        welcomeStep2TitleAndroidHtml: 'Enable Android Accessibility setting',
         welcomeStep2BodyAndroidHtml:
             '<em>Digital Habits: Blocker</em> uses Android Accessibility to detect blocked apps and websites and show the block screen. We\'ll open Android Settings so you can enable it.',
         welcomeStep3TitleHtml: 'Start blocking! 🥳',
@@ -946,7 +964,25 @@ export const SETTINGS_TRANSLATIONS = {
         eulaAcceptSaveFailedAlert: 'Vi kunne ikke gemme din godkendelse. Prøv igen for at fortsætte.',
         eulaWelcomeIconAlt: 'Digital Habits: Blocker-appikon',
         eulaProjectBlurb:
-            'Udviklet af Centre for Digital Habits sammen med forskere ved University of Oxford og Maastricht University. Centre for Digital Habits er en non-profit, der skaber open source digitale fokusværktøjer.',
+            'Udviklet af <a href="https://digitalevaner.dk" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Center for Digitale Vaner</a>, en non-profit, der bygger open source digitale fokusværktøjer og kurser. I samarbejde med forskere ved University of Oxford og Maastricht University.',
+        // iOS Screen Time permission onboarding
+        iosScreentimeOnboardingBody:
+            'Denne app bruger Apples Screen Time-funktion til at blokere distraherende hjemmesider og apps.',
+        iosScreentimeGrantBtn: 'Giv adgang til Screen Time',
+        iosScreentimeRequestingBtn: 'Anmoder om adgang...',
+        iosScreentimeDeniedNote:
+            'Adgang til Screen Time blev nægtet. Tryk på knappen igen, eller slå Digital Habits: Blocker til under Indstillinger > Skærmtid > Apps med skærmtid-adgang.',
+        iosScreentimeFailedNoteFmt: 'Screen Time-adgang mislykkedes: {error}',
+        // Android Accessibility permission onboarding
+        androidPermissionsOnboardingBody:
+            'Digital Habits: Blocker har brug for Accessibility-tilladelse for at registrere og blokere distraherende apps og hjemmesider.',
+        androidAccessibilityGrantBtn: 'Giv Accessibility-adgang',
+        androidAccessibilityOpeningBtn: 'Åbner Indstillinger...',
+        androidAccessibilityWaitingStatus:
+            'Venter på, at du aktiverer Digital Habits: Blocker under Accessibility-indstillinger…',
+        androidAccessibilityReturnStatus:
+            'Aktiver Digital Habits: Blocker under Accessibility, og vend derefter tilbage hertil.',
+        androidAccessibilityOpenFailedStatusFmt: 'Kunne ikke åbne Accessibility-indstillinger: {error}',
         // One-time rename notice for users upgrading from ReDD Blocker
         rebrandNoticeTitleHtml:
             'ReDD Blocker hedder nu <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
@@ -974,7 +1010,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeStep2TitleIosHtml: 'Giv adgang til Screen Time',
         welcomeStep2BodyIosHtml:
             '<em>Digital Habits: Blocker</em> bruger Screen Time til at skærme apps og hjemmesider på iPhone og iPad. Vi beder om tilladelse før din første blokering.',
-        welcomeStep2TitleAndroidHtml: 'Slå Android Accessibility-blokering til',
+        welcomeStep2TitleAndroidHtml: 'Slå Android Accessibility-indstilling til',
         welcomeStep2BodyAndroidHtml:
             '<em>Digital Habits: Blocker</em> bruger Android Accessibility til at registrere blokerede apps og hjemmesider og vise blokeringsskærmen. Vi åbner Android-indstillinger, så du kan slå det til.',
         welcomeStep3TitleHtml: 'Vælg, hvad der skal blokeres',
@@ -1777,7 +1813,18 @@ export const SETTINGS_TRANSLATIONS = {
         eulaBackBtn: '返回',
         eulaAcceptSaveFailedAlert: '无法保存你的同意状态。请重试后继续。',
         eulaWelcomeIconAlt: 'Digital Habits: Blocker 应用图标',
-        eulaProjectBlurb: '由 Centre for Digital Habits 开发，并与牛津大学和马斯特里赫特大学的研究人员合作。Centre for Digital Habits 是一个非营利项目，致力于创建开源数字专注工具。',
+        eulaProjectBlurb: '由 <a href="https://digitalhabits.org" target="_blank" rel="noopener noreferrer" class="legal-onboarding-link">Centre for Digital Habits</a> 开发，这是一个创建开源数字专注工具和培训的非营利项目。与牛津大学和马斯特里赫特大学研究人员合作。',
+        iosScreentimeOnboardingBody: '此应用使用 Apple 的屏幕使用时间功能来阻止分心的网站和应用。',
+        iosScreentimeGrantBtn: '授予屏幕使用时间访问权限',
+        iosScreentimeRequestingBtn: '正在请求访问…',
+        iosScreentimeDeniedNote: '屏幕使用时间授权被拒绝。请再次点按按钮，或在“设置 > 屏幕使用时间 > 具有屏幕使用时间访问权限的 App”中启用 Digital Habits: Blocker。',
+        iosScreentimeFailedNoteFmt: '屏幕使用时间访问失败：{error}',
+        androidPermissionsOnboardingBody: 'Digital Habits: Blocker 需要无障碍权限以检测并阻止分心的应用和网站。',
+        androidAccessibilityGrantBtn: '授予无障碍访问权限',
+        androidAccessibilityOpeningBtn: '正在打开设置…',
+        androidAccessibilityWaitingStatus: '等待你在无障碍设置中启用 Digital Habits: Blocker…',
+        androidAccessibilityReturnStatus: '在无障碍设置中启用 Digital Habits: Blocker，然后返回此处。',
+        androidAccessibilityOpenFailedStatusFmt: '无法打开无障碍设置：{error}',
         // One-time rename notice for users upgrading from ReDD Blocker
         rebrandNoticeTitleHtml:
             'ReDD Blocker 现已更名为 <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
@@ -1798,7 +1845,7 @@ export const SETTINGS_TRANSLATIONS = {
         welcomeStep2BodyHtml: '{LOGO}<strong>Digital Habits: Focus</strong> 扩展负责真正阻止网站。能自动安装的浏览器我们会自动处理，并告诉你需要手动完成的步骤。',
         welcomeStep2TitleIosHtml: '允许屏幕使用时间访问',
         welcomeStep2BodyIosHtml: '在 iPhone 和 iPad 上，<em>Digital Habits: Blocker</em> 使用屏幕时间来屏蔽应用和网站。首次阻止前我们会请求权限。',
-        welcomeStep2TitleAndroidHtml: '启用 Android 无障碍阻止',
+        welcomeStep2TitleAndroidHtml: '启用 Android 无障碍设置',
         welcomeStep2BodyAndroidHtml: '<em>Digital Habits: Blocker</em> 使用 Android 无障碍功能来检测被阻止的应用和网站并显示阻止界面。我们会打开 Android 设置以便你启用它。',
         welcomeStep3TitleHtml: '开始阻止吧！🥳',
         welcomeStep3BodyHtml: '选择让你分心的网站和应用，并设置你希望它们不可访问的时间。剩下的交给 <em>Digital Habits: Blocker</em>。',

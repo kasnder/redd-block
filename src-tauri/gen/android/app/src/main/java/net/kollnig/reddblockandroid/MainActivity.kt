@@ -1,5 +1,6 @@
 package net.kollnig.reddblockandroid
 
+import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
@@ -15,8 +16,11 @@ class MainActivity : TauriActivity() {
     // Android WebView doesn't reliably surface those regions to CSS via
     // env(safe-area-inset-*) the way WKWebView does on iOS. Apply the
     // system-bar (+ keyboard) insets as native padding instead, so the
-    // web content always sits between the bars.
-    ViewCompat.setOnApplyWindowInsetsListener(findViewById(android.R.id.content)) { v, insets ->
+    // web content always sits between the bars. Colour that padding to
+    // match the app canvas (#F7F5F0) so it isn't white.
+    val content = findViewById<android.view.View>(android.R.id.content)
+    content.setBackgroundColor(Color.parseColor("#F7F5F0"))
+    ViewCompat.setOnApplyWindowInsetsListener(content) { v, insets ->
       val bars = insets.getInsets(
         WindowInsetsCompat.Type.systemBars()
           or WindowInsetsCompat.Type.displayCutout()
