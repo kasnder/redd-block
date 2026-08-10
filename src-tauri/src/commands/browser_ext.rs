@@ -474,22 +474,33 @@ fn apply_macos_blocking_warning_panel_mode(
             // user cannot minimize/close the shell as if the block never
             // started. Restored on leave (and after style-mask flips which
             // can recreate the buttons).
-            set_macos_traffic_lights_visible(&handle, false);
+            set_macos_traffic_lights_visible_now(&handle, false);
         } else {
             panel.set_style_mask(base_mask);
             panel.set_level(PanelLevel::Normal.value());
             panel.set_collection_behavior(CollectionBehavior::new().into());
-            set_macos_traffic_lights_visible(&handle, true);
+            set_macos_traffic_lights_visible_now(&handle, true);
         }
     }) {
         log::warn!("apply_macos_blocking_warning_panel_mode: main thread: {e:?}");
     }
 }
 
-/// Show or hide the standard macOS close / minimize / zoom buttons.
-/// Safe to call repeatedly; no-ops if the main window is missing.
+/// Show or hide the standard macOS close / minimize / zoom buttons on the
+/// AppKit main thread. Callers may be on a watcher or command thread.
 #[cfg(target_os = "macos")]
 fn set_macos_traffic_lights_visible(app: &AppHandle, visible: bool) {
+    let handle = app.clone();
+    if let Err(e) = app.run_on_main_thread(move || {
+        set_macos_traffic_lights_visible_now(&handle, visible);
+    }) {
+        log::warn!("set_macos_traffic_lights_visible: main thread: {e:?}");
+    }
+}
+
+/// The raw AppKit operation. This must only be called from the main thread.
+#[cfg(target_os = "macos")]
+fn set_macos_traffic_lights_visible_now(app: &AppHandle, visible: bool) {
     use cocoa::base::{id, nil, NO, YES};
     use objc::{msg_send, sel, sel_impl};
 
