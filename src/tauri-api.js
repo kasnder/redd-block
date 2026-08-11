@@ -86,7 +86,8 @@ export const tauriAPI = {
     // these just marshal to it. See tauri-plugin-android-blocker/src/commands.rs.
     androidCheckPermissions: () => invoke('plugin:android-blocker|check_blocker_permissions'),
     androidOpenAccessibilitySettings: () => invoke('plugin:android-blocker|open_accessibility_settings'),
-    androidSetSchedules: (schedules) => invoke('plugin:android-blocker|set_schedules', { schedules }),
+    androidSetSchedules: (schedules, defaultPauseMinutes = null) =>
+        invoke('plugin:android-blocker|set_schedules', { schedules, defaultPauseMinutes }),
     androidStartManualBlock: (id, endTimestampMs) =>
         invoke('plugin:android-blocker|start_manual_block', { id, endTimestampMs }),
     androidStopManualBlock: (id) => invoke('plugin:android-blocker|stop_manual_block', { id }),

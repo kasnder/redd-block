@@ -59,6 +59,11 @@ pub struct ScheduleEntry {
 #[serde(rename_all = "camelCase")]
 pub struct SetSchedulesRequest {
     pub schedules: Vec<ScheduleEntry>,
+    /// User-configured default pause length, mirrored into Kotlin prefs so
+    /// the native friction gate can prefill it. `None` leaves the stored
+    /// value untouched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_pause_minutes: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

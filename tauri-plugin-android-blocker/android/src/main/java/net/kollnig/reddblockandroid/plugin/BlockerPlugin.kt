@@ -21,6 +21,8 @@ import net.kollnig.reddblockandroid.schedule.ScheduleManager
 import net.kollnig.reddblockandroid.schedule.Schedules
 import net.kollnig.reddblockandroid.service.BlockerService
 import net.kollnig.reddblockandroid.util.isAccessibilityServiceEnabled
+import net.kollnig.reddblockandroid.util.PREF_DEFAULT_PAUSE_MINUTES
+import net.kollnig.reddblockandroid.util.coerceDefaultPauseMinutes
 import net.kollnig.reddblockandroid.util.isPrefsInitialized
 import net.kollnig.reddblockandroid.util.prefs
 import org.json.JSONArray
@@ -51,6 +53,11 @@ class ScheduleEntryArg {
 @InvokeArg
 class SetSchedulesArgs {
     var schedules: List<ScheduleEntryArg> = listOf()
+
+    /** User-configured default pause length, prefilled by the native
+     *  friction gate ([net.kollnig.reddblockandroid.gate.UnlockActivity]).
+     *  Null = leave the stored value alone. */
+    var defaultPauseMinutes: Int? = null
 }
 
 @InvokeArg
@@ -191,6 +198,16 @@ class BlockerPlugin(private val activity: Activity) : Plugin(activity) {
     @Command
     fun setSchedules(invoke: Invoke) {
         val args = invoke.parseArgs(SetSchedulesArgs::class.java)
+
+        // The gate runs in its own activity (often from a cold process), so
+        // it can't ask the webview for the setting — mirror it into prefs on
+        // every sync instead.
+        args.defaultPauseMinutes?.let {
+            prefs.edit()
+                .putInt(PREF_DEFAULT_PAUSE_MINUTES, coerceDefaultPauseMinutes(it))
+                .apply()
+        }
+
         val existingById = Schedules.getAll().associateBy { it.id }
         val incomingIds = args.schedules.map { it.id }.toSet()
 

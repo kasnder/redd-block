@@ -17,6 +17,12 @@ import {
     validateIOSAllowlistLimits,
     IOS_ALLOWLIST_EXCEPTION_LIMIT,
 } from './allowlist-ios.js';
+import {
+    getDefaultPauseMinutes,
+    clampDefaultPauseMinutes,
+    FALLBACK_DEFAULT_PAUSE_MINUTES,
+    MAX_DEFAULT_PAUSE_MINUTES,
+} from './pause-default.js';
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
@@ -37,6 +43,10 @@ window.__REDDBLOCK_INTERNALS__ = {
     deriveIOSEffectiveAppPolicy,
     validateIOSAllowlistLimits,
     IOS_ALLOWLIST_EXCEPTION_LIMIT,
+    getDefaultPauseMinutes,
+    clampDefaultPauseMinutes,
+    FALLBACK_DEFAULT_PAUSE_MINUTES,
+    MAX_DEFAULT_PAUSE_MINUTES,
 };
 
 // ========================================
