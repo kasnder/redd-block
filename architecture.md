@@ -435,14 +435,16 @@ excluded from `derive_payload` and app-watcher effective sets. Schedule pause
 can suppress upcoming segments until pause end or manual resume.
 
 The duration prefilled when pausing is user-configurable
-(`settings.defaultPauseMinutes`, default 15 min, clamped to [1 min, 1 day];
+(`settings.defaultPauseMinutes`, default 10 min, clamped to [1 min, 1 day];
 helpers in `src/pause-default.js`). It is exposed as **Settings → Default pause
-length** on Android and changing it passes the same typing challenge as
-"Stop all" (hardest difficulty among whatever is currently blocking; no
-challenge when nothing is active). Android mirrors the value into Kotlin
-prefs on every `set_schedules` sync so the native friction gate
-(`UnlockActivity`) prefills the same duration — it runs in its own activity
-and cannot query the webview.
+length** on every platform — the pause modal it prefills is cross-platform —
+and changing it passes the same typing challenge as "Stop all" (hardest
+difficulty among whatever is currently blocking; no challenge when nothing is
+active). Android additionally mirrors the value into Kotlin prefs on every
+`set_schedules` sync so the native friction gate (`UnlockActivity`) prefills
+the same duration — it runs in its own activity and cannot query the webview.
+No mirror is needed on iOS/macOS/Windows: their block screens have no pause
+control, so the webview modal is the only consumer.
 
 ### 9.4 Merge semantics
 
