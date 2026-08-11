@@ -1591,7 +1591,7 @@
     // ========================================
 
     // The configurable prefill duration behind the "Stop all"-style gate
-    // (Settings → Default pause length; Android). Pure helpers over
+    // (Settings → Default pause length; all platforms). Pure helpers over
     // appData.settings.defaultPauseMinutes.
     function runDefaultPauseLengthTests() {
         console.log('\n⏸️  Category 15: Default Pause Length');
@@ -1616,13 +1616,13 @@
             (function T63() {
                 withSetting(undefined);
                 assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
-                    'T63: unset setting falls back to 15 minutes');
+                    'T63: unset setting falls back to 10 minutes');
                 withSetting(0);
                 assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
-                    'T63: zero falls back to 15 minutes');
+                    'T63: zero falls back to 10 minutes');
                 withSetting('not a number');
                 assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
-                    'T63: non-numeric falls back to 15 minutes');
+                    'T63: non-numeric falls back to 10 minutes');
             })();
 
             // T64: a configured value is used verbatim

@@ -3590,7 +3590,10 @@ export function applySettingsLanguage() {
     setText('settings-pause-default-label', tSettings('settingsPauseDefaultLabel'));
     setText('settings-pause-default-hint', tSettings('settingsPauseDefaultHint'));
     setText('pause-default-title', tSettings('pauseDefaultTitle'));
-    setText('pause-default-subtitle', tSettings('pauseDefaultSubtitle'));
+    // Android additionally prefills its native block screen from this setting,
+    // so it gets a subtitle that says so.
+    setText('pause-default-subtitle',
+        tSettings(state.isAndroid ? 'pauseDefaultSubtitleAndroid' : 'pauseDefaultSubtitle'));
     setText('pause-default-instruction', tSettings('pauseDefaultInstruction'));
     setText('pause-default-hours-unit', tSettings('pauseDefaultUnitHours'));
     setText('pause-default-minutes-unit', tSettings('pauseDefaultUnitMinutes'));
