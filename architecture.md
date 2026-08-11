@@ -434,6 +434,16 @@ Pause fields live in app data. While paused, domains/apps from that source are
 excluded from `derive_payload` and app-watcher effective sets. Schedule pause
 can suppress upcoming segments until pause end or manual resume.
 
+The duration prefilled when pausing is user-configurable
+(`settings.defaultPauseMinutes`, default 15 min, clamped to [1 min, 1 day];
+helpers in `src/pause-default.js`). It is exposed as **Settings → Default pause
+length** on Android and changing it passes the same typing challenge as
+"Stop all" (hardest difficulty among whatever is currently blocking; no
+challenge when nothing is active). Android mirrors the value into Kotlin
+prefs on every `set_schedules` sync so the native friction gate
+(`UnlockActivity`) prefills the same duration — it runs in its own activity
+and cannot query the webview.
+
 ### 9.4 Merge semantics
 
 Effective website blocking is the union of active one-off and currently active
