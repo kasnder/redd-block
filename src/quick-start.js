@@ -24,8 +24,8 @@ import {
 import { openInstalledAppsPicker } from './apps-picker.js';
 import { displayNameForBlockedApp, resetModalScrollPosition } from './blocking-platform.js';
 import {
-    MIN_OVERRIDE_CHARS,
     getMaxOverrideCharsForType,
+    getMinOverrideCountForType,
     getOverrideEstimatedMinutes,
     normalizeOverrideCount,
     usesMobileWordCountForOverrideType,
@@ -67,7 +67,7 @@ function generateQuickStartId() {
 
 function sliderToOverrideCount(sliderValue) {
     const t = Math.max(0, Math.min(100, Number(sliderValue) || 0)) / 100;
-    const min = MIN_OVERRIDE_CHARS;
+    const min = getMinOverrideCountForType(QS_OVERRIDE_TYPE);
     const max = Math.min(QS_MAX_OVERRIDE_CHARS, getMaxOverrideCharsForType(QS_OVERRIDE_TYPE));
     const count = Math.round(min + (max - min) * t);
     return normalizeOverrideCount(count, QS_OVERRIDE_TYPE);

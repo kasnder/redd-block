@@ -186,6 +186,8 @@ export function shouldBlockChallengeSpaceKey(inputEl, event) {
 
 // Word list for random word challenges
 export const MIN_OVERRIDE_CHARS = 5;
+/** iOS/Android count words rather than characters — one word is a valid minimum. */
+export const MIN_MOBILE_OVERRIDE_WORDS = 1;
 export const DEFAULT_OVERRIDE_COUNT = 10;
 export const TARGET_MAX_OVERRIDE_MINUTES = 30;
 /** iOS random-words / gibberish: max word count (random-words: 2500 letters at max; gibberish: 3000). */
@@ -327,7 +329,7 @@ export function normalizeOverrideCount(value, type = 'random-words') {
     const parsed = parseInt(value, 10);
     if (!Number.isFinite(parsed)) return DEFAULT_OVERRIDE_COUNT;
     const maxCount = getMaxOverrideCharsForType(type);
-    return Math.min(maxCount, Math.max(MIN_OVERRIDE_CHARS, parsed));
+    return Math.min(maxCount, Math.max(getMinOverrideCountForType(type), parsed));
 }
 
 export function normalizeCustomOverrideText(value) {
@@ -340,6 +342,15 @@ export function getTypingCharsPerMinuteForType(type) {
     // Estimates only (not locked to max char counts).
     if (type === 'gibberish') return 100;
     return 200; // random-words and custom
+}
+
+/**
+ * Lower bound for the count field. Desktop counts characters, so 5 is the
+ * smallest sensible challenge; mobile (iOS/Android) counts *words*, where a
+ * single word is a legitimate choice for a light friction gate.
+ */
+export function getMinOverrideCountForType(type) {
+    return usesMobileWordCountForOverrideType(type) ? MIN_MOBILE_OVERRIDE_WORDS : MIN_OVERRIDE_CHARS;
 }
 
 export function getMaxOverrideCharsForType(type) {

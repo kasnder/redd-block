@@ -5,7 +5,7 @@ import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isBlockAlwaysOn } from './blocklist-utils.js';
-import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxOverrideCharsForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, sanitizeChallengeTargetText, usesMobileWordCountForOverrideType } from './override-challenge.js';
+import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxOverrideCharsForType, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, sanitizeChallengeTargetText, usesMobileWordCountForOverrideType } from './override-challenge.js';
 import { isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
@@ -3579,6 +3579,7 @@ export function syncOverrideCountUi(type) {
     }
     if (countInput) {
         countInput.max = String(getMaxOverrideCharsForType(type));
+        countInput.min = String(getMinOverrideCountForType(type));
     }
 }
 

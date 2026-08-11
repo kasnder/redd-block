@@ -460,6 +460,7 @@ object Schedules {
             blockedApps = blockedApps,
             blockedWebsites = blockedWebsites,
             frictionWordCount = json.optInt("frictionWordCount", 15),
+            frictionCustomText = json.optString("frictionCustomText").takeIf { it.isNotBlank() },
             emoji = json.optString("emoji").takeIf { it.isNotEmpty() },
             color = json.optString("color").takeIf { it.isNotEmpty() },
             disabledUntil = if (json.has("disabledUntil")) json.optLong("disabledUntil") else null,
@@ -491,6 +492,7 @@ object Schedules {
         put("blockedApps", JSONArray(schedule.blockedApps))
         put("blockedWebsites", JSONArray(schedule.blockedWebsites))
         put("frictionWordCount", schedule.frictionWordCount)
+        schedule.frictionCustomText?.let { put("frictionCustomText", it) }
         schedule.emoji?.let { put("emoji", it) }
         schedule.color?.let { put("color", it) }
         schedule.disabledUntil?.let { put("disabledUntil", it) }
