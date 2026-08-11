@@ -298,7 +298,7 @@ class UnlockActivity : Activity() {
 
     private fun setupDurationInputs() {
         // Prefill the user's configured default pause length (Settings →
-        // "Default pause length"), falling back to the layout's 15 minutes.
+        // "Default pause length"), falling back to the layout's 10 minutes.
         val total = defaultPauseMinutes()
         daysInput.setText((total / (24 * 60)).toString())
         hoursInput.setText(((total % (24 * 60)) / 60).toString())

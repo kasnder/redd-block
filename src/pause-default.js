@@ -1,7 +1,8 @@
 // Default pause length: the duration prefilled when a focus space is paused
-// — both in the webview pause modal (#pause-modal) and in the Android native
-// friction gate (UnlockActivity). Stored in `appData.settings.defaultPauseMinutes`
-// and mirrored into Kotlin prefs on every schedule sync.
+// — in the webview pause modal (#pause-modal) on every platform, and in the
+// Android native friction gate (UnlockActivity). Stored in
+// `appData.settings.defaultPauseMinutes`; Android additionally mirrors it into
+// Kotlin prefs on every schedule sync (the gate can't reach the webview).
 //
 // Raising it weakens blocking, so changing it is gated by the same typing
 // challenge as "Stop all" (hardest difficulty among whatever is currently
@@ -27,7 +28,7 @@ import { hasAnyBlockingStateToClear, syncSchedulesToHelper } from './schedule-en
 
 /** Used until the user changes the setting. Mirrored by
  *  `FALLBACK_DEFAULT_PAUSE_MINUTES` in the Kotlin util/Prefs.kt. */
-export const FALLBACK_DEFAULT_PAUSE_MINUTES = 15;
+export const FALLBACK_DEFAULT_PAUSE_MINUTES = 10;
 /** One day — the pause modal itself allows longer, this is only the prefill. */
 export const MAX_DEFAULT_PAUSE_MINUTES = 24 * 60;
 
@@ -59,11 +60,10 @@ let wordChallengeState = null;
 
 const el = (id) => document.getElementById(id);
 
-/** Android-only row; keeps the displayed value in sync with the setting. */
+/** Keeps the settings row's displayed value in sync with the setting. The row
+ *  is shown on every platform — the pause modal it prefills is cross-platform;
+ *  only the extra native-gate prefill is Android-specific. */
 export function syncDefaultPauseSettingUi() {
-    const row = el('settings-pause-default-row');
-    if (!row) return;
-    row.classList.toggle('hidden', !state.isAndroid);
     const value = el('settings-pause-default-btn-label');
     if (value) value.textContent = formatPauseMinutes(getDefaultPauseMinutes());
 }
