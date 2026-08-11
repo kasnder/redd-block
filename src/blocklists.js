@@ -102,6 +102,10 @@ const BLOCKLIST_EDIT_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24"
                         <path d="m15 5 4 4"/>
                       </svg>`;
 
+const BLOCKLIST_START_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="m9 18 6-6-6-6"/>
+                      </svg>`;
+
 const BLOCKLIST_PAUSE_ICON_SVG = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <rect x="6" y="4" width="4" height="16"/>
                         <rect x="14" y="4" width="4" height="16"/>
@@ -1060,8 +1064,15 @@ export function renderBlocklists() {
 
         // Enter-sheet layouts drop the trailing chevron button and the card-body tap target;
         // everything actionable lives in the overflow menu, led by Pause / Stop while the
-        // focus space is actually enforcing (one-off block first, else the running schedule).
+        // focus space is actually enforcing (one-off block first, else the running schedule)
+        // and by Start when it's idle.
         const runControls = usesEnterSheetCards ? getBlocklistRunControls(bl.id, now) : null;
+        const startItemHtml = usesEnterSheetCards && !runControls
+            ? `<button class="blocklist-menu-item start-blocklist-item" title="${tSettings('blocklistCardStart')}" aria-label="${tSettings('blocklistCardStart')}">
+                      ${BLOCKLIST_START_ICON_SVG}
+                      ${tSettings('blocklistCardStart')}
+                    </button>`
+            : '';
         const pauseItemHtml = runControls?.canPause
             ? `<button class="blocklist-menu-item pause-blocklist-item" title="${tSettings('nowBlockingMenuPause')}" aria-label="${tSettings('nowBlockingMenuPause')}">
                       ${BLOCKLIST_PAUSE_ICON_SVG}
@@ -1092,6 +1103,7 @@ export function renderBlocklists() {
                     </svg>
                   </button>
                   <div class="blocklist-menu hidden">
+                    ${startItemHtml}
                     ${runControlsHtml}
                     ${isQuickStart ? `
                     <button class="blocklist-menu-item save-quick-start-item" title="${tSettings('quickStartSaveAsLink')}" aria-label="${tSettings('quickStartSaveAsLink')}">
@@ -1167,6 +1179,12 @@ export function renderBlocklists() {
             if (usesEnterSchedulerSheet()) return;
             if (e.target.closest('.blocklist-actions') || e.target.closest('.blocklist-menu')) return;
 
+            openBlocklistEnterFromCard(id);
+        });
+
+        card.querySelector('.start-blocklist-item')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            closeAllBlocklistMenus();
             openBlocklistEnterFromCard(id);
         });
 
