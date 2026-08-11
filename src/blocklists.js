@@ -6,11 +6,11 @@ import { ask, message, open as openDialog, save as saveDialog } from '@tauri-app
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { escapeHtml, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
-import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isBlockAlwaysOn, isQuickStartBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist, QUICK_START_EMOJI } from './blocklist-utils.js';
+import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, iosScreenTimeSelectionKey, isBlockAlwaysOn, isQuickStartBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist, QUICK_START_EMOJI } from './blocklist-utils.js';
 import { isOneOffBlockEnforced, isSchedulePausedNow } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render, renderNowBlockingRow, renderScheduleVisibilityChips } from './render.js';
-import { isScheduleSegmentActiveNow } from './schedule-editor.js';
+import { canEditScheduleBetweenBlocks, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import {
     BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS,
     BLOCKLIST_NAME_MAX_LENGTH,
@@ -199,14 +199,10 @@ export function contentKey(blocklistId) {
     if (!bl) return '';
     const w = [...(bl.websites || [])].sort();
     const a = [...getBlocklistRegularApps(bl)].sort();
-    const iosSelection = getBlocklistIOSScreenTimeSelection(bl);
-    return JSON.stringify({
-        w,
-        a,
-        iosAppTokens: [...(iosSelection?.applicationTokens || [])].sort(),
-        iosCategoryTokens: [...(iosSelection?.categoryTokens || [])].sort(),
-        iosSummary: iosSelection?.summaryLabel || ''
-    });
+    // Shares its Screen Time serialization with compareBlocklistStrictness so the
+    // two notions of "same selection" cannot drift apart.
+    const ios = iosScreenTimeSelectionKey(getBlocklistIOSScreenTimeSelection(bl));
+    return JSON.stringify({ w, a, ios });
 }
 
 export function sameBlocklistContent(idA, idB) { return contentKey(idA) === contentKey(idB); }
@@ -269,6 +265,33 @@ export function isBlocklistCurrentlyActive(blocklistId) {
     const schedule = state.appData.schedules?.find(s => s.blocklistId === blocklistId);
     if (!schedule?.segments?.length) return false;
     return isScheduleSegmentActiveNow(schedule, new Date(now));
+}
+
+/**
+ * Must an edit that *loosens* this focus space be confirmed with the exit
+ * challenge? True while the space is actually enforcing.
+ *
+ * Two deliberate exemptions:
+ *  - Paused blocks are NOT gated. This is a product decision, and it does mean
+ *    pause → loosen → resume is a cheaper route than the challenge (pausing can
+ *    itself be frictionless on flexible schedules). Chosen knowingly: a paused
+ *    block isn't blocking anything, so treating it as live reads as a bug.
+ *  - Schedules with allowEditsBetweenBlocks are already exempt by design while
+ *    between segments (canEditScheduleBetweenBlocks).
+ *
+ * Recompute this at the moment of use — a block can end, or a segment begin,
+ * while the edit modal sits open.
+ */
+export function isBlocklistEditFrictionRequired(blocklistId, now = Date.now()) {
+    if (!blocklistId) return false;
+    const hasActiveBlock = state.appData.activeBlocks.some(
+        b => b.blocklistId === blocklistId && isOneOffBlockEnforced(b, now)
+    );
+    if (hasActiveBlock) return true;
+    const schedule = state.appData.schedules?.find(s => s.blocklistId === blocklistId);
+    if (!schedule?.segments?.length) return false;
+    if (!isScheduleSegmentActiveNow(schedule, new Date(now))) return false;
+    return !canEditScheduleBetweenBlocks(schedule, new Date(now));
 }
 
 export function clearPendingScheduleDraft(blocklistId) {

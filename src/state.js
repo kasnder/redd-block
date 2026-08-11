@@ -78,6 +78,12 @@ export const state = {
     lastOverrideTypeValueBeforeMaxDifficulty: 'random-words',
     overrideBlockId: null,
     overrideBlocklistIdForHelper: null,
+    // What the #override-modal challenge is currently gating. 'stop' (or null)
+    // is the default stop-a-block flow; 'blocklist-edit-unlock' means a pending
+    // edit-modal save is waiting on it. MUST be cleared in closeOverrideModal,
+    // or a later genuine stop would re-run the stale save callback.
+    overrideChallengePurpose: null,
+    overrideConfirmCallback: null,
     challengeText: '',
     pauseBlockId: null, // Track which block is being paused
     pauseChallengeText: '', // Challenge text for pause modal

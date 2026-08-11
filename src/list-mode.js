@@ -1,12 +1,65 @@
 // Blocklist vs allowlist mode helpers for the focus-space edit modal.
 // Extracted from app.js during allowlist-refactoring phase 2.
 import { tSettings, tSettingsFmt } from './i18n.js';
+import { state } from './state.js';
+import { BLOCKLIST_LOOSEN_REASONS, compareBlocklistStrictness } from './blocklist-utils.js';
+import { isBlocklistEditFrictionRequired } from './blocklists.js';
 
 const ALLOWLIST_SCOPE_LOCK_ICON = `<svg class="allowlist-scope-hint-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>`;
 const ALLOWLIST_SCOPE_CHECK_ICON = `<svg class="allowlist-scope-hint-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><path d="M8.5 12.5l2.5 2.5 4.5-5"></path></svg>`;
 
 /** Create/edit modal mode — set by entry point (New space vs Allow only) or existing list. */
 let selectedBlocklistModalMode = 'blocklist';
+
+const LOOSEN_REASON_TEXT_KEYS = {
+    [BLOCKLIST_LOOSEN_REASONS.MODE_CHANGED]: 'blocklistLoosenReasonMode',
+    [BLOCKLIST_LOOSEN_REASONS.WEBSITES_REMOVED]: 'blocklistLoosenReasonRemoved',
+    [BLOCKLIST_LOOSEN_REASONS.APPS_REMOVED]: 'blocklistLoosenReasonRemoved',
+    [BLOCKLIST_LOOSEN_REASONS.WEBSITES_ALLOWED_ADDED]: 'blocklistLoosenReasonAllowedMore',
+    [BLOCKLIST_LOOSEN_REASONS.APPS_ALLOWED_ADDED]: 'blocklistLoosenReasonAllowedMore',
+    [BLOCKLIST_LOOSEN_REASONS.WEBSITES_ALLOW_SCOPE_OPENED]: 'blocklistLoosenReasonAllowAllWeb',
+    [BLOCKLIST_LOOSEN_REASONS.APPS_ALLOW_SCOPE_OPENED]: 'blocklistLoosenReasonAllowAllApps',
+    [BLOCKLIST_LOOSEN_REASONS.IOS_SELECTION_CHANGED]: 'blocklistLoosenReasonScreenTime',
+    [BLOCKLIST_LOOSEN_REASONS.DIFFICULTY_CHANGED]: 'blocklistLoosenReasonDifficulty',
+};
+
+/**
+ * Warn, before Save is pressed, that the pending edit will need the exit
+ * challenge. Nothing in the modal is locked any more, so this is the only
+ * advance notice the user gets.
+ *
+ * Self-guarding: two of its callers (renderModalTags, updateOverridePreview)
+ * also fire while the modal is closed.
+ */
+export function syncBlocklistUnlockHint() {
+    const el = document.getElementById('blocklist-unlock-hint');
+    if (!el) return;
+    const hide = () => {
+        el.classList.add('hidden');
+        el.textContent = '';
+    };
+
+    if (!state.editingBlocklistId) return hide();
+    if (document.getElementById('blocklist-modal')?.classList.contains('hidden')) return hide();
+    const prev = state.appData?.blocklists?.find(bl => bl.id === state.editingBlocklistId);
+    if (!prev) return hide();
+    // Recomputed every call, never cached: a flexible schedule can cross a
+    // segment boundary while the modal is open.
+    if (!isBlocklistEditFrictionRequired(prev.id)) return hide();
+
+    // Same builder Save uses, so the hint can never disagree with the verdict.
+    const built = window.buildBlocklistPayloadFromModal?.({ dryRun: true });
+    if (!built) return hide();
+
+    const comparison = compareBlocklistStrictness(prev, built.candidate);
+    if (!comparison.loosens) return hide();
+
+    const reasonKey = LOOSEN_REASON_TEXT_KEYS[comparison.primaryReasonCode];
+    el.textContent = tSettingsFmt('blocklistLoosenHintFmt', {
+        reason: reasonKey ? tSettings(reasonKey) : '',
+    });
+    el.classList.remove('hidden');
+}
 
 /** Create dialog kind: saved list vs one-off quick start (create only). */
 let blocklistCreateKind = 'new-list';

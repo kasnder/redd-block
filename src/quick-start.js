@@ -155,6 +155,10 @@ function setupQuickStartTooltips() {
 }
 
 function setQuickStartMode(mode) {
+    // Belt-and-braces with the CSS that hides #quick-start-mode-group on Android:
+    // Kotlin has no allow-mode enforcement, so an allow-mode quick start would
+    // block precisely the apps it is supposed to permit.
+    if (state.isAndroid && mode === 'allowlist') return;
     qsMode = mode === 'allowlist' ? 'allowlist' : 'blocklist';
     document.querySelectorAll('#quick-start-mode-toggle .mode-btn').forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.mode === qsMode);

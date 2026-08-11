@@ -3851,6 +3851,23 @@ body:not(.ios) #settings-toolbar-scheduler{
     padding: 0 4px 8px;
 }
 
+/* Android has no allow-mode enforcement: the JS→Rust→Kotlin schedule payload
+   carries no `mode` field, so Kotlin treats every list as a denylist and an
+   allow-mode space would block exactly the apps it is meant to permit. Hide the
+   two entry points that can create one until Schedule.kt/Schedules.kt learn
+   about mode; existing allow-mode spaces are left alone. */
+body.android #allow-only-blocklist-btn{
+    display: none;
+}
+
+body.android .blocklists-create-actions{
+    grid-template-columns: 1fr;
+}
+
+body.android #quick-start-mode-group{
+    display: none;
+}
+
 .blocklists-create-btn{
     display: inline-flex;
     align-items: center;
@@ -12873,9 +12890,20 @@ body.handset-device #quick-start-modal.mobile-fullscreen-modal .quick-start-moda
 
 .modal-buttons{
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     margin-top: 20px;
     border-top: none;
+}
+
+/* Sits in .modal-buttons (outside the handset scroll body) so it stays visible
+   however far down the edit modal is scrolled. */
+.blocklist-unlock-hint{
+    flex: 0 0 100%;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text-secondary);
 }
 
 .modal-btn{
@@ -15333,30 +15361,6 @@ body.dark-mode.handset-device #blocklist-modal.mobile-fullscreen-modal .modal-bu
     border-left-color: var(--input-border);
     border-right-color: var(--input-border);
     opacity: 0.65;
-}
-
-.exit-difficulty-time-estimate.time-estimate-disabled{
-    opacity: 0.65;
-}
-
-#override-max-difficulty-wrap.max-difficulty-disabled{
-    pointer-events: none;
-    opacity: 0.7;
-    cursor: default;
-}
-
-/* When blocklist has active block or schedule: grey out override panel rows */
-#override-method-row.blocklist-active-locked,
-#override-count-wrapper.blocklist-active-locked,
-#override-max-difficulty-wrap.blocklist-active-locked,
-#override-preview-block.blocklist-active-locked{
-    pointer-events: none;
-    opacity: 0.7;
-}
-
-#override-count-wrapper.blocklist-active-locked .override-count-input,
-#override-count-wrapper.blocklist-active-locked .exit-difficulty-time-estimate{
-    cursor: default;
 }
 
 /* Override difficulty: preview text (truncate with ...) */

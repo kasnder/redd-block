@@ -6,7 +6,7 @@
 // never rename them.
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
-import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
+import { BLOCKLIST_LOOSEN_REASONS, PROTECTED_APP_NAMES, PROTECTED_DOMAINS, compareBlocklistStrictness, iosScreenTimeSelectionKey, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
 import { duplicateBlocklist, getNextCopyName } from './blocklists.js';
@@ -33,6 +33,9 @@ window.__REDDBLOCK_INTERNALS__ = {
     duplicateBlocklist,
     getNextCopyName,
     getMaxOverrideCharsForType,
+    compareBlocklistStrictness,
+    BLOCKLIST_LOOSEN_REASONS,
+    iosScreenTimeSelectionKey,
     deriveIOSEffectiveWebsitePolicy,
     deriveIOSEffectiveAppPolicy,
     validateIOSAllowlistLimits,
