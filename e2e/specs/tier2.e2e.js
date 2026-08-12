@@ -131,11 +131,49 @@ async function reportStartupDiagnostics() {
     }
 }
 
+// Both diagnostics above now pass and A7/A9 still fail, on Windows (WebView2)
+// as well as macOS (WKWebView) — so it is neither the first-run gate nor timer
+// throttling. The remaining candidate is that the 1 s tick throws before it
+// reaches the pause-expiry branch (`src/render.js`), which would abort that
+// iteration silently every second and leave `isPaused` set. Capture anything
+// the app throws while the suite runs so the next failure carries the reason.
+async function installErrorCapture() {
+    await browser.execute(() => {
+        window.__TIER2_ERRORS__ = [];
+        const push = (kind, message) => {
+            if (window.__TIER2_ERRORS__.length < 40) {
+                window.__TIER2_ERRORS__.push(`${kind}: ${message}`);
+            }
+        };
+        window.addEventListener('error', (e) => push('error', (e.error && e.error.stack) || e.message));
+        window.addEventListener('unhandledrejection', (e) => {
+            const r = e.reason;
+            push('unhandledrejection', String((r && r.stack) || r));
+        });
+        const originalError = console.error;
+        console.error = function (...args) {
+            push('console.error', args.map((a) => (a && a.stack) || String(a)).join(' '));
+            return originalError.apply(this, args);
+        };
+    });
+}
+
+async function reportCapturedErrors() {
+    const errors = await browser.execute(() => window.__TIER2_ERRORS__ || []);
+    if (!errors.length) {
+        console.log('[tier2] app reported no errors during the run');
+        return;
+    }
+    console.log(`[tier2] app errors during the run (${errors.length}):`);
+    errors.forEach((e) => console.log(`[tier2]   ! ${e}`));
+}
+
 describe('Tier 2 integration suite', () => {
     it('runs against the real Tauri command layer with zero failures', async () => {
         await waitForHarness();
         await acceptEulaAndRelaunch();
         await reportStartupDiagnostics();
+        await installErrorCapture();
 
         // runIntegrationTests is async and long-running. Kick it off, stash the
         // result on window, and poll — driving a multi-minute promise straight
@@ -167,6 +205,7 @@ describe('Tier 2 integration suite', () => {
             + `failed=${results.failed} skipped=${results.skipped}`,
         );
         (results.errors || []).forEach((e) => console.log('[tier2]   •', e));
+        await reportCapturedErrors();
 
         // A suite that ran nothing is a harness failure wearing a green hat.
         if (results.passed === 0 && results.failed === 0) {
