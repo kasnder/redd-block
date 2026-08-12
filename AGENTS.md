@@ -47,6 +47,19 @@ Several parts of the codebase look like bugs until you apply this:
   nonetheless **opt-in and default off** (`settings.enforcementEnabled`).
   Escalation is a choice the user makes, not one we make for them.
 
+**The adversary is a distracted user, not a technical one.** Our users are
+non-technical: the bypass we design against is the one reachable in a weak
+moment through the app's own UI, not one that requires a devtools console, a
+debugger, or a rebuild. That is why `window.__REDDBLOCK_INTERNALS__`
+(`src/dev-internals.js`) ships unguarded in production even though it exposes
+`saveData`, `acceptEula` and friends — a deliberate accepted cost, not an
+oversight. Keep the bar there: adding to that object is fine, but anything that
+lowers friction in a path a user can reach *without* opening a console is a
+product regression. The `e2e-webdriver` / `system-test` hard stop in `lib.rs` is
+the separate, stricter case — a network-reachable automation endpoint is a
+bypass anyone could be walked through remotely, so it must never compile into a
+release.
+
 **Decide which way failures fall.** When enforcement cannot determine state — a
 URL will not parse, a browser will not answer, a query fails — the code must
 pick between blocking something it should not and allowing something it should

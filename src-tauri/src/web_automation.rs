@@ -555,9 +555,13 @@ fn tick_with_io<I: AutomationIo>(
         .filter(|browser| io.uses_automation(*browser))
         .collect::<Vec<_>>();
     let no_automation_browsers = running.is_empty();
-    // Count only actions that remain unresolved after this pass. A planned
-    // restore that applied successfully must allow the latch to clear;
-    // failures keep it armed for a later retry.
+    // Count every action a restore pass *planned*, not just the ones that
+    // reported an error. `apply_actions` wraps each `set URL` in its own
+    // AppleScript `try`, so a stale window/tab index is swallowed and the
+    // batch still returns Ok while the tab stays parked on the block page.
+    // Clearing the latch on Ok would strand that tab until the next block
+    // re-arms it; keeping it armed costs one extra tick and re-plans from a
+    // fresh read.
     let mut restore_actions = 0usize;
     let mut scanned = 0usize;
     for browser in running {
@@ -579,6 +583,9 @@ fn tick_with_io<I: AutomationIo>(
                 scanned += 1;
                 io.set_permission(shared, browser, PermState::Granted, Duration::ZERO, now);
                 let actions = plan_actions(&tabs, &blocks, block_page_url);
+                if restore_pass {
+                    restore_actions += actions.len();
+                }
                 if actions.is_empty() {
                     log::debug!(
                         "web_automation: {} — {} tab(s), {} blocked domain(s), nothing to do",
@@ -594,9 +601,6 @@ fn tick_with_io<I: AutomationIo>(
                             browser.label()
                         ),
                         Err(e) => {
-                            if restore_pass {
-                                restore_actions += actions.len();
-                            }
                             log::warn!(
                                 "web_automation: applying {} redirect(s) to {} failed: {e:?}",
                                 actions.len(),
@@ -1662,7 +1666,7 @@ mod tests {
     }
 
     #[test]
-    fn pause_restore_runs_full_browser_pass_and_clears_latch_after_success() {
+    fn pause_restore_retries_until_a_pass_finds_nothing_left_parked() {
         let shared = tick_shared();
         let browser = SupportedBrowser::Brave;
         let base = "file:///blocked.html";
@@ -1706,10 +1710,69 @@ mod tests {
             start + Duration::from_secs(1),
         );
 
-        assert!(!needs_restore);
+        // The restore was applied, but `apply_actions` cannot tell us that the
+        // tab actually navigated — it wraps every `set URL` in its own `try`,
+        // so a stale index is swallowed and still reports Ok. The latch stays
+        // armed until a later pass observes that nothing is parked any more.
+        assert!(needs_restore);
         assert_eq!(io.apply_calls.len(), 2);
         assert_eq!(io.apply_calls[1].1[0].2, original);
-        assert_eq!(io.running_calls, 2, "restore must scan background browsers");
+
+        // Third tick: the queue is empty, so the browser reports no parked
+        // tabs. Only now may the latch clear.
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(2),
+        );
+        assert!(!needs_restore);
+        assert_eq!(io.apply_calls.len(), 2, "nothing left to restore");
+        assert_eq!(io.running_calls, 3, "restore must scan background browsers");
+    }
+
+    #[test]
+    fn silently_dropped_restore_is_retried_on_the_next_pass() {
+        let shared = tick_shared();
+        let browser = SupportedBrowser::Brave;
+        let base = "file:///blocked.html";
+        let original = "https://example.com/";
+        // No active blocks: this is the post-pause restore pass.
+        let mut io = FakeIo::new(Vec::new(), &[browser]);
+        // Both reads still show the tab parked on the block page even though
+        // the apply reported success — the real failure mode when a window or
+        // tab index goes stale mid-tick, because `apply_actions` swallows it
+        // in a per-action `try` block.
+        io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
+        io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
+        io.queue_apply(browser, Ok(()));
+        io.queue_apply(browser, Ok(()));
+        let mut needs_restore = true;
+        let mut last_full_pass = None;
+        let start = Instant::now();
+
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start,
+        );
+        assert!(needs_restore, "tab is still parked; latch must stay armed");
+
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(1),
+        );
+        assert_eq!(io.apply_calls.len(), 2, "restore must be retried");
+        assert_eq!(io.apply_calls[1].1[0].2, original);
     }
 
     #[test]
@@ -1744,8 +1807,20 @@ mod tests {
             &mut last_full_pass,
             start + Duration::from_secs(1),
         );
+        assert_eq!(io.apply_calls.len(), 2, "the failure must be retried");
+        assert!(needs_restore, "not yet verified clean");
+
+        // Queue exhausted: the browser now reports no parked tabs, which is
+        // the only evidence that the retry landed.
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(2),
+        );
         assert!(!needs_restore);
-        assert_eq!(io.apply_calls.len(), 2);
     }
 
     #[test]
@@ -1925,15 +2000,29 @@ mod tests {
         io.queue_apply(browser, Ok(()));
         let mut needs_restore = true;
         let mut last_full_pass = None;
+        let start = Instant::now();
         tick_with_io(
             &mut io,
             &shared,
             base,
             &mut needs_restore,
             &mut last_full_pass,
-            Instant::now(),
+            start,
         );
         assert_eq!(io.read_calls, vec![browser]);
+        assert_eq!(io.apply_calls.len(), 1, "background browser was restored");
+
+        // The verification pass is also frontmost-independent, so the latch
+        // still clears while TextEdit is in front.
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(1),
+        );
+        assert_eq!(io.read_calls, vec![browser, browser]);
         assert!(!needs_restore);
     }
 

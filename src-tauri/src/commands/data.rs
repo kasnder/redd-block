@@ -199,6 +199,10 @@ fn should_import_legacy_data() -> bool {
 /// Apply the system-test override to a normal resolver fallback. Keeping this
 /// as one helper is important: handle-based and static callers must not drift
 /// into separate environment-variable/path-selection behavior.
+///
+/// iOS resolves its paths through the App Group store instead and never calls
+/// this, so gate it out there rather than carry a dead-code warning.
+#[cfg(not(target_os = "ios"))]
 fn apply_system_test_override(fallback: impl FnOnce() -> PathBuf) -> PathBuf {
     #[cfg(feature = "system-test")]
     if let Some(path) = system_test_data_path() {

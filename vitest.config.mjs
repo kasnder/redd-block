@@ -5,12 +5,15 @@ import { defineConfig } from 'vitest/config';
 // Deliberately NOT `vite.config.js` — that config carries the index.html
 // rewriting, PurgeCSS and Android asset-pruning plugins, none of which mean
 // anything when the entry point is a test file rather than the app shell.
-// The only thing Tier 0 needs from the build is the `__ANDROID_BUILD__`
-// compile-time constant, so the modules under test resolve the same branches
-// they do in a desktop build.
+// The only thing Tier 0 needs from the build is the platform/build-flavor
+// compile-time constants, so the modules under test resolve the same branches
+// they do in a desktop build. Both must be defined even when no current test
+// reaches one: an undefined identifier is a ReferenceError at call time, not a
+// folded-away branch.
 export default defineConfig({
     define: {
         __ANDROID_BUILD__: false,
+        __SYSTEM_TEST_BUILD__: false,
     },
     test: {
         include: ['test/tier0/**/*.test.js'],
