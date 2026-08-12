@@ -10,6 +10,14 @@ The generated Gradle project lives in `src-tauri/gen/android/` and is committed
 (see [android-generated-project-manual-edits.md](android-generated-project-manual-edits.md)
 for the app-specific edits to preserve if it's ever re-initialized).
 
+## App identity
+
+- **Package id:** `net.kollnig.reddblockandroid` (Android override in
+  `src-tauri/tauri.android.conf.json`; the desktop identifier is `com.reddblock`)
+- **Launcher activity:** `net.kollnig.reddblockandroid/.MainActivity`
+- **Accessibility service (enforcement):**
+  `net.kollnig.reddblockandroid/net.kollnig.reddblockandroid.service.BlockerService`
+
 ## Prerequisites
 
 - **Android SDK** with platform-tools and build-tools (via Android Studio).
@@ -58,6 +66,18 @@ export JAVA_HOME="$(/usr/libexec/java_home)"   # macOS; or your JDK path
 Paths above are macOS defaults. On Linux the SDK is typically
 `$HOME/Android/Sdk`; on Windows, `%LOCALAPPDATA%\Android\Sdk`.
 
+### Toolchain gotcha (costs an hour if you hit it blind)
+
+`cargo`/`rustc` on PATH may resolve to **Homebrew's** rust
+(`/opt/homebrew/bin/cargo`), which does **not** carry the Android std targets and
+fails with `can't find crate for std`. `rustup target add` will not fix it,
+because the target lands in the rustup toolchain that is not being used. Put the
+rustup toolchain first:
+
+```bash
+export PATH="$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$PATH"
+```
+
 ## Debug APK (for local testing)
 
 ```bash
@@ -78,16 +98,63 @@ Output:
 src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
 ```
 
-Install and watch logs on a connected device (`adb devices` should list it):
+## Install and grant accessibility
+
+Blocking does not run until the accessibility service is enabled. You can do
+that by hand under **Android Settings → Accessibility**, or grant it via secure
+settings *before* first launch — which is what you want in a build/measure loop,
+since it skips the in-app onboarding gate:
 
 ```bash
-$ANDROID_HOME/platform-tools/adb install -r \
-  src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
-$ANDROID_HOME/platform-tools/adb logcat | grep -i reddblock
+ADB="$ANDROID_HOME/platform-tools/adb"
+DEV=<serial>            # from `adb devices -l`; e.g. a physical Pixel vs emulator-5554
+PKG=net.kollnig.reddblockandroid
+SVC="$PKG/net.kollnig.reddblockandroid.service.BlockerService"
+APK=src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+
+$ADB -s $DEV install -r "$APK"          # reinstall keeps app data
+$ADB -s $DEV shell settings put secure enabled_accessibility_services "$SVC"
+$ADB -s $DEV shell settings put secure accessibility_enabled 1
+$ADB -s $DEV shell settings get secure enabled_accessibility_services   # should list $SVC
+$ADB -s $DEV logcat | grep -i reddblock
 ```
 
-After the first install, enable **ReDD Block** under
-**Android Settings → Accessibility** so blocking can run.
+`force-stop` does **not** clear the grant, so a relaunch loop can reuse it. But
+the grant *is* dropped when the service is uninstalled or replaced (and some
+ROMs clear it on `install -r`), so re-apply the two `settings put` lines after
+any reinstall. Otherwise the app cold-starts into the onboarding gate instead of
+the main UI, which looks like a regression but is not — check the grant before
+chasing it.
+
+## Measuring startup
+
+```bash
+$ADB -s $DEV shell am force-stop $PKG
+$ADB -s $DEV shell am start -W -n "$PKG/.MainActivity"
+```
+
+`am start -W`'s `TotalTime` covers the **native activity + webview shell** first
+frame only. The JS bundle parse and first meaningful paint happen *after* that
+inside the webview, so this under-reports perceived startup — startup cost here
+is dominated by parsing `dist/assets/main-*.js` in the Android System WebView,
+not by native code. To measure the JS phase, trace logcat
+(`$ADB -s $DEV logcat -v time`) and bracket against the webview `chromium`
+console line from `checkAndroidPermissions`
+(`console.log('Android permissions:', ...)` in `src/blocking-platform.js`).
+
+## Frontend bundle
+
+`tauri android build` runs `npm run vite:build:android` (`vite build --mode
+android`) via the `beforeBuildCommand` override in `tauri.android.conf.json`, so
+the Android-only build optimizations — `stripNonAndroidUi`,
+`pruneOrphanAndroidAssets`, and the `__ANDROID_BUILD__` compile-time guards —
+apply to the real APK. Plain `tauri build` uses `vite:build` (desktop mode,
+`__ANDROID_BUILD__ = false`).
+
+Measure the shipped bundle with `ANALYZE=1 npx vite build --mode android`, which
+writes a treemap to `dist/stats.html`. See the build-time platform gating
+section of [../AGENTS.md](../AGENTS.md) for when `__ANDROID_BUILD__` is the right
+tool and when it is not.
 
 ## Live development
 
