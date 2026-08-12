@@ -43,6 +43,38 @@ There is no CLI test runner. Tests run **inside the app** in dev mode via the de
 
 CI (PRs to `main`) gates everything except Tier 2: `ci.yml` builds the bundle and runs Tier 1 headlessly (`npm run test:tier1`), `rust-ci.yml` runs `cargo test --lib` on macOS when `src-tauri/**` changes, and `android-ci.yml` builds a debug APK and runs the Kotlin unit tests. See the "What runs in CI" table in [testing.md](testing.md).
 
+### Write the failing test first
+
+When fixing a bug or changing enforcement behavior, add the test **before** the
+fix and confirm it fails for the reason you are about to address. A test written
+afterwards only proves the code does what it currently does.
+
+This matters more here than in most codebases, because the characteristic
+failure mode is silence rather than an error:
+
+- A browser-specific URL-bar quirk makes extraction return nothing. The browser
+  stays in the supported map, blocking just stops working for it, and nothing
+  logs an error — that is how Samsung Internet's invisible `U+200E` prefix went
+  unnoticed.
+- `web_automation::tests::file_url_encodes_spaces` asserted the pre-rename
+  product name and could never pass. Nothing ran it, so nobody found out until
+  `cargo test --lib` was wired into CI.
+
+Put the test where CI will actually run it, matching the layer you changed:
+
+| What you changed | Where the test goes |
+| --- | --- |
+| Blocking/schedule/allowlist logic in `src/` | `src/blocking-tests.js` (Tier 1) |
+| Desktop enforcement semantics — derivation, URL decisions, payloads | `#[cfg(test)]` in the Rust module |
+| Android URL-bar parsing / a new browser | `BrowserUrlParserTest` fixtures |
+| Command paths, persistence round-trips | `src/integration-tests.js` (Tier 2) |
+
+Prefer the highest row that can hold the case: Tier 1 and the Rust and Kotlin
+suites run on every relevant PR, Tier 2 does not. Reaching for
+`scripts/manual-test-checklist.md` is correct only when no automated layer can
+express the case — a real browser redirecting, a real app being quit — and not
+because writing the automated test is awkward.
+
 ## Architecture essentials
 
 ### Single source of truth
