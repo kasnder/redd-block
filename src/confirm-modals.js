@@ -1,11 +1,12 @@
 // Confirm modals: start/pause/resume/override flows, calendar previews,
 // blocklist edit modal, modal undo stack. Extracted verbatim from app.js.
 import { state } from './state.js';
+import { getChallengeController } from './challenge-controller.js';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isBlockAlwaysOn } from './blocklist-utils.js';
-import { buildWordChallengeState, getCompletedChallengeText, getCurrentChallengeWord, isMobileWordByWordChallenge, formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxOverrideCharsForType, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, sanitizeChallengeTargetText, usesMobileWordCountForOverrideType } from './override-challenge.js';
+import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxOverrideCharsForType, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, sanitizeChallengeTargetText, usesMobileWordCountForOverrideType } from './override-challenge.js';
 import { isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
@@ -21,9 +22,8 @@ import {
     IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
     clampSameDayMinutes, formatConfirmModalOverrideTypingLine,
     formatMinutesAsHHMM, formatTime, generateId,
-    renderOverrideWordChallengeState,
     renderPauseChallengeText, renderPauseWordChallengeState,
-    setOverrideWordChallengeMode, setPauseWordChallengeMode,
+    setPauseWordChallengeMode,
     shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval,
 } from './app.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
@@ -2794,9 +2794,7 @@ export function closeOverrideModal() {
     state.overrideBlocklistIdForHelper = null;
     state.overrideChallengePurpose = null;
     state.overrideConfirmCallback = null;
-    state.challengeText = '';
-    state.overrideWordChallengeState = null;
-    setOverrideWordChallengeMode(false);
+    getChallengeController('override').reset();
     delete window.overrideScheduleId;
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
     const instructionEl = document.getElementById('override-modal-instruction');
@@ -2806,36 +2804,13 @@ export function closeOverrideModal() {
 }
 
 export function initializeOverrideModalChallenge(difficulty, progressColor = null) {
-    state.challengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
-
-    // Sanitize: remove linebreaks, collapse spaces, fold typographic lookalikes
-    state.challengeText = sanitizeChallengeTargetText(state.challengeText);
-
-    document.getElementById('challenge-text').textContent = state.challengeText;
-    document.getElementById('challenge-input').value = '';
-    document.getElementById('challenge-word-input').value = '';
-    state.overrideWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(state.challengeText) : null;
-    setOverrideWordChallengeMode(!!state.overrideWordChallengeState);
-
-    const progressBar = document.getElementById('challenge-progress-bar');
-    progressBar.style.width = '0%';
-    if (progressColor) {
-        progressBar.style.background = progressColor;
-    } else {
-        progressBar.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
-    }
-
-    // Reset wiggle state
-    document.querySelector('#override-modal .modal-content').classList.remove('wiggle');
-
+    // Signature preserved: the Android friction gate deliberately bypasses
+    // openOverrideModal and calls this directly (blocking-platform.js), setting
+    // state.overrideBlockId itself.
+    const controller = getChallengeController('override');
+    controller.open({ difficulty, progressColor });
     document.getElementById('override-modal').classList.remove('hidden');
-    if (state.overrideWordChallengeState) {
-        renderOverrideWordChallengeState();
-        requestAnimationFrame(() => document.getElementById('challenge-word-input')?.focus());
-    } else {
-        document.getElementById('confirm-override-btn').disabled = false;
-        requestAnimationFrame(() => document.getElementById('challenge-input')?.focus());
-    }
+    requestAnimationFrame(() => controller.focus());
 }
 
 // ── Pause/Resume Block ──
