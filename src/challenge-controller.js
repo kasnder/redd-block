@@ -302,3 +302,67 @@ export function createChallengeController(elements) {
         },
     };
 }
+
+// The three modals' element ids, in one place. There is no mechanical rule that
+// derives these from a prefix — pause drops the `challenge-` infix on two of
+// them and override-all renames the progress bar — so the map is explicit. The
+// inconsistency is a fossil of the hand-copying this module replaces; renaming
+// the ids is deliberately left out of scope to keep the diff reviewable.
+const CHALLENGE_ELEMENT_IDS = {
+    override: {
+        textEl: 'challenge-text',
+        inputEl: 'challenge-input',
+        wordInputEl: 'challenge-word-input',
+        wordProgressEl: 'challenge-word-progress',
+        currentWordEl: 'challenge-current-word',
+        progressBarEl: 'challenge-progress-bar',
+        confirmBtnEl: 'confirm-override-btn',
+        modalContentSelector: '#override-modal .modal-content',
+    },
+    pause: {
+        textEl: 'pause-challenge-text',
+        inputEl: 'pause-challenge-input',
+        wordInputEl: 'pause-challenge-word-input',
+        wordProgressEl: 'pause-word-progress',
+        currentWordEl: 'pause-current-word',
+        progressBarEl: 'pause-challenge-progress-bar',
+        confirmBtnEl: 'confirm-pause-btn',
+        modalContentSelector: '#pause-modal .modal-content',
+    },
+    overrideAll: {
+        textEl: 'override-all-challenge-text',
+        inputEl: 'override-all-challenge-input',
+        wordInputEl: 'override-all-challenge-word-input',
+        wordProgressEl: 'override-all-word-progress',
+        currentWordEl: 'override-all-current-word',
+        progressBarEl: 'override-all-progress-bar',
+        confirmBtnEl: 'confirm-override-all-btn',
+        modalContentSelector: '#override-all-modal .modal-content',
+    },
+};
+
+const controllerRegistry = {};
+
+/**
+ * The controller for a given modal, created on first use.
+ *
+ * Lazy so the DOM is guaranteed to exist by the time it is built, and reached
+ * through a function rather than an exported binding so the three consumer
+ * modules (app.js, confirm-modals.js, settings.js) share one instance without a
+ * cross-module `let` — see the module conventions in AGENTS.md.
+ *
+ * @param {'override'|'pause'|'overrideAll'} key
+ */
+export function getChallengeController(key) {
+    if (!controllerRegistry[key]) {
+        const ids = CHALLENGE_ELEMENT_IDS[key];
+        if (!ids) throw new Error(`Unknown challenge controller: ${key}`);
+        const { modalContentSelector, ...elementIds } = ids;
+        const elements = { modalContentEl: document.querySelector(modalContentSelector) };
+        for (const [name, id] of Object.entries(elementIds)) {
+            elements[name] = document.getElementById(id);
+        }
+        controllerRegistry[key] = createChallengeController(elements);
+    }
+    return controllerRegistry[key];
+}

@@ -78,11 +78,9 @@ export const state = {
     lastOverrideTypeValueBeforeMaxDifficulty: 'random-words',
     overrideBlockId: null,
     overrideBlocklistIdForHelper: null,
-    challengeText: '',
     pauseBlockId: null, // Track which block is being paused
     pauseChallengeText: '', // Challenge text for pause modal
     pauseMaxMinutes: null, // Maximum pause duration in minutes (null = unlimited)
-    overrideWordChallengeState: null,
     pauseWordChallengeState: null,
     startupInitializationComplete: false, // Track whether post-onboarding startup already ran
     migrationOnboardingActive: false,
