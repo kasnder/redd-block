@@ -1,15 +1,25 @@
 # PR checks: lint, build the frontend bundle, and run the Tier 1 logic suite
 # headlessly. The Android debug build lives in android-ci.yml and the Rust unit
 # tests in rust-ci.yml, so frontend-only PRs do not pay for those toolchains.
+#
+# Also runs on every push to main. PR checks run against the merge preview, not
+# the commit that ends up on main, so a green PR can still land a broken main
+# when another PR merges in between (there is no merge queue). Anything that
+# reaches main outside a PR — direct pushes, admin merges, the release
+# workflow's own latest-versions.json commit — is only covered here.
 name: CI
 
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded PR runs are wasted work, but every main commit should get its own
+  # verdict — otherwise a rapid second merge hides the first one's result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
