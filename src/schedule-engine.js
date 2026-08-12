@@ -20,6 +20,37 @@ export function isNonRepeatingSchedule(schedule) {
 
 export const ANDROID_DAY_NAMES_MON0 = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 
+export const ANDROID_DEFAULT_FRICTION_WORD_COUNT = 15;
+
+/**
+ * Friction-gate challenge fields for the Android plugin payload.
+ *
+ * `custom` difficulties send the literal text; the native gate (UnlockActivity)
+ * makes the user type it word by word instead of generating random words.
+ * Without this the gate silently fell back to 15 random words for every
+ * custom-text blocklist.
+ */
+export function androidFrictionChallengeFields(difficulty) {
+    const customText = difficulty?.type === 'custom' && typeof difficulty.customText === 'string'
+        ? difficulty.customText.trim()
+        : '';
+    if (customText) {
+        // Word count is what the gate renders progress against; Kotlin derives
+        // it from the text itself, this keeps the payload self-consistent.
+        return {
+            frictionWordCount: customText.split(/\s+/).length,
+            frictionCustomText: customText
+        };
+    }
+    const count = Number.parseInt(difficulty?.count, 10);
+    return {
+        frictionWordCount: (difficulty?.type !== 'custom' && Number.isFinite(count) && count > 0)
+            ? count
+            : ANDROID_DEFAULT_FRICTION_WORD_COUNT,
+        frictionCustomText: null
+    };
+}
+
 export function androidDayNamesFromMon0(days) {
     if (!Array.isArray(days)) return [];
     return days
@@ -264,7 +295,7 @@ export async function syncSchedulesToHelper() {
                 const blockedApps = blocklist?.apps || [];
                 const blockedWebsites = blocklist?.websites || [];
                 const difficulty = blocklist?.overrideDifficulty;
-                const frictionWordCount = (difficulty && difficulty.type !== 'custom' && difficulty.count) ? difficulty.count : 15;
+                const { frictionWordCount, frictionCustomText } = androidFrictionChallengeFields(difficulty);
                 // Paused entries stay in the payload: Kotlin stores them
                 // disabled and arms a WorkManager re-enable at the expiry,
                 // so blocking resumes on time even if this app process is
@@ -295,6 +326,7 @@ export async function syncSchedulesToHelper() {
                             blockedApps,
                             blockedWebsites,
                             frictionWordCount,
+                            frictionCustomText,
                             emoji: blocklist?.emoji || null,
                             color: blocklist?.color || null,
                             isPaused,
@@ -321,6 +353,7 @@ export async function syncSchedulesToHelper() {
                         blockedApps,
                         blockedWebsites,
                         frictionWordCount,
+                        frictionCustomText,
                         emoji: blocklist?.emoji || null,
                         color: blocklist?.color || null,
                         isPaused,
@@ -339,7 +372,7 @@ export async function syncSchedulesToHelper() {
                 const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
                 if (!blocklist) continue;
                 const difficulty = blocklist.overrideDifficulty;
-                const frictionWordCount = (difficulty && difficulty.type !== 'custom' && difficulty.count) ? difficulty.count : 15;
+                const { frictionWordCount, frictionCustomText } = androidFrictionChallengeFields(difficulty);
                 const isPaused = !!(block.isPaused && (!block.pauseEndTime || block.pauseEndTime > now));
                 flatEntries.push({
                     id: block.id,
@@ -350,6 +383,7 @@ export async function syncSchedulesToHelper() {
                     blockedApps: blocklist.apps || [],
                     blockedWebsites: blocklist.websites || [],
                     frictionWordCount,
+                    frictionCustomText,
                     emoji: blocklist.emoji || null,
                     color: blocklist.color || null,
                     isPaused,

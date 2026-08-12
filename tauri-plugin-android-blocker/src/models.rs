@@ -36,6 +36,10 @@ pub struct ScheduleEntry {
     #[serde(default)]
     pub blocked_websites: Vec<String>,
     pub friction_word_count: u32,
+    /// Literal challenge text for "custom text" override difficulties. When
+    /// set, the native gate makes the user type it instead of random words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub friction_custom_text: Option<String>,
     /// Blocklist emoji/accent colour, used by the native friction gate.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub emoji: Option<String>,

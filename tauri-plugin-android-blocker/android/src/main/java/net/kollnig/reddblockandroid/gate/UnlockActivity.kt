@@ -47,6 +47,8 @@ class UnlockActivity : Activity() {
         const val EXTRA_BLOCKED_TARGET = "friction_blocked_target"
         const val EXTRA_IS_WEBSITE = "friction_is_website"
 
+        private val WHITESPACE = "\\s+".toRegex()
+
         private val WORD_LIST = listOf(
             "apple", "bridge", "candle", "desert", "eagle", "forest", "garden",
             "harbor", "island", "jungle", "kitchen", "lemon", "mirror", "needle",
@@ -213,8 +215,19 @@ class UnlockActivity : Activity() {
     }
 
     private fun setupChallenge(schedule: Schedule) {
-        val wordCount = schedule.frictionWordCount.coerceIn(1, WORD_LIST.size)
-        words = WORD_LIST.shuffled().take(wordCount)
+        // "Custom text" override difficulties ship their literal text from the
+        // webview; the user types it word by word instead of random words.
+        val customWords = schedule.frictionCustomText
+            ?.trim()
+            ?.split(WHITESPACE)
+            ?.filter { it.isNotEmpty() }
+            .orEmpty()
+        words = if (customWords.isNotEmpty()) {
+            customWords
+        } else {
+            val wordCount = schedule.frictionWordCount.coerceIn(1, WORD_LIST.size)
+            WORD_LIST.shuffled().take(wordCount)
+        }
         findViewById<TextView>(R.id.gate_challenge_text).text = words.joinToString(" ")
 
         renderChallengeState()

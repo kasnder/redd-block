@@ -11,6 +11,9 @@ data class Schedule(
     val blockedApps: List<String> = emptyList(),
     val blockedWebsites: List<String> = emptyList(),
     val frictionWordCount: Int = 15,
+    /** Literal text the friction gate makes the user type ("custom text" override
+     *  difficulty). Null/blank = generate [frictionWordCount] random words. */
+    val frictionCustomText: String? = null,
     /** Blocklist emoji/accent colour from the webview, for the native friction gate. */
     val emoji: String? = null,
     val color: String? = null,

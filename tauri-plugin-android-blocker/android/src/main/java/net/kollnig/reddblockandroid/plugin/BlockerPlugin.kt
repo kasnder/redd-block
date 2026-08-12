@@ -40,6 +40,8 @@ class ScheduleEntryArg {
     var blockedApps: List<String> = listOf()
     var blockedWebsites: List<String> = listOf()
     var frictionWordCount: Int = 15
+    /** Literal challenge text for "custom text" override difficulties (null = random words). */
+    var frictionCustomText: String? = null
     var emoji: String? = null
     var color: String? = null
     var isPaused: Boolean = false
@@ -221,6 +223,7 @@ class BlockerPlugin(private val activity: Activity) : Plugin(activity) {
                 existing.blockedApps == entry.blockedApps &&
                 existing.blockedWebsites == entry.blockedWebsites &&
                 existing.frictionWordCount == entry.frictionWordCount &&
+                existing.frictionCustomText == entry.frictionCustomText &&
                 existing.activeFromMs == activeFromMs &&
                 existing.activeUntilMs == activeUntilMs
 
@@ -244,6 +247,7 @@ class BlockerPlugin(private val activity: Activity) : Plugin(activity) {
                     blockedApps = entry.blockedApps,
                     blockedWebsites = entry.blockedWebsites,
                     frictionWordCount = entry.frictionWordCount,
+                    frictionCustomText = entry.frictionCustomText,
                     emoji = entry.emoji,
                     color = entry.color,
                     disabledUntil = if (pausedNow) pauseEndMs else null,
