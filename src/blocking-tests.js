@@ -2342,6 +2342,33 @@
             assertEqual(h.elements.textEl.textContent, '', 'T133: skipChallenge shows no challenge text');
         })();
 
+        (function T141() {
+            // Emptying the elements is not enough to hide them: .challenge-text
+            // has its own padding and background, so an empty one still paints a
+            // grey box, and the textarea would sit there inviting input that goes
+            // nowhere. The old override-all path hid them with inline display;
+            // the controller must hide the whole stack itself rather than relying
+            // on each caller (pause only gets away with it via its own CSS).
+            const h = makeHarness();
+            h.controller.open({ text: 'something' });
+            h.controller.open({ skipChallenge: true });
+            assert(h.elements.textEl.classList.contains('hidden'), 'T141: skipChallenge hides the challenge text');
+            assert(h.elements.inputEl.classList.contains('hidden'), 'T141: skipChallenge hides the free textarea');
+            assert(h.elements.wordInputEl.classList.contains('hidden'), 'T141: skipChallenge hides the word input');
+            assert(h.elements.currentWordEl.classList.contains('hidden'), 'T141: skipChallenge hides the current word');
+            assert(h.elements.wordProgressEl.classList.contains('hidden'), 'T141: skipChallenge hides the word counter');
+        })();
+
+        (function T142() {
+            // ...and a normal open afterwards must bring the stack back.
+            const h = makeHarness();
+            h.controller.open({ skipChallenge: true });
+            h.controller.open({ text: 'back again' });
+            assert(!h.elements.textEl.classList.contains('hidden'), 'T142: a real challenge re-shows the challenge text');
+            assert(!h.elements.inputEl.classList.contains('hidden'), 'T142: and re-shows the free textarea');
+            assertEqual(h.elements.textEl.textContent, 'back again', 'T142: and renders the new target');
+        })();
+
         // ---- Visibility is class-driven only ----
         (function T134() {
             // Bug: override-all mixed the hidden class with inline style.display,

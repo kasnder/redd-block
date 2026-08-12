@@ -1,6 +1,7 @@
 // Settings surface: help links, helper status, diagnostics modal, grace
 // period, override-all, and in-app uninstall flows. Extracted verbatim from app.js.
 import { state } from './state.js';
+import { getChallengeController } from './challenge-controller.js';
 import { startHelperUiRefreshLoop, stopHelperUiRefreshLoop, isModalVisible } from './modal-manager.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
@@ -16,8 +17,6 @@ import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import { escapeHtml } from './utils.js';
 import { buildWordChallengeState, generateOverrideChallengeText, getCompletedChallengeText, getCurrentChallengeWord, getDifficultyTypingCharCount, getMaxOverrideCharsForType, isMobileWordByWordChallenge, renderChallengeReferenceText, applyChallengeTypedInputSanitization, sanitizeChallengeTargetText, shouldBlockChallengeSpaceKey } from './override-challenge.js';
 import {
-    renderOverrideAllWordChallengeState,
-    setOverrideAllWordChallengeMode,
     setLanguagePickerOpen,
     WINDOWS_APPS_SETTINGS_URI,
 } from './app.js';
@@ -911,10 +910,6 @@ export function updateOverrideAllButtonVisibility() {
 // Show challenge for removing helper when blocks are active
 
 
-// Variable to track override-all challenge text
-export let overrideAllChallengeText = '';
-export let overrideAllWordChallengeState = null;
-
 // Setup the configurable browser-extension grace period.
 // Backend reads `settings.extensionGraceSeconds` from the data file
 // on every grace-start (no app restart needed). Backend rejects
@@ -981,26 +976,11 @@ export function setupGraceSetting() {
 
 // Setup Override All functionality in settings
 export function setupOverrideAll() {
-    const overrideAllBtn = document.getElementById('override-all-btn');
     const overrideAllModal = document.getElementById('override-all-modal');
     const cancelOverrideAllBtn = document.getElementById('cancel-override-all-btn');
     const confirmOverrideAllBtn = document.getElementById('confirm-override-all-btn');
-    const overrideAllChallengeInput = document.getElementById('override-all-challenge-input');
-    const overrideAllChallengeWordInput = document.getElementById('override-all-challenge-word-input');
-    const overrideAllProgressBar = document.getElementById('override-all-progress-bar');
-    const overrideAllChallengeTextEl = document.getElementById('override-all-challenge-text');
-    const overrideAllCurrentWordEl = document.getElementById('override-all-current-word');
-
-    function getOverrideAllTypedValue() {
-        return overrideAllWordChallengeState?.typedText ?? overrideAllChallengeInput.value;
-    }
-
-    function renderOverrideAllChallengeText(errorIndex = -1, cursorIndex = 0) {
-        renderChallengeReferenceText(overrideAllChallengeTextEl, overrideAllChallengeText, {
-            errorIndex,
-            cursorIndex,
-        });
-    }
+    const overrideAllBtn = document.getElementById('override-all-btn');
+    const challenge = getChallengeController('overrideAll');
 
     // Open override all modal
     if (overrideAllBtn && overrideAllModal) {
@@ -1009,220 +989,58 @@ export function setupOverrideAll() {
             document.getElementById('settings-modal').classList.add('hidden');
             setLanguagePickerOpen(false);
 
-            const challengeTextEl = document.getElementById('override-all-challenge-text');
+            // Nothing is being enforced, so there is nothing to type your way
+            // out of. skipChallenge also clears both inputs — this path used to
+            // leave stale text in a now-hidden textarea, which then failed the
+            // comparison against '' with no way for the user to reach the field.
+            const nothingToClear = !hasAnyBlockingStateToClear();
             const instructionEl = document.getElementById('override-all-instruction');
+            if (instructionEl) instructionEl.classList.toggle('hidden', nothingToClear);
+            overrideAllModal.querySelector('.challenge-progress')?.classList.toggle('hidden', nothingToClear);
 
-            if (!hasAnyBlockingStateToClear()) {
-                // No blocks active — show dialog but skip the typing challenge
-                overrideAllChallengeText = '';
-                overrideAllWordChallengeState = null;
-                setOverrideAllWordChallengeMode(false);
-                if (challengeTextEl) challengeTextEl.style.display = 'none';
-                if (overrideAllChallengeInput) overrideAllChallengeInput.style.display = 'none';
-                if (overrideAllChallengeWordInput) overrideAllChallengeWordInput.style.display = 'none';
-                if (instructionEl) instructionEl.style.display = 'none';
-                const progressEl = overrideAllModal.querySelector('.challenge-progress');
-                if (progressEl) progressEl.style.display = 'none';
-                if (confirmOverrideAllBtn) confirmOverrideAllBtn.disabled = false;
-                overrideAllModal.classList.remove('hidden');
-                return;
-            }
-
-            // Restore challenge elements visibility
-            if (challengeTextEl) challengeTextEl.style.display = '';
-            if (instructionEl) instructionEl.style.display = '';
-            const progressEl = overrideAllModal.querySelector('.challenge-progress');
-            if (progressEl) progressEl.style.display = '';
-
-            // Find the hardest challenge among active blocks and schedules
-            const hardestDifficulty = findHardestChallenge();
-
-            // Generate challenge text based on hardest difficulty
-            overrideAllChallengeText = generateOverrideChallengeText(
-                hardestDifficulty.type,
-                hardestDifficulty.count,
-                hardestDifficulty.customText
-            );
-
-            // Sanitize: remove linebreaks, collapse spaces, fold typographic lookalikes
-            overrideAllChallengeText = sanitizeChallengeTargetText(overrideAllChallengeText);
-
-            // Display challenge
-            renderOverrideAllChallengeText();
-            overrideAllChallengeInput.value = '';
-            overrideAllChallengeWordInput.value = '';
-            overrideAllWordChallengeState = isMobileWordByWordChallenge(hardestDifficulty)
-                ? buildWordChallengeState(overrideAllChallengeText)
-                : null;
-            setOverrideAllWordChallengeMode(!!overrideAllWordChallengeState);
-            if (overrideAllChallengeInput) overrideAllChallengeInput.style.display = overrideAllWordChallengeState ? 'none' : '';
-            if (overrideAllChallengeWordInput) overrideAllChallengeWordInput.style.display = overrideAllWordChallengeState ? '' : 'none';
-            overrideAllProgressBar.style.width = '0%';
-            if (confirmOverrideAllBtn) confirmOverrideAllBtn.disabled = !!overrideAllWordChallengeState;
+            challenge.open({
+                difficulty: nothingToClear ? null : findHardestChallenge(),
+                skipChallenge: nothingToClear,
+            });
 
             overrideAllModal.classList.remove('hidden');
-            requestAnimationFrame(() => {
-                if (overrideAllWordChallengeState) {
-                    renderOverrideAllWordChallengeState();
-                    overrideAllChallengeWordInput?.focus();
-                } else {
-                    overrideAllChallengeInput?.focus();
-                }
-            });
+            requestAnimationFrame(() => challenge.focus());
         });
     }
 
-    // Cancel override all
-    if (cancelOverrideAllBtn && overrideAllModal) {
-        cancelOverrideAllBtn.addEventListener('click', () => {
-            overrideAllModal.classList.add('hidden');
-            overrideAllChallengeText = '';
-            overrideAllWordChallengeState = null;
-            setOverrideAllWordChallengeMode(false);
-            confirmOverrideAllBtn.disabled = false;
-            // Re-open settings modal so user goes back to settings, not main screen
-            document.getElementById('settings-modal').classList.remove('hidden');
-        });
+    if (cancelOverrideAllBtn) {
+        cancelOverrideAllBtn.addEventListener('click', closeOverrideAllModal);
     }
 
     // Click outside to close
     if (overrideAllModal) {
         overrideAllModal.addEventListener('click', (e) => {
-            if (e.target === overrideAllModal) {
-                overrideAllModal.classList.add('hidden');
-                overrideAllChallengeText = '';
-                overrideAllWordChallengeState = null;
-                setOverrideAllWordChallengeMode(false);
-                confirmOverrideAllBtn.disabled = false;
-                // Re-open settings modal so user goes back to settings, not main screen
-                document.getElementById('settings-modal').classList.remove('hidden');
-            }
-        });
-    }
-
-    // Prevent paste
-    if (overrideAllChallengeInput) {
-        overrideAllChallengeInput.addEventListener('paste', (e) => {
-            e.preventDefault();
-        });
-
-        // Update progress as user types
-        overrideAllChallengeInput.addEventListener('input', () => {
-            const typed = applyChallengeTypedInputSanitization(overrideAllChallengeInput);
-            const target = overrideAllChallengeText;
-
-            let correctChars = 0;
-            let firstErrorIndex = -1;
-            for (let i = 0; i < typed.length && i < target.length; i++) {
-                if (typed[i] === target[i]) {
-                    correctChars++;
-                } else {
-                    firstErrorIndex = i;
-                    break;
-                }
-            }
-
-            const progress = (correctChars / target.length) * 100;
-            overrideAllProgressBar.style.width = `${progress}%`;
-
-            renderOverrideAllChallengeText(firstErrorIndex, correctChars);
-        });
-
-        // Enter key submits
-        overrideAllChallengeInput.addEventListener('keydown', (e) => {
-            if (shouldBlockChallengeSpaceKey(overrideAllChallengeInput, e)) {
-                e.preventDefault();
-                return;
-            }
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                confirmOverrideAllBtn.click();
-            }
-        });
-    }
-    if (overrideAllChallengeWordInput) {
-        overrideAllChallengeWordInput.addEventListener('paste', (e) => {
-            e.preventDefault();
-        });
-        overrideAllChallengeWordInput.addEventListener('input', () => {
-            if (!overrideAllWordChallengeState) return;
-            overrideAllCurrentWordEl.textContent = getCurrentChallengeWord(overrideAllWordChallengeState);
-        });
-        overrideAllChallengeWordInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                confirmOverrideAllBtn.click();
-            }
+            if (e.target === overrideAllModal) closeOverrideAllModal();
         });
     }
 
     // Confirm override all
     if (confirmOverrideAllBtn) {
         confirmOverrideAllBtn.addEventListener('click', async () => {
-            if (overrideAllWordChallengeState) {
-                const expectedWord = getCurrentChallengeWord(overrideAllWordChallengeState);
-                const typedWord = overrideAllChallengeWordInput.value.trim();
-                if (typedWord === expectedWord) {
-                    overrideAllWordChallengeState.currentIndex++;
-                    const completedText = getCompletedChallengeText(overrideAllWordChallengeState);
-                    overrideAllWordChallengeState.typedText = overrideAllWordChallengeState.currentIndex >= overrideAllWordChallengeState.words.length
-                        ? overrideAllChallengeText
-                        : completedText;
-                    if (overrideAllWordChallengeState.currentIndex < overrideAllWordChallengeState.words.length) {
-                        renderOverrideAllWordChallengeState();
-                        overrideAllChallengeWordInput.focus();
-                        return;
-                    }
-                } else {
-                    const modalContent = overrideAllModal.querySelector('.modal-content');
-                    modalContent.classList.remove('wiggle');
-                    void modalContent.offsetWidth;
-                    modalContent.classList.add('wiggle');
-                    overrideAllCurrentWordEl.textContent = getCurrentChallengeWord(overrideAllWordChallengeState);
-                    return;
-                }
-            }
-
-            const typed = getOverrideAllTypedValue();
-            const target = overrideAllChallengeText;
-
-            let firstErrorIndex = -1;
-            if (typed !== target) {
-                for (let i = 0; i < Math.max(typed.length, target.length); i++) {
-                    if (typed[i] !== target[i]) {
-                        firstErrorIndex = i;
-                        break;
-                    }
-                }
-                if (firstErrorIndex === -1 && typed.length < target.length) {
-                    firstErrorIndex = typed.length;
-                }
-            }
-
-            if (typed === target) {
-                // Success! Clear everything
-                await performOverrideAll();
-                overrideAllModal.classList.add('hidden');
-                overrideAllChallengeText = '';
-                overrideAllWordChallengeState = null;
-                setOverrideAllWordChallengeMode(false);
-                confirmOverrideAllBtn.disabled = false;
-            } else {
-                // Wrong - wiggle and highlight error
-                const modalContent = overrideAllModal.querySelector('.modal-content');
-                modalContent.classList.remove('wiggle');
-                void modalContent.offsetWidth; // Trigger reflow
-                modalContent.classList.add('wiggle');
-
-                if (overrideAllWordChallengeState) {
-                    overrideAllCurrentWordEl.textContent = getCurrentChallengeWord(overrideAllWordChallengeState);
-                } else {
-                    renderOverrideAllChallengeText(firstErrorIndex);
-                }
-            }
+            // 'advanced' = a correct but non-final word; the user keeps typing.
+            if (challenge.handleConfirm().status !== 'ok') return;
+            await performOverrideAll();
+            overrideAllModal.classList.add('hidden');
+            challenge.reset();
         });
     }
+}
 
+/**
+ * Close the stop-all dialog and hand the user back to settings, where they came
+ * from. Previously inlined at three call sites which had drifted — the success
+ * path forgot to restore the settings modal — and absent from
+ * ANDROID_MODAL_CLOSE_FNS entirely, so Android back left it half-reset.
+ */
+export function closeOverrideAllModal() {
+    document.getElementById('override-all-modal')?.classList.add('hidden');
+    getChallengeController('overrideAll').reset();
+    document.getElementById('settings-modal')?.classList.remove('hidden');
 }
 
 // macOS in-app uninstall. The Uninstall button lives in Settings below

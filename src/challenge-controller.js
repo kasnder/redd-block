@@ -80,19 +80,26 @@ export function createChallengeController(elements) {
     let wordState = null;
     let skipped = false;
 
-    const setWordMode = (enabled) => {
+    /**
+     * @param {'char'|'word'|'none'} mode - 'none' hides the whole stack, for a
+     *   skipped challenge. Emptying the elements is not enough: .challenge-text
+     *   carries its own padding and background, so an empty one still paints a
+     *   grey box, and a visible textarea invites input that goes nowhere.
+     */
+    const setStackMode = (mode) => {
+        const hideAll = mode === 'none';
+        const word = mode === 'word';
+        textEl?.classList.toggle('hidden', hideAll);
+        wordProgressEl?.classList.toggle('hidden', hideAll || !word);
+        currentWordEl?.classList.toggle('hidden', hideAll || !word);
+        wordInputEl?.classList.toggle('hidden', hideAll || !word);
+        inputEl?.classList.toggle('hidden', hideAll || word);
         // Visibility is driven by the `hidden` class alone. override-all used to
-        // mix in inline style.display and never clear it, so the element stayed
-        // hidden regardless of the class — clear any such leftovers here.
-        wordProgressEl?.classList.toggle('hidden', !enabled);
-        currentWordEl?.classList.toggle('hidden', !enabled);
-        wordInputEl?.classList.toggle('hidden', !enabled);
-        inputEl?.classList.toggle('hidden', enabled);
-        if (inputEl) inputEl.style.display = '';
-        if (wordInputEl) wordInputEl.style.display = '';
-        if (textEl) textEl.style.display = '';
-        if (wordProgressEl) wordProgressEl.style.display = '';
-        if (currentWordEl) currentWordEl.style.display = '';
+        // mix in inline style.display and never clear it, so an element could
+        // stay hidden no matter what the class said — clear any such leftovers.
+        for (const el of [textEl, inputEl, wordInputEl, wordProgressEl, currentWordEl]) {
+            if (el) el.style.display = '';
+        }
     };
 
     const setProgress = (doneLength) => {
@@ -198,7 +205,7 @@ export function createChallengeController(elements) {
                 // '' and wiggled a field the user could no longer reach.
                 targetText = '';
                 wordState = null;
-                setWordMode(false);
+                setStackMode('none');
                 renderReference();
                 if (progressBarEl) progressBarEl.style.width = '0%';
                 if (confirmBtnEl) confirmBtnEl.disabled = false;
@@ -212,7 +219,7 @@ export function createChallengeController(elements) {
 
             const useWordMode = wordMode !== null ? !!wordMode : isMobileWordByWordChallenge(difficulty);
             wordState = useWordMode ? buildWordChallengeState(targetText) : null;
-            setWordMode(!!wordState);
+            setStackMode(wordState ? 'word' : 'char');
 
             // Always render through the shared helper: assigning textContent
             // directly (as override and pause used to) leaves data-challenge-render
@@ -287,7 +294,7 @@ export function createChallengeController(elements) {
             skipped = false;
             if (inputEl) inputEl.value = '';
             if (wordInputEl) wordInputEl.value = '';
-            setWordMode(false);
+            setStackMode('char');
             modalContentEl?.classList.remove('wiggle');
             if (confirmBtnEl) confirmBtnEl.disabled = false;
         },
