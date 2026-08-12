@@ -35,6 +35,12 @@ jobs:
   tier2:
     name: Tier 2 (Windows, WebDriver)
     runs-on: windows-latest
+    env:
+      # scripts/build-env.js otherwise redirects Cargo's target dir to a
+      # per-user cache outside the workspace (so linked worktrees can share
+      # one dependency graph). Pin it into the workspace on CI so rust-cache
+      # actually caches the build and the binary lands where the job expects.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

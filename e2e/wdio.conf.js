@@ -20,29 +20,41 @@
  *     inside a blocker app is a bypass surface.
  */
 import { existsSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url));
+// This repo redirects Cargo's target dir out of the worktree so linked
+// worktrees share one dependency graph, so the binary is NOT under
+// src-tauri/target unless CARGO_TARGET_DIR says so. Reuse the same resolver
+// the build scripts use rather than duplicating the rule here.
+const { getCargoTargetDir } = createRequire(import.meta.url)('../scripts/build-env.js');
 
-// Tauri names the built binary after `productName` on some targets and after
-// the Cargo package name on others, and `--debug` vs release changes the
-// directory. Probe instead of guessing so a miss fails with a useful message.
-const BINARY_CANDIDATES = {
-    win32: [
-        'src-tauri/target/debug/Digital Habits Blocker.exe',
-        'src-tauri/target/debug/redd-block.exe',
-        'src-tauri/target/release/Digital Habits Blocker.exe',
-        'src-tauri/target/release/redd-block.exe',
-    ],
-    darwin: [
-        'src-tauri/target/debug/bundle/macos/Digital Habits Blocker.app/Contents/MacOS/Digital Habits Blocker',
-        'src-tauri/target/debug/Digital Habits Blocker',
-        'src-tauri/target/debug/redd-block',
-        'src-tauri/target/release/Digital Habits Blocker',
-        'src-tauri/target/release/redd-block',
-    ],
-};
+// Within the target dir, `--debug` vs release changes the profile directory,
+// and Tauri names the binary after either the Cargo package or productName
+// depending on the target. Probe rather than guess, and report every path
+// tried when nothing matches.
+function binaryCandidates() {
+    const exe = process.platform === 'win32' ? '.exe' : '';
+    const names = ['redd-block', 'Digital Habits Blocker'];
+    const roots = [getCargoTargetDir(process.env), path.join(repoRoot, 'src-tauri', 'target')];
+    const candidates = [];
+    for (const root of roots) {
+        for (const profile of ['debug', 'release']) {
+            for (const name of names) {
+                candidates.push(path.join(root, profile, `${name}${exe}`));
+                if (process.platform === 'darwin') {
+                    candidates.push(path.join(
+                        root, profile, 'bundle', 'macos',
+                        `${name}.app`, 'Contents', 'MacOS', name,
+                    ));
+                }
+            }
+        }
+    }
+    return candidates;
+}
 
 function resolveAppBinary() {
     const fromEnv = process.env.E2E_APP_BINARY;
@@ -52,9 +64,8 @@ function resolveAppBinary() {
         }
         return fromEnv;
     }
-    const candidates = BINARY_CANDIDATES[process.platform] || [];
-    for (const rel of candidates) {
-        const abs = path.join(repoRoot, rel);
+    const candidates = binaryCandidates();
+    for (const abs of candidates) {
         if (existsSync(abs)) return abs;
     }
     throw new Error(
