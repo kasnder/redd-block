@@ -7,6 +7,7 @@ import { tSettings } from './i18n.js';
 import { getBlocklistIOSPayload, isAllowlistBlocklist } from './blocklist-utils.js';
 import { formatDateForDisplay, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { formatTime } from './app.js';
+import { getDefaultPauseMinutes } from './pause-default.js';
 
 let hasShownIOSScheduleSyncError = false;
 
@@ -21,6 +22,11 @@ export function isNonRepeatingSchedule(schedule) {
 export const ANDROID_DAY_NAMES_MON0 = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 
 export const ANDROID_DEFAULT_FRICTION_WORD_COUNT = 15;
+
+/** Android cannot enforce allow-mode focus spaces yet. */
+export function isAndroidAllowlistUnsupported(blocklist, isAndroid = state.isAndroid) {
+    return isAndroid === true && isAllowlistBlocklist(blocklist);
+}
 
 /**
  * Friction-gate challenge fields for the Android plugin payload.
@@ -215,7 +221,9 @@ export function getSingleOccurrenceSegmentDates(schedule, segment) {
  * or the matchers in Schedules.kt), so `blockedApps` is always treated as a
  * denylist. Sending an allow-mode space would therefore block precisely the
  * apps it is meant to permit. Omitting it means such a space enforces nothing
- * on Android, which is inert rather than actively wrong.
+ * on Android, which is inert rather than actively wrong. The start flows reject
+ * new activations with a user-visible message; this omission remains a safety
+ * net for legacy data that was already persisted before the guard existed.
  *
  * Real allow-mode enforcement is a separate, much larger change: with
  * everything-but-the-list blocked, the launcher, Settings and the dialer would
@@ -232,7 +240,9 @@ export function buildAndroidScheduleEntries(now = Date.now()) {
     for (const schedule of state.appData.schedules || []) {
         if (!schedule.segments || schedule.segments.length === 0) continue;
         const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-        if (isAllowlistBlocklist(blocklist)) {
+        // This builder is Android-specific even when Tier 1 invokes it outside
+        // the platform branch, so keep the capability check explicit here.
+        if (isAndroidAllowlistUnsupported(blocklist, true)) {
             skippedAllowlistNames.push(blocklist.name || schedule.blocklistId);
             continue;
         }
@@ -461,7 +471,9 @@ export async function syncSchedulesToHelper() {
         try {
             const flatEntries = buildAndroidScheduleEntries();
             console.log('[syncSchedulesToHelper] Android: Sending', flatEntries.length, 'segment entries to plugin');
-            const result = await tauriAPI.androidSetSchedules(flatEntries);
+            // Mirrored into Kotlin prefs on every sync so the native friction
+            // gate prefills the user's configured pause length.
+            const result = await tauriAPI.androidSetSchedules(flatEntries, getDefaultPauseMinutes());
             if (!result.success) {
                 console.warn('[syncSchedulesToHelper] Android plugin failed:', result.error);
             }

@@ -106,6 +106,8 @@ export const SETTINGS_TRANSLATIONS = {
         androidAccessibilityReturnStatus:
             'Enable Digital Habits: Blocker in Accessibility, then return here.',
         androidAccessibilityOpenFailedStatusFmt: 'Could not open Accessibility settings: {error}',
+        androidAllowlistUnsupported:
+            'Allow-mode focus spaces are not supported on Android yet. Choose Block mode or use this focus space on iOS.',
         // One-time rename notice for users upgrading from ReDD Blocker
         rebrandNoticeTitleHtml:
             'ReDD Blocker is now <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
@@ -826,6 +828,20 @@ export const SETTINGS_TRANSLATIONS = {
         overrideAllBlocks: 'Stop All Blocks (with challenge)',
         settingsOverrideAllLabel: 'Stop all blocks & schedules',
         settingsOverrideAllBtn: 'Stop all',
+        // Default pause length (all platforms)
+        settingsPauseDefaultLabel: 'Default pause length',
+        settingsPauseDefaultHint: 'Prefilled when you pause a focus space.',
+        pauseDefaultTitle: 'Default pause length',
+        pauseDefaultSubtitle: 'How long a pause lasts when you pause a focus space.',
+        // Android also prefills its native block screen from this setting.
+        pauseDefaultSubtitleAndroid: 'How long a pause lasts when you pause a focus space, here and on the block screen.',
+        pauseDefaultInstruction: 'To change this, type the following:',
+        pauseDefaultSave: 'Save',
+        pauseDefaultUnitHours: 'hrs',
+        pauseDefaultUnitMinutes: 'mins',
+        pauseDefaultValueMinutesFmt: '{m} min',
+        pauseDefaultValueHoursFmt: '{h} hr',
+        pauseDefaultValueHoursMinutesFmt: '{h} hr {m} min',
         // In-app uninstall (macOS only)
         uninstallApp: 'Uninstall Digital Habits: Blocker',
         uninstallAppBtn: 'Uninstall…',
@@ -986,6 +1002,8 @@ export const SETTINGS_TRANSLATIONS = {
         androidAccessibilityReturnStatus:
             'Aktiver Digital Habits: Blocker under Accessibility, og vend derefter tilbage hertil.',
         androidAccessibilityOpenFailedStatusFmt: 'Kunne ikke åbne Accessibility-indstillinger: {error}',
+        androidAllowlistUnsupported:
+            'Tilladelsestilstand er endnu ikke understøttet på Android. Vælg Blokering, eller brug dette fokusrum på iOS.',
         // One-time rename notice for users upgrading from ReDD Blocker
         rebrandNoticeTitleHtml:
             'ReDD Blocker hedder nu <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
@@ -1686,6 +1704,19 @@ export const SETTINGS_TRANSLATIONS = {
         overrideAllBlocks: 'Stop alle blokeringer (med udfordring)',
         settingsOverrideAllLabel: 'Stop alle blokeringer og ugeskemaer',
         settingsOverrideAllBtn: 'Stop alle',
+        // Default pause length (all platforms)
+        settingsPauseDefaultLabel: 'Standard pauselængde',
+        settingsPauseDefaultHint: 'Udfyldes på forhånd, når du pauser et fokusrum.',
+        pauseDefaultTitle: 'Standard pauselængde',
+        pauseDefaultSubtitle: 'Hvor længe en pause varer, når du pauser et fokusrum.',
+        pauseDefaultSubtitleAndroid: 'Hvor længe en pause varer, når du pauser et fokusrum — her og på blokeringsskærmen.',
+        pauseDefaultInstruction: 'For at ændre dette, skriv følgende:',
+        pauseDefaultSave: 'Gem',
+        pauseDefaultUnitHours: 'timer',
+        pauseDefaultUnitMinutes: 'min',
+        pauseDefaultValueMinutesFmt: '{m} min',
+        pauseDefaultValueHoursFmt: '{h} t',
+        pauseDefaultValueHoursMinutesFmt: '{h} t {m} min',
         // In-app uninstall (macOS only)
         uninstallApp: 'Afinstaller Digital Habits: Blocker',
         uninstallAppBtn: 'Afinstaller…',
@@ -1829,6 +1860,7 @@ export const SETTINGS_TRANSLATIONS = {
         androidAccessibilityWaitingStatus: '等待你在无障碍设置中启用 Digital Habits: Blocker…',
         androidAccessibilityReturnStatus: '在无障碍设置中启用 Digital Habits: Blocker，然后返回此处。',
         androidAccessibilityOpenFailedStatusFmt: '无法打开无障碍设置：{error}',
+        androidAllowlistUnsupported: 'Android 目前尚不支持允许模式的专注空间。请选择阻止模式，或在 iOS 上使用此专注空间。',
         // One-time rename notice for users upgrading from ReDD Blocker
         rebrandNoticeTitleHtml:
             'ReDD Blocker 现已更名为 <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
@@ -2503,6 +2535,19 @@ export const SETTINGS_TRANSLATIONS = {
         overrideAllBlocks: '停止所有阻止（需要挑战）',
         settingsOverrideAllLabel: '停止所有阻止和日程',
         settingsOverrideAllBtn: '全部停止',
+        // Default pause length (all platforms)
+        settingsPauseDefaultLabel: '默认暂停时长',
+        settingsPauseDefaultHint: '暂停专注空间时预先填入的时长。',
+        pauseDefaultTitle: '默认暂停时长',
+        pauseDefaultSubtitle: '暂停专注空间时，一次暂停持续多久。',
+        pauseDefaultSubtitleAndroid: '暂停专注空间时，一次暂停持续多久（此处和阻止界面都适用）。',
+        pauseDefaultInstruction: '要更改此设置，请输入以下内容：',
+        pauseDefaultSave: '保存',
+        pauseDefaultUnitHours: '小时',
+        pauseDefaultUnitMinutes: '分钟',
+        pauseDefaultValueMinutesFmt: '{m} 分钟',
+        pauseDefaultValueHoursFmt: '{h} 小时',
+        pauseDefaultValueHoursMinutesFmt: '{h} 小时 {m} 分钟',
         uninstallApp: '卸载 Digital Habits: Blocker',
         uninstallAppBtn: '卸载...',
         uninstallDisabledHint: '请先停止正在运行的阻止，然后才能卸载。',

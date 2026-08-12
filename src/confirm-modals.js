@@ -6,8 +6,8 @@ import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn } from './blocklist-utils.js';
-import { formatOverrideMaxDifficultyHint, getMaxOverrideCharsForType, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, usesMobileWordCountForOverrideType } from './override-challenge.js';
-import { isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
+import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxOverrideCharsForType, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, sanitizeChallengeTargetText, usesMobileWordCountForOverrideType } from './override-challenge.js';
+import { isAndroidAllowlistUnsupported, isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
 import { clearPendingScheduleDraft, isBlocklistEditFrictionRequired, renderBlocklists, truncateBlocklistName } from './blocklists.js';
@@ -24,6 +24,7 @@ import {
     formatMinutesAsHHMM, formatTime, generateId,
     shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval,
 } from './app.js';
+import { getDefaultPauseMinutes } from './pause-default.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
     setBlocklistModalMode,
@@ -637,12 +638,17 @@ export async function proceedWithScheduleEdit() {
 
 // Actually create the schedule (called after confirmation)
 export async function proceedWithSchedule() {
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
+    if (!blocklist) return;
+    if (isAndroidAllowlistUnsupported(blocklist)) {
+        alert(tSettings('androidAllowlistUnsupported'));
+        return;
+    }
+
     const startOverlayId = getEffectiveScheduleStartOverlayId();
     rememberLastScheduleStartOverlayId(startOverlayId);
     closeScheduleConfirmModal();
 
-    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-    if (!blocklist) return;
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
     if (!await ensureIOSAllowlistStartable(blocklist)) return;
 
@@ -2135,6 +2141,12 @@ async function runProceedWithBlock() {
         startBtn.innerHTML = getStartBlockButtonHTML();
         return;
     }
+    if (isAndroidAllowlistUnsupported(blocklist)) {
+        startBtn.disabled = false;
+        startBtn.innerHTML = getStartBlockButtonHTML();
+        alert(tSettings('androidAllowlistUnsupported'));
+        return;
+    }
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this block')) {
         startBtn.disabled = false;
         startBtn.innerHTML = getStartBlockButtonHTML();
@@ -3116,10 +3128,15 @@ export function openPauseModal(blockId) {
     }
 
     // Reset duration inputs
-    const defaultMins = state.pauseMaxMinutes !== null ? Math.min(15, state.pauseMaxMinutes) : 15;
-    document.getElementById('pause-days').value = 0;
-    document.getElementById('pause-hours').value = 0;
-    document.getElementById('pause-minutes').value = defaultMins;
+    const configuredDefaultMins = getDefaultPauseMinutes();
+    const defaultMins = state.pauseMaxMinutes !== null
+        ? Math.min(configuredDefaultMins, state.pauseMaxMinutes)
+        : configuredDefaultMins;
+    // Split across the three inputs — the configured default can exceed an
+    // hour, and each field only accepts its own unit's range.
+    document.getElementById('pause-days').value = Math.floor(defaultMins / (24 * 60));
+    document.getElementById('pause-hours').value = Math.floor((defaultMins % (24 * 60)) / 60);
+    document.getElementById('pause-minutes').value = defaultMins % 60;
     initPauseRestartPopovers();
     updatePauseRestartTime();
 

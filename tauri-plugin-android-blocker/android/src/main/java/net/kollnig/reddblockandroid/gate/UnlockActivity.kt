@@ -23,6 +23,7 @@ import androidx.core.view.updatePadding
 import net.kollnig.reddblockandroid.plugin.R
 import net.kollnig.reddblockandroid.data.Schedule
 import net.kollnig.reddblockandroid.schedule.Schedules
+import net.kollnig.reddblockandroid.util.defaultPauseMinutes
 import net.kollnig.reddblockandroid.util.isPrefsInitialized
 import net.kollnig.reddblockandroid.util.prefs
 import java.text.DateFormat
@@ -296,6 +297,13 @@ class UnlockActivity : Activity() {
     }
 
     private fun setupDurationInputs() {
+        // Prefill the user's configured default pause length (Settings →
+        // "Default pause length"), falling back to the layout's 10 minutes.
+        val total = defaultPauseMinutes()
+        daysInput.setText((total / (24 * 60)).toString())
+        hoursInput.setText(((total % (24 * 60)) / 60).toString())
+        minutesInput.setText((total % 60).toString())
+
         val watcher = object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}

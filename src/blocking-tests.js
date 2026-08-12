@@ -17,6 +17,7 @@
  * - T48-T50: Protected Domain Prevention
  * - T51-T54, T51da: Blocklist duplication (schedules copy as pending drafts; DA uses "kopi")
  * - T55-T62: iOS allowlist effective-policy resolvers (pure helpers)
+ * - T63-T65: Default pause length setting (fallback, configured value, clamping)
  */
 
 (function () {
@@ -1586,7 +1587,6 @@
     }
 
     // ========================================
-    // ========================================
     // CATEGORY 18: ANDROID PAYLOAD (T143-T152)
     // ========================================
 
@@ -1598,7 +1598,10 @@
         console.log('\n🤖 Category 18: Android Payload');
         console.log('-------------------------------');
 
-        const { buildAndroidScheduleEntries: build } = window.__REDDBLOCK_INTERNALS__;
+        const {
+            buildAndroidScheduleEntries: build,
+            isAndroidAllowlistUnsupported: unsupported,
+        } = window.__REDDBLOCK_INTERNALS__;
         const saved = window.__REDDBLOCK_INTERNALS__.appData;
 
         const seg = { startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, days: [] };
@@ -1607,6 +1610,14 @@
         };
 
         try {
+            (function T142() {
+                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
+                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
+                assert(unsupported(allowMode, true), 'T142: Android rejects allow-mode starts');
+                assert(!unsupported(blockMode, true), 'T142: Android still permits block-mode starts');
+                assert(!unsupported(allowMode, false), 'T142: allow mode remains supported on non-Android platforms');
+            })();
+
             (function T143() {
                 const bl = createMockBlocklist({ mode: 'blocklist', apps: ['com.x'], websites: ['x.com'] });
                 withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
@@ -1799,13 +1810,10 @@
 
     // Which focus spaces must confirm a loosening edit with the exit challenge.
     //
-    // The pause cases are the point of this group. A paused space is one the
-    // user intends to resume, so pause -> loosen -> resume must not be a cheaper
-    // route than the challenge — and pausing is itself frictionless on flexible
-    // schedules. Every gate in the app has always been pause-INSENSITIVE; these
-    // pin that down before the gate moves behind one shared predicate, because
-    // the obvious helpers to reach for (isOneOffBlockEnforced,
-    // isScheduleSegmentActiveNow) both exempt paused and would silently open it.
+    // Pause semantics are deliberately different by type: paused one-off blocks
+    // remain gated, while a paused flexible schedule can be edited so the user
+    // does not have to stop it and remember to recreate it. Strict schedules
+    // remain gated while paused.
     function runEditFrictionGateTests() {
         console.log('\n🔒 Category 20: Edit Friction Gate');
         console.log('----------------------------------');
@@ -1876,6 +1884,66 @@
             })();
         } finally {
             window.__REDDBLOCK_INTERNALS__.appData = saved;
+        }
+    }
+
+    // CATEGORY 15: DEFAULT PAUSE LENGTH (T63-T65)
+    // ========================================
+
+    // The configurable prefill duration behind the "Stop all"-style gate
+    // (Settings → Default pause length; all platforms). Pure helpers over
+    // appData.settings.defaultPauseMinutes.
+    function runDefaultPauseLengthTests() {
+        console.log('\n⏸️  Category 15: Default Pause Length');
+        console.log('------------------------------------');
+
+        const {
+            getDefaultPauseMinutes,
+            clampDefaultPauseMinutes,
+            FALLBACK_DEFAULT_PAUSE_MINUTES,
+            MAX_DEFAULT_PAUSE_MINUTES
+        } = window.__REDDBLOCK_INTERNALS__;
+
+        const originalAppData = window.__REDDBLOCK_INTERNALS__.appData;
+        const withSetting = (value) => {
+            window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({
+                settings: value === undefined ? {} : { defaultPauseMinutes: value }
+            });
+        };
+
+        try {
+            // T63: unset / invalid values fall back to 15 minutes
+            (function T63() {
+                withSetting(undefined);
+                assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
+                    'T63: unset setting falls back to 10 minutes');
+                withSetting(0);
+                assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
+                    'T63: zero falls back to 10 minutes');
+                withSetting('not a number');
+                assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
+                    'T63: non-numeric falls back to 10 minutes');
+            })();
+
+            // T64: a configured value is used verbatim
+            (function T64() {
+                withSetting(45);
+                assertEqual(getDefaultPauseMinutes(), 45, 'T64: configured 45 minutes is used');
+                withSetting(90);
+                assertEqual(getDefaultPauseMinutes(), 90, 'T64: values over an hour survive');
+            })();
+
+            // T65: out-of-range values clamp to [1, one day]
+            (function T65() {
+                assertEqual(clampDefaultPauseMinutes(-5), 1, 'T65: negatives clamp to 1 minute');
+                assertEqual(clampDefaultPauseMinutes(MAX_DEFAULT_PAUSE_MINUTES + 1),
+                    MAX_DEFAULT_PAUSE_MINUTES, 'T65: over a day clamps to a day');
+                withSetting(MAX_DEFAULT_PAUSE_MINUTES * 10);
+                assertEqual(getDefaultPauseMinutes(), MAX_DEFAULT_PAUSE_MINUTES,
+                    'T65: stored oversize value reads back clamped');
+            })();
+        } finally {
+            window.__REDDBLOCK_INTERNALS__.appData = originalAppData;
         }
     }
 
@@ -2476,6 +2544,7 @@
             runEditFrictionGateTests();
             runChallengePrimitiveTests();
             runChallengeControllerTests();
+            runDefaultPauseLengthTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -2503,7 +2572,8 @@
         runIOSSchedulePayloadTests,
         runEditFrictionGateTests,
         runChallengePrimitiveTests,
-        runChallengeControllerTests
+        runChallengeControllerTests,
+        runDefaultPauseLengthTests
     };
 
     console.log('🧪 ReddBlock Blocking Tests loaded. Press Cmd+Shift+T to run tests.');

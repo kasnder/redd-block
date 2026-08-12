@@ -18,6 +18,7 @@ import { applyScheduleStartOverlayPresentation, getScheduleStartOverlayForWarnin
 import { closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, initializeOverrideModalChallenge, openPauseModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
 import { isModalVisible } from './modal-manager.js';
 import { updateManageSectionVisibility, closeOverrideAllModal } from './settings.js';
+import { closeDefaultPauseModal } from './pause-default.js';
 import { CURRENT_EULA_REVISION, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress } from './onboarding.js';
 import { generateId, runPostAcceptanceStartup } from './app.js';
 
@@ -1102,6 +1103,7 @@ export const ANDROID_MODAL_CLOSE_FNS = {
     'blocklist-modal': closeBlocklistModal,
     'override-modal': closeOverrideModal,
     'pause-modal': closePauseModal,
+    'pause-default-modal': closeDefaultPauseModal,
     'start-block-confirm-modal': closeStartBlockConfirmModal,
     'start-schedule-confirm-modal': closeScheduleConfirmModal,
     'override-all-modal': closeOverrideAllModal,
@@ -1497,6 +1499,7 @@ export function setupHandsetModalScreens() {
         'start-schedule-confirm-modal',
         'settings-modal',
         'override-all-modal',
+        'pause-default-modal',
         // Desktop single-column reuses this sheet; wrap chrome on every platform.
         'enter-scheduler-modal',
     ];

@@ -3855,7 +3855,8 @@ body:not(.ios) #settings-toolbar-scheduler{
    field, so Kotlin treats every list as a denylist and an allow-mode space would
    block exactly the apps it is meant to permit. Hide the two entry points that
    can create one until Schedule.kt/Schedules.kt learn about mode; existing
-   allow-mode spaces are left alone. */
+   Existing allow-mode spaces remain editable so users can switch them back to
+   block mode, but starting one is rejected with an explanation. */
 body.android #allow-only-blocklist-btn{
     display: none;
 }

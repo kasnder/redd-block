@@ -23,9 +23,12 @@ pub(crate) async fn open_accessibility_settings<R: Runtime>(
 pub(crate) async fn set_schedules<R: Runtime>(
     app: AppHandle<R>,
     schedules: Vec<ScheduleEntry>,
+    default_pause_minutes: Option<u32>,
 ) -> Result<SuccessResponse> {
-    app.android_blocker()
-        .set_schedules(SetSchedulesRequest { schedules })
+    app.android_blocker().set_schedules(SetSchedulesRequest {
+        schedules,
+        default_pause_minutes,
+    })
 }
 
 #[command]

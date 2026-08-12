@@ -7,7 +7,7 @@
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isAllowlistBlocklist, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
-import { buildAndroidScheduleEntries, buildIOSScheduleEntries } from './schedule-engine.js';
+import { buildAndroidScheduleEntries, buildIOSScheduleEntries, isAndroidAllowlistUnsupported } from './schedule-engine.js';
 import {
     buildWordChallengeState,
     getCompletedChallengeText,
@@ -31,6 +31,12 @@ import {
     validateIOSAllowlistLimits,
     IOS_ALLOWLIST_EXCEPTION_LIMIT,
 } from './allowlist-ios.js';
+import {
+    getDefaultPauseMinutes,
+    clampDefaultPauseMinutes,
+    FALLBACK_DEFAULT_PAUSE_MINUTES,
+    MAX_DEFAULT_PAUSE_MINUTES,
+} from './pause-default.js';
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
@@ -50,6 +56,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     getNextCopyName,
     getMaxOverrideCharsForType,
     buildAndroidScheduleEntries,
+    isAndroidAllowlistUnsupported,
     buildIOSScheduleEntries,
     // Challenge-engine primitives (characterization tests / controller suite)
     normalizeChallengeComparableText,
@@ -83,6 +90,10 @@ window.__REDDBLOCK_INTERNALS__ = {
     // desktop WebDriver binary, so expose the setup hook for that boundary
     // test rather than duplicating modal-close logic in the harness.
     setupAndroidBackButtonHandling,
+    getDefaultPauseMinutes,
+    clampDefaultPauseMinutes,
+    FALLBACK_DEFAULT_PAUSE_MINUTES,
+    MAX_DEFAULT_PAUSE_MINUTES,
 };
 
 // ========================================

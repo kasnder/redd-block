@@ -305,12 +305,11 @@ export function saveQuickStartAsFocusSpace(id) {
  * Must an edit that *loosens* this focus space be confirmed with the exit
  * challenge? Also gates deleting it outright.
  *
- * Deliberately pause-INSENSITIVE. A paused space is one the user intends to
- * resume, so pause → loosen → resume must not be a cheaper route than the
- * challenge — and pausing is itself frictionless on flexible schedules. Note
- * that the obvious helpers to reach for here, isOneOffBlockEnforced and
- * isScheduleSegmentActiveNow, both return false while paused; using either
- * would silently open that route. T159-T166 pin this down.
+ * Paused one-off blocks remain gated. Paused schedules with
+ * allowEditsBetweenBlocks are intentionally editable, because that preserves
+ * the schedule and its automatic resume instead of making the user stop it and
+ * remember to recreate it. Strict schedules remain gated while paused. T159-T166
+ * pin down these deliberately different pause semantics.
  *
  * The one exemption is by design: a schedule with allowEditsBetweenBlocks is
  * editable while it is between segments (canEditScheduleBetweenBlocks).
