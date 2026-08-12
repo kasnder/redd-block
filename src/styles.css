@@ -5499,10 +5499,8 @@ body.dark-mode .time-part.active{
     cursor: pointer;
 }
 
-/* Tint with the banner's own text colour so this tracks light/dark mode,
-   instead of pinning the light-mode amber. */
 .warning-banner-action:hover{
-    background: color-mix(in srgb, currentColor 10%, transparent);
+    background: rgba(146, 64, 14, 0.08);
 }
 
 .warning-banner-action:focus-visible{

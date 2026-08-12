@@ -2504,7 +2504,6 @@ function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { preserveModa
     const isActive = isBlocklistEditFrictionRequired(blocklist?.id, now);
     const warningEl = document.getElementById('active-blocklist-warning');
     const pauseBtn = document.getElementById('active-blocklist-pause-btn');
-    const modeInputs = document.getElementById('blocklist-modal').querySelectorAll('.radio-option');
     const overrideInputs = [
         document.getElementById('override-type'),
         document.getElementById('override-count'),
@@ -2519,11 +2518,7 @@ function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { preserveModa
     const overridePreviewBlockEl = document.getElementById('override-preview-block');
     const overrideTimeEstimateEl = document.getElementById('override-count-time-estimate');
 
-    // Mode stays locked for anything still running, including a flexible
-    // schedule between segments that is otherwise freely editable — see
-    // getRunningEnforcementTarget. Only a live pause unlocks it.
     const runningTarget = getRunningEnforcementTarget(blocklist?.id, now);
-    modeInputs.forEach(el => el.classList.toggle('disabled', !!runningTarget));
 
     const canPauseToEdit = isActive && !!runningTarget;
     pauseBtn?.classList.toggle('hidden', !canPauseToEdit);

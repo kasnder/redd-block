@@ -1205,10 +1205,6 @@
             );
             assertOrThrow(!isVisible('active-blocklist-warning'), 'I5: warning stayed visible after pause');
             assertOrThrow(!document.getElementById('override-type')?.disabled, 'I5: override settings stayed locked after pause');
-            assertOrThrow(
-                !document.querySelector('#blocklist-modal .radio-option')?.classList.contains('disabled'),
-                'I5: mode stayed locked after pause',
-            );
             assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: unsaved website edit was discarded by the pause refresh');
             assertOrThrow(
                 !document.querySelector('#modal-websites-tags .tag.locked'),

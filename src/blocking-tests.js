@@ -1805,25 +1805,18 @@
     }
 
     // ========================================
-    // CATEGORY 20: EDIT FRICTION GATE (T159-T172)
+    // CATEGORY 20: EDIT FRICTION GATE (T159-T168)
     // ========================================
 
     // Which focus spaces must confirm a loosening edit with the exit challenge.
     //
     // A live pause unlocks editing for both one-off blocks and schedules. Once
     // that pause expires, the edit gate applies again.
-    //
-    // T169-T172 pin the neighbouring predicate the modal also depends on:
-    // getRunningEnforcementTarget, which is true for strictly more spaces than
-    // the gate (a flexible schedule between segments is editable but running).
     function runEditFrictionGateTests() {
         console.log('\n🔒 Category 20: Edit Friction Gate');
         console.log('----------------------------------');
 
-        const {
-            isBlocklistEditFrictionRequired: required,
-            getRunningEnforcementTarget: running,
-        } = window.__REDDBLOCK_INTERNALS__;
+        const { isBlocklistEditFrictionRequired: required } = window.__REDDBLOCK_INTERNALS__;
         const saved = window.__REDDBLOCK_INTERNALS__.appData;
 
         const now = Date.now();
@@ -1900,44 +1893,6 @@
                 assert(required(bl.id, now) === true, 'T168: an expired schedule pause gates editing again');
             })();
 
-            // T169-T172: "still running" is a *wider* question than "edit
-            // gated", and the modal's blocklist/allowlist mode radios key off
-            // the wider one. Only a live pause clears it.
-            (function T169() {
-                const bl = createMockBlocklist({});
-                withData([bl], { activeBlocks: [createMockBlock(bl.id, now - HOUR, now + HOUR)] });
-                assert(running(bl.id, now)?.type === 'block', 'T169: a running one-off block is a running target');
-            })();
-
-            (function T170() {
-                const bl = createMockBlocklist({});
-                withData([bl], { activeBlocks: [createMockBlock(bl.id, now - HOUR, now + HOUR, { isPaused: true, pauseEndTime: now + HOUR })] });
-                assert(running(bl.id, now) === null, 'T170: a paused one-off block is not running — mode unlocks');
-                withData([bl], { schedules: [createMockSchedule(bl.id, [allDaySeg], { isPaused: true, pauseEndTime: now + HOUR })] });
-                assert(running(bl.id, now) === null, 'T170: a paused schedule is not running — mode unlocks');
-            })();
-
-            (function T171() {
-                const bl = createMockBlocklist({});
-                // Tomorrow's weekday only, so the schedule is genuinely
-                // *between* segments right now whenever the suite runs — that
-                // is the state the allowEditsBetweenBlocks exemption covers.
-                const todayIdx = new Date(now).getDay() === 0 ? 6 : new Date(now).getDay() - 1;
-                const tomorrowSeg = { ...allDaySeg, days: [(todayIdx + 1) % 7] };
-                withData([bl], { schedules: [createMockSchedule(bl.id, [tomorrowSeg], { allowEditsBetweenBlocks: true })] });
-                assert(required(bl.id, now) === false, 'T171: a flexible schedule between segments is not edit-gated');
-                assert(
-                    running(bl.id, now)?.type === 'schedule',
-                    'T171: ...but it is still running, so mode stays locked — swapping block/allow mid-schedule is not a free edit',
-                );
-            })();
-
-            (function T172() {
-                const bl = createMockBlocklist({});
-                withData([bl], { activeBlocks: [createMockBlock(bl.id, now - 2 * HOUR, now - HOUR)] });
-                assert(running(bl.id, now) === null, 'T172: an expired block is not running');
-                assert(running(null, now) === null, 'T172: a missing id is not running');
-            })();
         } finally {
             window.__REDDBLOCK_INTERNALS__.appData = saved;
         }

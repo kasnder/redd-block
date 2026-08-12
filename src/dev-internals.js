@@ -23,7 +23,7 @@ import { saveData, updateHostsFile } from './persistence.js';
 import { acceptEula, setupAndroidBackButtonHandling } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION } from './onboarding.js';
 import { render, isClockTickRunning } from './render.js';
-import { duplicateBlocklist, getNextCopyName, getRunningEnforcementTarget, isBlocklistEditFrictionRequired } from './blocklists.js';
+import { duplicateBlocklist, getNextCopyName, isBlocklistEditFrictionRequired } from './blocklists.js';
 import { getMaxOverrideCharsForType } from './override-challenge.js';
 import {
     deriveIOSEffectiveWebsitePolicy,
@@ -52,7 +52,6 @@ window.__REDDBLOCK_INTERNALS__ = {
     PROTECTED_DOMAINS,
     isAllowlistBlocklist,
     isBlocklistEditFrictionRequired,
-    getRunningEnforcementTarget,
     duplicateBlocklist,
     getNextCopyName,
     getMaxOverrideCharsForType,
