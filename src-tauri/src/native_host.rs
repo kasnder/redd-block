@@ -359,11 +359,7 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
     for ab in &active {
         let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        let paused = ab
-            .get("isPaused")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if paused || now_ms < start || now_ms >= end {
+        if one_off_pause_active(ab, now_ms) || now_ms < start || now_ms >= end {
             continue;
         }
         let id = match ab.get("blocklistId").and_then(|v| v.as_str()) {
@@ -491,11 +487,7 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
     for ab in &active {
         let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        let paused = ab
-            .get("isPaused")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if paused || now_ms < start || now_ms >= end {
+        if one_off_pause_active(ab, now_ms) || now_ms < start || now_ms >= end {
             continue;
         }
         let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) else {
@@ -594,11 +586,7 @@ pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
     for ab in &active {
         let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        let paused = ab
-            .get("isPaused")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if paused || now_ms < start || now_ms >= end {
+        if one_off_pause_active(ab, now_ms) || now_ms < start || now_ms >= end {
             continue;
         }
         let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) else {
@@ -644,6 +632,34 @@ pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
 struct ScheduleMatch {
     started_at: Option<u64>,
     ends_at: Option<u64>,
+}
+
+/// Whether a one-off block's pause still suppresses enforcement at `now_ms`.
+///
+/// Mirrors the schedule rule in `match_schedule_now`: a pause holds only until
+/// `pauseEndTime`. Derivation must not wait for the frontend to clear
+/// `isPaused` — that sweep is a 1 s JS interval in `src/render.js`, and macOS
+/// throttles WKWebView timers while the window is hidden, which is the app's
+/// normal tray state. Keying off the flag alone left a block silently
+/// unenforced past its pause end.
+///
+/// A missing `pauseEndTime` reads as "not paused", matching the schedule rule.
+/// Both pause paths (`confirm-modals.js`, and the Android reconciliation in
+/// `blocking-platform.js`) always write the two fields together, so an
+/// end-time-less pause is not reachable from the app.
+pub(crate) fn one_off_pause_active(active_block: &Value, now_ms: u64) -> bool {
+    let paused = active_block
+        .get("isPaused")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !paused {
+        return false;
+    }
+    let pause_end = active_block
+        .get("pauseEndTime")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    pause_end > now_ms
 }
 
 /// If any segment of `schedule` is active at `now_ms`, return the
