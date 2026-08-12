@@ -1117,6 +1117,9 @@ export const ANDROID_MODAL_CLOSE_FNS = {
 // popstate (which goBack() triggers) close the topmost open modal
 // instead of letting the Activity finish.
 export function setupAndroidBackButtonHandling() {
+    if (document.documentElement.dataset.androidBackHandling === '1') return;
+    document.documentElement.dataset.androidBackHandling = '1';
+
     let trapArmed = false;
 
     function topmostVisibleModal() {
