@@ -15,8 +15,15 @@ import globals from 'globals';
 export default [
     {
         ignores: [
+            // Local agent worktrees live under this checkout. ESLint does not
+            // inherit .gitignore, so `eslint .` would otherwise lint each
+            // nested checkout (including its generated dist bundle).
+            '.claude/**',
             'dist/**',
             'node_modules/**',
+            // Removed vendored extension checkout may remain on developer
+            // machines as ignored local state.
+            'redd-focus-web/**',
             'src-tauri/target/**',
             'src-tauri/gen/**',
             'browser-ext-migration/**',
