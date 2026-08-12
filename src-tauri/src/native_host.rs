@@ -1378,7 +1378,11 @@ mod tests {
             domains.contains(&"example.invalid".to_string()),
             "expired pause should not keep the domain unenforced, got {domains:?}"
         );
-        assert_eq!(blocks.len(), 1, "expired pause should yield an active block");
+        assert_eq!(
+            blocks.len(),
+            1,
+            "expired pause should yield an active block"
+        );
         assert!(
             apps.contains(&"Mail".to_string()),
             "expired pause should not keep the app unenforced, got {apps:?}"
@@ -1466,8 +1470,14 @@ mod tests {
         let apps = derive_blocked_apps(&path);
         let _ = fs::remove_file(&path);
 
-        assert!(domains.is_empty(), "live pause should suppress domains, got {domains:?}");
+        assert!(
+            domains.is_empty(),
+            "live pause should suppress domains, got {domains:?}"
+        );
         assert!(blocks.is_empty(), "live pause should suppress blocks");
-        assert!(apps.is_empty(), "live pause should suppress apps, got {apps:?}");
+        assert!(
+            apps.is_empty(),
+            "live pause should suppress apps, got {apps:?}"
+        );
     }
 }

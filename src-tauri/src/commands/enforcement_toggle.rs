@@ -80,7 +80,9 @@ fn any_block_currently_active(data: &Value) -> bool {
         // missing. Treat null/0 endTime as "infinite" so they count
         // as active.
         let is_always = b.get("endTime").map_or(true, |v| v.is_null());
-        start <= now_ms && (is_always || end > now_ms) && !crate::native_host::one_off_pause_active(b, now_ms)
+        start <= now_ms
+            && (is_always || end > now_ms)
+            && !crate::native_host::one_off_pause_active(b, now_ms)
     })
 }
 
