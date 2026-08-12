@@ -61,8 +61,10 @@ Notes on the two non-obvious choices:
   `:tauri-android` and `:tauri-plugin-android-blocker` to the build. Gradle
   cannot configure the project until the Tauri CLI has written it.
 
-**Tier 2 is deliberately not in CI**: it drives the real Tauri command layer,
-which needs a running native app rather than a headless browser page.
+**Tier 2 in CI is in progress** (`e2e-ci.yml`, Windows): it drives the real
+Tauri command layer, so it needs a running native app rather than a headless
+browser page. See "Tier 2 under WebDriver" below. Running it by hand from the
+app's dev console remains the primary path until that job is proven green.
 
 ---
 
@@ -241,6 +243,42 @@ that surface is manual checklist section 15.
 - Some checks are command-path assertions, not UI-visible assertions.
 - Not a substitute for manual Automation TCC flows, extension install, or enforcer grace UX.
 - **Tech debt:** renaming `updateHostsFile()` (legacy name; it drives v3 sync).
+
+---
+
+## Tier 2 under WebDriver (experimental)
+
+Tier 2 can also be driven from outside the app by attaching a WebDriver session
+to the built app's webview:
+
+```
+npm run build:e2e-app      # app built with the test runners kept in the bundle
+npm run test:tier2         # drives runIntegrationTests('full') and fails on any failure
+```
+
+Three things make this work, and all three are easy to trip over:
+
+- **The app must be built in `e2e` Vite mode.** Normal builds strip
+  `test-utils.js` / `blocking-tests.js` / `integration-tests.js` from the
+  bundle, so `runIntegrationTests` would not exist in the webview.
+  `src-tauri/tauri.e2e.conf.json` swaps `beforeBuildCommand` to
+  `npm run vite:build:e2e`, which keeps the `<script>` tags *and* emits the
+  three classic scripts into the output root (Vite never bundles them).
+- **`e2e/specs/tier2.e2e.js` is a driver, not a test.** All the assertions stay
+  in `src/integration-tests.js` so the suite remains runnable by hand from the
+  dev console. The spec only waits for the harness, starts the run, polls, and
+  fails on any failed case — the same contract `run-tier1-headless.mjs` has
+  with Tier 1.
+- **The driver provider is platform-dependent.** Windows uses `external`
+  (`tauri-driver`, no app-side dependency). macOS needs `embedded`, which
+  requires the `tauri-plugin-wdio-webdriver` crate compiled in — that must stay
+  behind a Cargo feature and out of shipped builds, since an embedded
+  remote-control server inside a blocker app is a bypass surface. macOS is not
+  wired up yet.
+
+Tier 2 mutates real state, which is why it stays manual locally and runs on a
+disposable runner VM in CI. Its test domains are all `.invalid` by
+construction.
 
 ---
 

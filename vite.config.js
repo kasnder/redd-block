@@ -14,17 +14,46 @@ import { PurgeCSS } from 'purgecss';
 // for bundling. That scan happens before normal-order transformIndexHtml hooks,
 // so a normal-order strip removes them from the output but still trips the
 // warning. Running `pre` deletes the tags before the scan sees them.
-const stripDevTestScripts = () => ({
+const DEV_TEST_SCRIPTS = ['test-utils', 'blocking-tests', 'integration-tests'];
+
+const stripDevTestScripts = (enabled) => ({
     name: 'strip-dev-test-scripts',
     apply: 'build',
     transformIndexHtml: {
         order: 'pre',
         handler(html) {
+            if (!enabled) return html;
             return html.replace(
                 /\s*<script src="\.\/(test-utils|blocking-tests|integration-tests)\.js"><\/script>/g,
                 '',
             );
         },
+    },
+});
+
+// `--mode e2e` keeps the test runners in the bundle so a WebDriver session can
+// call runIntegrationTests() against a *real built app* (Tier 2 needs the
+// native command layer, which a bare Vite page does not have). The kept
+// <script> tags are classic scripts, so Vite never bundles them and would
+// leave them 404ing — emit each one into the output root by hand.
+//
+// Never use this mode for a shipped build: it re-adds ~120 KB of test runners
+// and exposes the test entry points to end users.
+const emitDevTestScripts = (enabled) => ({
+    name: 'emit-dev-test-scripts',
+    apply: 'build',
+    generateBundle() {
+        if (!enabled) return;
+        for (const name of DEV_TEST_SCRIPTS) {
+            this.emitFile({
+                type: 'asset',
+                fileName: `${name}.js`,
+                source: readFileSync(
+                    fileURLToPath(new URL(`./src/${name}.js`, import.meta.url)),
+                    'utf8',
+                ),
+            });
+        }
     },
 });
 
@@ -272,7 +301,8 @@ const pruneOrphanAndroidAssets = (enabled) => ({
 
 export default defineConfig(async ({ mode }) => ({
     plugins: [
-        stripDevTestScripts(),
+        stripDevTestScripts(mode !== 'e2e'),
+        emitDevTestScripts(mode === 'e2e'),
         stripNonAndroidUi(mode === 'android'),
         purgeAndroidCss(mode === 'android'),
         pruneOrphanAndroidAssets(mode === 'android'),
