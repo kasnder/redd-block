@@ -16,11 +16,7 @@ name: E2E CI
 on:
   workflow_dispatch:
   pull_request:
-    # `claude/**` is here only so this stacked spike PR gets CI at all: every
-    # workflow in this repo triggers on main-targeted PRs, so a PR based on
-    # another branch runs nothing. Drop it back to `[main]` once the stack
-    # lands and this PR retargets main.
-    branches: [main, 'claude/**']
+    branches: [main]
     paths:
       - 'src/integration-tests.js'
       - 'src/test-utils.js'
