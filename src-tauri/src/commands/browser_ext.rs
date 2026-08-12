@@ -5,9 +5,7 @@
 // enforcement and these commands aren't registered.
 
 use std::sync::Mutex;
-use tauri::{
-    AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder,
-};
+use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, WebviewUrl, WebviewWindowBuilder};
 
 use crate::profile_scan;
 
@@ -142,9 +140,8 @@ pub fn activate_external_process_by_pid(target_pid: u32) {
     use windows::Win32::Foundation::{HWND, LPARAM};
     use windows::Win32::System::Threading::AttachThreadInput;
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetForegroundWindow, GetWindow,
-        GetWindowThreadProcessId, IsIconic, IsWindowVisible, SetForegroundWindow, ShowWindow,
-        GW_OWNER, SW_RESTORE,
+        EnumWindows, GetForegroundWindow, GetWindow, GetWindowThreadProcessId, IsIconic,
+        IsWindowVisible, SetForegroundWindow, ShowWindow, GW_OWNER, SW_RESTORE,
     };
 
     struct FindCtx {
@@ -242,8 +239,8 @@ pub fn show_blocking_warning_shell_without_stealing_focus(app: &AppHandle) {
 #[cfg(target_os = "windows")]
 pub fn show_blocking_warning_shell_without_stealing_focus(app: &AppHandle) {
     use windows::Win32::UI::WindowsAndMessaging::{
-        SetWindowPos, ShowWindow, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-        SWP_SHOWWINDOW, SW_SHOWNOACTIVATE,
+        SetWindowPos, ShowWindow, HWND_TOP, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW,
+        SW_SHOWNOACTIVATE,
     };
 
     let Some(win) = app.get_webview_window("main") else {

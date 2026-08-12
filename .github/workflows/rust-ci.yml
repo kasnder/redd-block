@@ -1,0 +1,52 @@
+# Run the Rust unit tests (`src-tauri/src/**/#[cfg(test)]`) on PRs that touch
+# the backend. Kept out of ci.yml so frontend-only PRs do not pay for a macOS
+# runner, mirroring how android-ci.yml isolates the Android toolchain.
+#
+# macOS is the only host that compiles every tested module: `web_automation`,
+# `window_inventory` and `workspace_events` are `#[cfg(target_os = "macos")]`,
+# and the `cfg(not(ios|android))` modules pull macOS/Windows-only dependencies
+# (sysinfo, tauri-plugin-notification), so a Linux runner cannot build the lib
+# at all. No Windows-only module carries tests, so macOS covers the whole suite.
+name: Rust CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src-tauri/**'
+      - 'scripts/build-safari-bridge.sh'
+      - '.github/workflows/rust-ci.yml'
+
+concurrency:
+  group: rust-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust unit tests
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      # `tauri_build::build()` (invoked from src-tauri/build.rs) validates that
+      # the configured frontendDist — ../dist — exists, so the lib does not
+      # compile on a clean checkout until the frontend has been built once.
+      - run: npm run vite:build
+      # `--lib` on purpose: bare `cargo test` also compiles the stale
+      # `test_watcher` example binary, which no longer builds (see testing.md).
+      # build.rs compiles the Swift SafariServices bridge first; macOS runners
+      # ship the Xcode toolchain it needs.
+      - name: cargo test --lib
+        working-directory: src-tauri
+        run: cargo test --lib

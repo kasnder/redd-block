@@ -115,7 +115,11 @@ pub enum BrowserTarget {
 
 impl BrowserTarget {
     fn all() -> [BrowserTarget; 3] {
-        [BrowserTarget::Chrome, BrowserTarget::Brave, BrowserTarget::Edge]
+        [
+            BrowserTarget::Chrome,
+            BrowserTarget::Brave,
+            BrowserTarget::Edge,
+        ]
     }
 
     /// macOS bundle id — used as the basename of the per-browser plist
@@ -148,7 +152,9 @@ impl BrowserTarget {
     fn policy_extension_settings_root(self) -> &'static str {
         match self {
             BrowserTarget::Chrome => r"Software\Policies\Google\Chrome\ExtensionSettings",
-            BrowserTarget::Brave => r"Software\Policies\BraveSoftware\Brave-Browser\ExtensionSettings",
+            BrowserTarget::Brave => {
+                r"Software\Policies\BraveSoftware\Brave-Browser\ExtensionSettings"
+            }
             BrowserTarget::Edge => r"Software\Policies\Microsoft\Edge\ExtensionSettings",
         }
     }
@@ -163,9 +169,15 @@ impl BrowserTarget {
         #[cfg(target_os = "macos")]
         {
             let p = match self {
-                BrowserTarget::Chrome => "Library/Application Support/Google/Chrome/External Extensions",
-                BrowserTarget::Brave => "Library/Application Support/BraveSoftware/Brave-Browser/External Extensions",
-                BrowserTarget::Edge => "Library/Application Support/Microsoft Edge/External Extensions",
+                BrowserTarget::Chrome => {
+                    "Library/Application Support/Google/Chrome/External Extensions"
+                }
+                BrowserTarget::Brave => {
+                    "Library/Application Support/BraveSoftware/Brave-Browser/External Extensions"
+                }
+                BrowserTarget::Edge => {
+                    "Library/Application Support/Microsoft Edge/External Extensions"
+                }
             };
             Some(home.join(p))
         }
@@ -212,7 +224,9 @@ pub fn install() -> std::io::Result<()> {
         }
         #[cfg(not(target_os = "windows"))]
         {
-            log::info!("tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() start");
+            log::info!(
+                "tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() start"
+            );
             maybe_scrub_external_uninstalls_once();
             log::info!("tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() done");
         }
@@ -862,10 +876,8 @@ fn write_hkcu_named_value(path: &str, value_name: &str, value: &str) -> std::io:
         let name_wide = to_wide(value_name);
         let data_wide = to_wide(value);
         let bytes_len = (data_wide.len() * 2) as u32;
-        let data_bytes = std::slice::from_raw_parts(
-            data_wide.as_ptr() as *const u8,
-            bytes_len as usize,
-        );
+        let data_bytes =
+            std::slice::from_raw_parts(data_wide.as_ptr() as *const u8, bytes_len as usize);
         let status = RegSetValueExW(
             hkey,
             PCWSTR(name_wide.as_ptr()),
@@ -906,7 +918,10 @@ fn delete_hkcu_key(path: &str) -> std::io::Result<()> {
 #[cfg(target_os = "windows")]
 fn to_wide(s: &str) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
-    std::ffi::OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    std::ffi::OsStr::new(s)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
 }
 
 // ---- Firefox (Windows registry policy) --------------------------------------
@@ -932,9 +947,7 @@ fn install_firefox_registry() -> std::io::Result<()> {
     // Firefox treats any non-empty REG_SZ as truthy for boolean policy
     // fields; "true" is the canonical spelling.
     write_hkcu_named_value(&our_key, "private_browsing", "true")?;
-    log::info!(
-        "extension-install: Firefox registry policy written at HKCU\\{our_key}"
-    );
+    log::info!("extension-install: Firefox registry policy written at HKCU\\{our_key}");
     Ok(())
 }
 
@@ -994,7 +1007,9 @@ pub fn startup_install_already_done() -> bool {
 /// will retry the install, which is harmless since the per-browser
 /// writes are themselves idempotent.
 pub fn mark_startup_install_done() {
-    let Some(path) = startup_install_marker_path() else { return };
+    let Some(path) = startup_install_marker_path() else {
+        return;
+    };
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }

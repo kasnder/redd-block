@@ -33,7 +33,11 @@ const DEFAULT_GRACE_SECS: u64 = 60;
 #[tauri::command]
 pub fn get_extension_grace_seconds(app: tauri::AppHandle) -> u64 {
     read_data(&app)
-        .and_then(|d| d.get("settings").and_then(|s| s.get(SETTING_KEY)).and_then(|n| n.as_u64()))
+        .and_then(|d| {
+            d.get("settings")
+                .and_then(|s| s.get(SETTING_KEY))
+                .and_then(|n| n.as_u64())
+        })
         .unwrap_or(DEFAULT_GRACE_SECS)
         .clamp(GRACE_MIN_SECS, GRACE_MAX_SECS)
 }
@@ -45,8 +49,7 @@ pub fn get_extension_grace_seconds(app: tauri::AppHandle) -> u64 {
 pub fn set_extension_grace_seconds(app: tauri::AppHandle, seconds: u64) -> Result<u64, String> {
     let new = seconds.clamp(GRACE_MIN_SECS, GRACE_MAX_SECS);
 
-    let path = super::canonical_data_path(&app)
-        .ok_or_else(|| "no app data path".to_string())?;
+    let path = super::canonical_data_path(&app).ok_or_else(|| "no app data path".to_string())?;
     let mut data = read_data(&app).unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
     let current = data
@@ -70,7 +73,10 @@ pub fn set_extension_grace_seconds(app: tauri::AppHandle, seconds: u64) -> Resul
         .entry("settings".to_string())
         .or_insert_with(|| Value::Object(serde_json::Map::new()));
     if let Some(s) = settings.as_object_mut() {
-        s.insert(SETTING_KEY.to_string(), Value::Number(serde_json::Number::from(new)));
+        s.insert(
+            SETTING_KEY.to_string(),
+            Value::Number(serde_json::Number::from(new)),
+        );
     }
 
     write_data(&path, &data).map_err(|e| format!("write data: {e}"))?;
@@ -90,7 +96,10 @@ fn any_block_currently_active(data: &Value) -> bool {
         None => return false,
     };
     blocks.iter().any(|b| {
-        let start = b.get("startTime").and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
+        let start = b
+            .get("startTime")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(u64::MAX);
         let end = b.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let paused = b.get("isPaused").and_then(|v| v.as_bool()).unwrap_or(false);
         start <= now_ms && end > now_ms && !paused

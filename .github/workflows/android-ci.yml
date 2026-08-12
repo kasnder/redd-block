@@ -45,6 +45,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android
+          components: clippy
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -57,3 +58,38 @@ jobs:
       # APK via Gradle. Single ABI to keep CI time down.
       - name: Build debug APK
         run: npm run build:android:debug
+      # Clippy piggybacks on this job because it is the only CI runner with the
+      # aarch64-linux-android target already installed and its Cargo cache warm
+      # — the APK build above has just compiled the same lib, so this is
+      # essentially free.
+      #
+      # Scope caveat: on this target every module gated
+      # `cfg(not(any(ios, android)))` drops out — app_watcher, enforcer,
+      # native_host, native_host_install, extension_install, blocking_method,
+      # profile_scan, data_cache — on top of the macOS/Windows-only ones. That
+      # is ~11k of the ~18k lines in src-tauri/src, so this lints the shared
+      # command surface and nothing of the desktop enforcement engine. It is
+      # green at -D warnings today; the desktop side is not, and wiring clippy
+      # there is a separate cleanup.
+      #
+      # `--lib` on purpose, matching rust-ci.yml: --all-targets would drag in
+      # the stale test_watcher example, which no longer builds.
+      - name: cargo clippy (Android target)
+        working-directory: src-tauri
+        run: cargo clippy --lib --target aarch64-linux-android -- -D warnings
+      # Pure-JVM tests for BrowserUrlParser (the URL-bar extraction the whole
+      # Android website block depends on). Runs *after* the APK build because
+      # Gradle cannot configure the project standalone: settings.gradle applies
+      # the generated, gitignored tauri.settings.gradle, which is what pulls in
+      # :tauri-android and :tauri-plugin-android-blocker. The Tauri CLI writes
+      # it during the build above.
+      - name: Kotlin unit tests
+        working-directory: src-tauri/gen/android
+        run: ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest
+      - name: Upload Kotlin test report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kotlin-unit-test-report
+          path: tauri-plugin-android-blocker/android/build/reports/tests/
+          if-no-files-found: ignore

@@ -21,8 +21,7 @@ use redd_block_lib::commands::migration::{
 fn app_data_dir() -> PathBuf {
     #[cfg(target_os = "windows")]
     {
-        PathBuf::from(std::env::var("APPDATA").expect("APPDATA not set"))
-            .join("com.reddblock")
+        PathBuf::from(std::env::var("APPDATA").expect("APPDATA not set")).join("com.reddblock")
     }
     #[cfg(target_os = "macos")]
     {
@@ -62,7 +61,10 @@ fn main() {
     println!("Running elevated migration. You should see ONE admin prompt.");
     let outcome = run_elevated_migration(Some(&app_data));
     println!();
-    println!("Outcome: success={} user_cancelled={}", outcome.success, outcome.user_cancelled);
+    println!(
+        "Outcome: success={} user_cancelled={}",
+        outcome.success, outcome.user_cancelled
+    );
     println!("residue still present? {}", migration_pending_sync());
 
     let backups_dir = app_data.join("backups");

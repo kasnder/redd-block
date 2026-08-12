@@ -177,7 +177,10 @@ fn send_payload(domains: &[String], blocks: &[BlockInfo]) {
         blocklist: &'a [String],
         blocks: &'a [BlockInfo],
     }
-    let msg = Msg { blocklist: domains, blocks };
+    let msg = Msg {
+        blocklist: domains,
+        blocks,
+    };
     let body = match serde_json::to_vec(&msg) {
         Ok(b) => b,
         Err(e) => {
@@ -188,7 +191,11 @@ fn send_payload(domains: &[String], blocks: &[BlockInfo]) {
     let len = (body.len() as u32).to_le_bytes();
     let stdout = std::io::stdout();
     let mut lock = stdout.lock();
-    if lock.write_all(&len).and_then(|_| lock.write_all(&body)).is_err() {
+    if lock
+        .write_all(&len)
+        .and_then(|_| lock.write_all(&body))
+        .is_err()
+    {
         // The browser likely closed the pipe; exit cleanly.
         std::process::exit(0);
     }
@@ -286,12 +293,21 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
 
-    let blocklists =
-        data.get("blocklists").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let active =
-        data.get("activeBlocks").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let schedules =
-        data.get("schedules").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let blocklists = data
+        .get("blocklists")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let active = data
+        .get("activeBlocks")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let schedules = data
+        .get("schedules")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
 
     // (name, emoji, color, mode, websites_lowercased, apps) for the matching blocklist.
     let blocklist_meta = |id: &str| -> Option<(
@@ -302,32 +318,39 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
         Vec<String>,
         Vec<String>,
     )> {
-        blocklists.iter().find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id)).map(|b| {
-            let name = b.get("name").and_then(|v| v.as_str()).map(String::from);
-            let emoji = b.get("emoji").and_then(|v| v.as_str()).map(String::from);
-            let color = b.get("color").and_then(|v| v.as_str()).map(String::from);
-            let mode = b
-                .get("mode")
-                .and_then(|v| v.as_str())
-                .unwrap_or("blocklist")
-                .to_string();
-            let websites: Vec<String> = b
-                .get("websites")
-                .and_then(|v| v.as_array())
-                .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_lowercase())).collect())
-                .unwrap_or_default();
-            let apps: Vec<String> = b
-                .get("apps")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .filter(|n| !crate::app_watcher::is_protected_app_name(n))
-                        .collect()
-                })
-                .unwrap_or_default();
-            (name, emoji, color, mode, websites, apps)
-        })
+        blocklists
+            .iter()
+            .find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id))
+            .map(|b| {
+                let name = b.get("name").and_then(|v| v.as_str()).map(String::from);
+                let emoji = b.get("emoji").and_then(|v| v.as_str()).map(String::from);
+                let color = b.get("color").and_then(|v| v.as_str()).map(String::from);
+                let mode = b
+                    .get("mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("blocklist")
+                    .to_string();
+                let websites: Vec<String> = b
+                    .get("websites")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_lowercase()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                let apps: Vec<String> = b
+                    .get("apps")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .filter(|n| !crate::app_watcher::is_protected_app_name(n))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (name, emoji, color, mode, websites, apps)
+            })
     };
 
     let mut domains: std::collections::BTreeSet<String> = Default::default();
@@ -336,7 +359,10 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
     for ab in &active {
         let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        let paused = ab.get("isPaused").and_then(|v| v.as_bool()).unwrap_or(false);
+        let paused = ab
+            .get("isPaused")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if paused || now_ms < start || now_ms >= end {
             continue;
         }
@@ -421,31 +447,43 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
 
-    let blocklists =
-        data.get("blocklists").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let active =
-        data.get("activeBlocks").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let schedules =
-        data.get("schedules").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let blocklists = data
+        .get("blocklists")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let active = data
+        .get("activeBlocks")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let schedules = data
+        .get("schedules")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
 
     let blocklist_apps = |id: &str| -> Option<(String, Vec<String>)> {
-        blocklists.iter().find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id)).map(|b| {
-            let mode = b
-                .get("mode")
-                .and_then(|v| v.as_str())
-                .unwrap_or("blocklist")
-                .to_string();
-            let apps: Vec<String> = b
-                .get("apps")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-            (mode, apps)
-        })
+        blocklists
+            .iter()
+            .find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id))
+            .map(|b| {
+                let mode = b
+                    .get("mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("blocklist")
+                    .to_string();
+                let apps: Vec<String> = b
+                    .get("apps")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (mode, apps)
+            })
     };
 
     let mut apps: std::collections::BTreeSet<String> = Default::default();
@@ -453,7 +491,10 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
     for ab in &active {
         let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        let paused = ab.get("isPaused").and_then(|v| v.as_bool()).unwrap_or(false);
+        let paused = ab
+            .get("isPaused")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if paused || now_ms < start || now_ms >= end {
             continue;
         }
@@ -509,31 +550,43 @@ pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0);
 
-    let blocklists =
-        data.get("blocklists").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let active =
-        data.get("activeBlocks").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    let schedules =
-        data.get("schedules").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    let blocklists = data
+        .get("blocklists")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let active = data
+        .get("activeBlocks")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let schedules = data
+        .get("schedules")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
 
     let blocklist_apps = |id: &str| -> Option<(String, Vec<String>)> {
-        blocklists.iter().find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id)).map(|b| {
-            let mode = b
-                .get("mode")
-                .and_then(|v| v.as_str())
-                .unwrap_or("blocklist")
-                .to_string();
-            let apps: Vec<String> = b
-                .get("apps")
-                .and_then(|v| v.as_array())
-                .map(|a| {
-                    a.iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect()
-                })
-                .unwrap_or_default();
-            (mode, apps)
-        })
+        blocklists
+            .iter()
+            .find(|b| b.get("id").and_then(|v| v.as_str()) == Some(id))
+            .map(|b| {
+                let mode = b
+                    .get("mode")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("blocklist")
+                    .to_string();
+                let apps: Vec<String> = b
+                    .get("apps")
+                    .and_then(|v| v.as_array())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(String::from))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                (mode, apps)
+            })
     };
 
     let mut apps: std::collections::BTreeSet<String> = Default::default();
@@ -541,7 +594,10 @@ pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
     for ab in &active {
         let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        let paused = ab.get("isPaused").and_then(|v| v.as_bool()).unwrap_or(false);
+        let paused = ab
+            .get("isPaused")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         if paused || now_ms < start || now_ms >= end {
             continue;
         }
@@ -595,8 +651,14 @@ struct ScheduleMatch {
 /// frontend `isScheduleSegmentActiveNow` semantics including
 /// cross-midnight, all-day, and pause-aware rules.
 fn match_schedule_now(schedule: &Value, now_ms: u64) -> Option<ScheduleMatch> {
-    let paused = schedule.get("isPaused").and_then(|v| v.as_bool()).unwrap_or(false);
-    let pause_end = schedule.get("pauseEndTime").and_then(|v| v.as_u64()).unwrap_or(0);
+    let paused = schedule
+        .get("isPaused")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let pause_end = schedule
+        .get("pauseEndTime")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     if paused && pause_end > now_ms {
         return None;
     }
@@ -638,7 +700,11 @@ fn match_schedule_now(schedule: &Value, now_ms: u64) -> Option<ScheduleMatch> {
         let days: Vec<u8> = seg
             .get("days")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|v| v.as_u64().map(|x| x as u8)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_u64().map(|x| x as u8))
+                    .collect()
+            })
             .unwrap_or_default();
 
         let all_day = start_min == end_min;
@@ -693,7 +759,11 @@ fn match_schedule_now(schedule: &Value, now_ms: u64) -> Option<ScheduleMatch> {
 fn local_time_components_full(now_ms: u64) -> Option<(u8, u8, u8, u8)> {
     /// C-Sun=0..Sat=6 → JS-Mon=0..Sun=6.
     fn shift_weekday(c_wday: u8) -> u8 {
-        if c_wday == 0 { 6 } else { c_wday - 1 }
+        if c_wday == 0 {
+            6
+        } else {
+            c_wday - 1
+        }
     }
 
     let secs = (now_ms / 1000) as i64;
@@ -728,12 +798,8 @@ fn local_time_components_full(now_ms: u64) -> Option<(u8, u8, u8, u8)> {
             if FileTimeToSystemTime(&ft, &mut utc).is_err() {
                 return None;
             }
-            if windows::Win32::System::Time::SystemTimeToTzSpecificLocalTime(
-                None,
-                &utc,
-                &mut local,
-            )
-            .is_err()
+            if windows::Win32::System::Time::SystemTimeToTzSpecificLocalTime(None, &utc, &mut local)
+                .is_err()
             {
                 return None;
             }
@@ -778,7 +844,11 @@ pub fn resolve_data_path() -> Option<PathBuf> {
         }
         // Final fallback — return the canonical Tauri path even if it
         // doesn't exist yet, so file-watch can pick up its first write.
-        Some(app_support.join("com.reddblock").join("redd-block-data.json"))
+        Some(
+            app_support
+                .join("com.reddblock")
+                .join("redd-block-data.json"),
+        )
     }
     #[cfg(target_os = "windows")]
     {
@@ -810,7 +880,11 @@ fn log_to_file(msg: &str) {
     };
     path.pop();
     path.push("native-host.log");
-    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -1039,7 +1113,10 @@ mod tests {
         let (domains, blocks) = derive_payload(&path);
         let _ = fs::remove_file(&path);
 
-        assert!(domains.is_empty(), "allowlist domains should not leak into legacy flat blacklist payload");
+        assert!(
+            domains.is_empty(),
+            "allowlist domains should not leak into legacy flat blacklist payload"
+        );
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].blocklist_id, "bl-allow-web");
         assert_eq!(blocks[0].mode, "allowlist");
@@ -1078,7 +1155,10 @@ mod tests {
         let (domains, blocks) = derive_payload(&path);
         let _ = fs::remove_file(&path);
 
-        assert!(domains.is_empty(), "legacy flat blocklist stays empty for allowlist-only website sessions");
+        assert!(
+            domains.is_empty(),
+            "legacy flat blocklist stays empty for allowlist-only website sessions"
+        );
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].mode, "allowlist");
         assert_eq!(
@@ -1133,8 +1213,12 @@ mod tests {
 
         assert_eq!(domains, vec!["reddit.com".to_string()]);
         assert_eq!(blocks.len(), 2);
-        assert!(blocks.iter().any(|b| b.blocklist_id == "bl-block" && b.mode == "blocklist"));
-        assert!(blocks.iter().any(|b| b.blocklist_id == "bl-allow" && b.mode == "allowlist"));
+        assert!(blocks
+            .iter()
+            .any(|b| b.blocklist_id == "bl-block" && b.mode == "blocklist"));
+        assert!(blocks
+            .iter()
+            .any(|b| b.blocklist_id == "bl-allow" && b.mode == "allowlist"));
     }
 
     #[test]
@@ -1227,6 +1311,9 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].apps, vec!["Mail".to_string(), "Notes".to_string()]);
+        assert_eq!(
+            blocks[0].apps,
+            vec!["Mail".to_string(), "Notes".to_string()]
+        );
     }
 }

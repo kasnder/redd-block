@@ -37,10 +37,7 @@ const WRAPPER_VBS_FILENAME: &str = "redd-block-watchdog.vbs";
 
 fn wrapper_dir(exe: &Path) -> Option<PathBuf> {
     if crate::native_host_install::is_msix_packaged_exe_path(exe) {
-        Some(
-            crate::product_identity::windows_primary_local_product_dir()?
-                .join("watchdog"),
-        )
+        Some(crate::product_identity::windows_primary_local_product_dir()?.join("watchdog"))
     } else {
         exe.parent().map(|p| p.to_path_buf())
     }
@@ -157,11 +154,7 @@ pub fn register() {
     let task_run = format!("wscript.exe \"{}\"", vbs_path.display());
     let out = hidden_command("schtasks")
         .args([
-            "/Create",
-            "/TN",
-            TASK_NAME,
-            "/TR",
-            &task_run,
+            "/Create", "/TN", TASK_NAME, "/TR", &task_run,
             // Every 5 minutes rather than every 1: the watchdog only
             // needs to respawn the app if the user has killed it, which
             // is rare. A 1-minute cadence meant a Task Scheduler wake +
@@ -170,13 +163,7 @@ pub fn register() {
             // hides from the app's own CPU line, being a separate
             // process). 5 minutes keeps self-heal effective while cutting
             // the wake rate 5x.
-            "/SC",
-            "MINUTE",
-            "/MO",
-            "5",
-            "/RL",
-            "LIMITED",
-            "/F",
+            "/SC", "MINUTE", "/MO", "5", "/RL", "LIMITED", "/F",
         ])
         .output();
     match out {

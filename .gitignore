@@ -60,3 +60,6 @@ for-distribution/
 
 # Unrelated nested repo checked out in the working tree
 redd-focus-web/
+
+# WebdriverIO run logs (Tier 2 e2e)
+logs/

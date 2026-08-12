@@ -92,14 +92,13 @@ pub fn extension_state(bundle_id: &str) -> Result<ExtensionState, BridgeError> {
     // <100 bytes — and we NUL-terminate so the C-string read is safe
     // even if Swift truncated the output.
     let mut buf = [0u8; 512];
-    let rc = unsafe {
-        redd_safari_extension_state(cstr.as_ptr(), buf.as_mut_ptr(), buf.len())
-    };
+    let rc = unsafe { redd_safari_extension_state(cstr.as_ptr(), buf.as_mut_ptr(), buf.len()) };
 
     let nul = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
     let json_bytes = &buf[..nul];
-    let parsed: serde_json::Value = serde_json::from_slice(json_bytes)
-        .map_err(|e| BridgeError::InvalidJson(format!("{e}: {:?}", String::from_utf8_lossy(json_bytes))))?;
+    let parsed: serde_json::Value = serde_json::from_slice(json_bytes).map_err(|e| {
+        BridgeError::InvalidJson(format!("{e}: {:?}", String::from_utf8_lossy(json_bytes)))
+    })?;
 
     if rc != 0 {
         let msg = parsed

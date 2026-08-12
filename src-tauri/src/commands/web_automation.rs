@@ -132,13 +132,11 @@ pub async fn web_automation_permission_status(
     let list = tauri::async_runtime::spawn_blocking(move || {
         SupportedBrowser::all()
             .into_iter()
-            .filter(|b| {
-                crate::blocking_method::uses_automation(&app_for_filter, b.settings_key())
-            })
+            .filter(|b| crate::blocking_method::uses_automation(&app_for_filter, b.settings_key()))
             .map(|b| {
-                let cached_state = cached.as_ref().and_then(|list| {
-                    list.iter().find(|i| i.browser == b).map(|i| i.state)
-                });
+                let cached_state = cached
+                    .as_ref()
+                    .and_then(|list| list.iter().find(|i| i.browser == b).map(|i| i.state));
                 let probe_launch = if !launch_probe_browsers.is_empty() {
                     launch_probe_browsers
                         .iter()

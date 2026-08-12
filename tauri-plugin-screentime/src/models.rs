@@ -44,7 +44,7 @@ pub struct SuccessResponse {
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BlockAppsRequest {
-    pub token_data: Vec<String>,  // Base64-encoded ApplicationToken data
+    pub token_data: Vec<String>, // Base64-encoded ApplicationToken data
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
@@ -234,4 +234,3 @@ pub struct ActivityPickerResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
-

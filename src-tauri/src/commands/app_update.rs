@@ -12,7 +12,8 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 
 const GITHUB_RELEASES: &str = "https://github.com/ulyngs/digital-habits-blocker/releases/download";
-const LATEST_VERSIONS_URL: &str = "https://ulyngs.github.io/digital-habits-blocker/latest-versions.json";
+const LATEST_VERSIONS_URL: &str =
+    "https://ulyngs.github.io/digital-habits-blocker/latest-versions.json";
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -124,11 +125,7 @@ fn installer_dest_path(filename: &str) -> PathBuf {
     std::env::temp_dir().join(filename)
 }
 
-async fn download_file(
-    app: &AppHandle,
-    url: &str,
-    dest: &Path,
-) -> Result<(), String> {
+async fn download_file(app: &AppHandle, url: &str, dest: &Path) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .user_agent(format!("ReDD-Blocker/{}", env!("CARGO_PKG_VERSION")))
         .build()
@@ -273,12 +270,18 @@ fn schedule_installer_zorder_handoff(
                 } else if saw_installer {
                     break;
                 } else if started.elapsed() >= APPEAR_TIMEOUT {
-                    log::warn!("update: installer UI did not appear within {:?}", APPEAR_TIMEOUT);
+                    log::warn!(
+                        "update: installer UI did not appear within {:?}",
+                        APPEAR_TIMEOUT
+                    );
                     break;
                 }
 
                 if started.elapsed() >= MAX_WAIT {
-                    log::warn!("update: giving up waiting for installer exit after {:?}", MAX_WAIT);
+                    log::warn!(
+                        "update: giving up waiting for installer exit after {:?}",
+                        MAX_WAIT
+                    );
                     break;
                 }
                 std::thread::sleep(POLL);
@@ -352,7 +355,11 @@ fn launch_installer(app: &AppHandle, path: &Path) -> Result<(), String> {
         return Err("Could not open installer".into());
     }
 
-    schedule_installer_zorder_handoff(app, macos_installer_app_running, activate_macos_installer_app);
+    schedule_installer_zorder_handoff(
+        app,
+        macos_installer_app_running,
+        activate_macos_installer_app,
+    );
     Ok(())
 }
 
@@ -468,7 +475,10 @@ pub async fn download_and_run_update(app: AppHandle, version: String) -> Result<
 
     if dest.exists() {
         if let Err(e) = tokio::fs::remove_file(&dest).await {
-            log::warn!("update: could not remove stale installer {}: {e}", dest.display());
+            log::warn!(
+                "update: could not remove stale installer {}: {e}",
+                dest.display()
+            );
         }
     }
 

@@ -8,7 +8,9 @@ import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
 import { saveData, updateHostsFile } from './persistence.js';
-import { render } from './render.js';
+import { acceptEula } from './blocking-platform.js';
+import { CURRENT_EULA_REVISION } from './onboarding.js';
+import { render, isClockTickRunning } from './render.js';
 import { duplicateBlocklist, getNextCopyName } from './blocklists.js';
 import { getMaxOverrideCharsForType } from './override-challenge.js';
 import {
@@ -37,6 +39,19 @@ window.__REDDBLOCK_INTERNALS__ = {
     deriveIOSEffectiveAppPolicy,
     validateIOSAllowlistLimits,
     IOS_ALLOWLIST_EXCEPTION_LIMIT,
+    // Lets the e2e harness pre-accept the EULA on a fresh machine. Without an
+    // accepted revision the app stops at the gate and never reaches
+    // runPostAcceptanceStartup(), so the 1 s tick that expires paused blocks
+    // and schedules never starts — see e2e/specs/tier2.e2e.js.
+    CURRENT_EULA_REVISION,
+    // Lets the e2e harness distinguish "tick ran and found nothing" from
+    // "tick never started" — see e2e/specs/tier2.e2e.js.
+    isClockTickRunning,
+    // The app's real first-run acceptance path: persists the revision AND runs
+    // runPostAcceptanceStartup(), which is what starts the 1 s clock tick.
+    // The e2e harness calls this rather than hand-patching settings, which
+    // leaves the app sitting behind the gate with a doctored in-memory value.
+    acceptEula,
 };
 
 // ========================================

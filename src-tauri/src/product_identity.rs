@@ -22,8 +22,7 @@ pub const WATCHDOG_TASK_NAME: &str = "Digital Habits Blocker Watchdog";
 
 /// Prior watchdog task names to delete on register/unregister/uninstall.
 #[cfg(target_os = "windows")]
-pub const LEGACY_WATCHDOG_TASK_NAMES: &[&str] =
-    &["ReDD Blocker Watchdog", "ReDD Block Watchdog"];
+pub const LEGACY_WATCHDOG_TASK_NAMES: &[&str] = &["ReDD Blocker Watchdog", "ReDD Block Watchdog"];
 
 /// Current HKCU Run value written by tauri-plugin-autostart (`package_info().name`).
 #[cfg(target_os = "windows")]

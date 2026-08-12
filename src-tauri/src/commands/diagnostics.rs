@@ -139,7 +139,10 @@ pub struct FdaInfo {
     pub onboarding_choice: String,
     /// From the latest Safari profile scan — true when the setup
     /// banner would show a grant-FDA action.
-    #[serde(rename = "safariNeedsFdaAccess", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "safariNeedsFdaAccess",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub safari_needs_fda_access: Option<bool>,
 }
 
@@ -183,7 +186,11 @@ pub async fn get_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics 
 fn assemble_system_diagnostics(app: tauri::AppHandle) -> SystemDiagnostics {
     let app_info = AppInfo {
         version: env!("CARGO_PKG_VERSION").to_string(),
-        build_mode: if cfg!(debug_assertions) { "debug" } else { "release" },
+        build_mode: if cfg!(debug_assertions) {
+            "debug"
+        } else {
+            "release"
+        },
         os: std::env::consts::OS,
         arch: std::env::consts::ARCH,
     };
@@ -235,7 +242,11 @@ fn assemble_system_diagnostics_minimal() -> SystemDiagnostics {
     SystemDiagnostics {
         app: AppInfo {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            build_mode: if cfg!(debug_assertions) { "debug" } else { "release" },
+            build_mode: if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
             os: std::env::consts::OS,
             arch: std::env::consts::ARCH,
         },
@@ -260,7 +271,9 @@ fn assemble_system_diagnostics_minimal() -> SystemDiagnostics {
             browsers: vec![],
         },
         #[cfg(target_os = "windows")]
-        watchdog: WatchdogInfo { task_present: false },
+        watchdog: WatchdogInfo {
+            task_present: false,
+        },
         #[cfg(target_os = "windows")]
         native_host: NativeHostInfo {
             staged_exe_path: None,
@@ -324,7 +337,10 @@ fn collect_current_allowed_apps(app: &tauri::AppHandle) -> Vec<String> {
     use tauri::Manager;
     let state = app.state::<super::app_blocking::AppWatcherState>();
     let from_watcher = match state.0.lock() {
-        Ok(s) => s.as_ref().map(|h| h.current_allowed_apps()).unwrap_or_default(),
+        Ok(s) => s
+            .as_ref()
+            .map(|h| h.current_allowed_apps())
+            .unwrap_or_default(),
         Err(_) => Vec::new(),
     };
     if !from_watcher.is_empty() {
@@ -493,7 +509,10 @@ mod tests {
                 emoji: None,
                 color: None,
                 mode: "allowlist".to_string(),
-                domains: vec!["docs.example.com".to_string(), "mail.example.com".to_string()],
+                domains: vec![
+                    "docs.example.com".to_string(),
+                    "mail.example.com".to_string(),
+                ],
                 apps: vec![],
                 source: "schedule",
                 ends_at: Some(200),

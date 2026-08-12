@@ -1,6 +1,6 @@
-# PR checks: build the frontend bundle and run the Tier 1 logic suite headlessly.
-# The Android debug build lives in android-ci.yml so frontend-only and desktop-
-# only PRs do not pay for the Android toolchain.
+# PR checks: lint, build the frontend bundle, and run the Tier 1 logic suite
+# headlessly. The Android debug build lives in android-ci.yml and the Rust unit
+# tests in rust-ci.yml, so frontend-only PRs do not pay for those toolchains.
 name: CI
 
 on:
@@ -15,6 +15,36 @@ permissions:
   contents: read
 
 jobs:
+  # Formatting and static analysis. Deliberately unfiltered by path and on the
+  # cheapest runner: rustfmt needs no compilation and no system libraries, so
+  # the whole job is dominated by checkout and toolchain setup.
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      # js/recommended only. `no-unused-vars` is a warning for now (see
+      # eslint.config.mjs), so this fails on correctness findings —
+      # no-undef, no-dupe-keys and friends — not on the dead-import backlog.
+      - run: npm run lint
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      # `--all` from src-tauri also covers tauri-plugin-screentime (a path
+      # dependency); tauri-plugin-android-blocker is a separate crate graph and
+      # needs its own invocation. Neither compiles anything.
+      - name: cargo fmt --check (src-tauri, tauri-plugin-screentime)
+        working-directory: src-tauri
+        run: cargo fmt --all --check
+      - name: cargo fmt --check (tauri-plugin-android-blocker)
+        working-directory: tauri-plugin-android-blocker
+        run: cargo fmt --all --check
+
   frontend:
     name: Frontend bundle
     runs-on: ubuntu-latest

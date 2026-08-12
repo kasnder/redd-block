@@ -31,6 +31,41 @@ No single tier is sufficient on its own. **Website blocking enforcement** (macOS
 - **Tier 2**
   - In app dev console (default fast profile): `runIntegrationTests('core')`
   - In app dev console (expanded profile): `runIntegrationTests('full')`
+- **Rust**: `cd src-tauri && cargo test --lib`
+- **Android Kotlin**: `cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest`
+
+---
+
+## What runs in CI
+
+Every suite is gated on pull requests to `main`:
+
+| Workflow | Job | Runs | Trigger |
+| --- | --- | --- | --- |
+| `ci.yml` | Frontend bundle | `vite:build`, `vite:build:android`, `verify:android-bundle` | every PR |
+| `ci.yml` | Tier 1 logic tests | `npm run test:tier1` — `runBlockingTests()` in headless Chromium | every PR |
+| `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes |
+| `android-ci.yml` | Android debug APK | debug APK build, then `:tauri-plugin-android-blocker:testDebugUnitTest` | `src/**`, `src-tauri/**`, plugin, build config |
+| `e2e-ci.yml` | Tier 2 (macOS + Windows) | `runIntegrationTests('full')` against a real built app over WebDriver | Tier 2 sources, `e2e/**`, `vite.config.js` |
+
+Notes on the two non-obvious choices:
+
+- **Rust runs on macOS, not Linux.** `web_automation.rs`, `window_inventory.rs`
+  and `workspace_events.rs` are `#[cfg(target_os = "macos")]`, and the
+  `cfg(not(ios|android))` modules depend on macOS/Windows-only crates, so the
+  lib does not compile on a Linux runner at all. No Windows-only module carries
+  tests, so macOS covers the whole suite. The job also runs `npm run vite:build`
+  first — `tauri_build::build()` refuses to run when the configured
+  `frontendDist` (`../dist`) is missing.
+- **Kotlin tests run after the APK build, in the same job.** `settings.gradle`
+  applies the generated, gitignored `tauri.settings.gradle`, which is what adds
+  `:tauri-android` and `:tauri-plugin-android-blocker` to the build. Gradle
+  cannot configure the project until the Tauri CLI has written it.
+
+**Tier 2 runs in CI** (`e2e-ci.yml`) against a real built app, because it drives
+the actual Tauri command layer and cannot run on a bare page like Tier 1. See
+"Tier 2 under WebDriver" below. Running it by hand from the dev console still
+works and is unchanged.
 
 ---
 
@@ -212,6 +247,51 @@ that surface is manual checklist section 15.
 
 ---
 
+## Tier 2 under WebDriver (experimental)
+
+Tier 2 can also be driven from outside the app by attaching a WebDriver session
+to the built app's webview:
+
+```
+npm run build:e2e-app      # app built with the test runners kept in the bundle
+npm run test:tier2         # drives runIntegrationTests('full') and fails on any failure
+```
+
+Three things make this work, and all three are easy to trip over:
+
+- **The app must be built in `e2e` Vite mode.** Normal builds strip
+  `test-utils.js` / `blocking-tests.js` / `integration-tests.js` from the
+  bundle, so `runIntegrationTests` would not exist in the webview.
+  `src-tauri/tauri.e2e.conf.json` swaps `beforeBuildCommand` to
+  `npm run vite:build:e2e`, which keeps the `<script>` tags *and* emits the
+  three classic scripts into the output root (Vite never bundles them).
+- **`e2e/specs/tier2.e2e.js` is a driver, not a test.** All the assertions stay
+  in `src/integration-tests.js` so the suite remains runnable by hand from the
+  dev console. The spec only waits for the harness, starts the run, polls, and
+  fails on any failed case — the same contract `run-tier1-headless.mjs` has
+  with Tier 1.
+- **Both platforms use the embedded WebDriver server.** The app serves
+  WebDriver itself via the `e2e-webdriver` Cargo feature, so there is no
+  external driver to install. Windows originally used `external`
+  (`tauri-driver` + msedgedriver), which is the path Tauri's CI guide
+  documents, but it never established a session on a runner — `POST /session`
+  timed out at 180 s, twice, with the suite never starting. The embedded server
+  was already green on macOS, so both jobs share it.
+
+**`e2e-webdriver` must never ship.** It compiles an HTTP automation server into
+the binary, and in a released blocker that is a remote-control bypass of every
+block the app enforces. It is an explicit opt-in feature rather than the
+crate's documented `#[cfg(debug_assertions)]` gate, which would open the port
+on every `npm run dev` session. `lib.rs` additionally carries a
+`compile_error!` that fails the build if the feature is ever combined with a
+release profile, so the mistake is impossible rather than merely unlikely.
+
+Tier 2 mutates real state, which is why it stays manual locally and runs on a
+disposable runner VM in CI. Its test domains are all `.invalid` by
+construction.
+
+---
+
 ## Rust unit tests
 
 Desktop enforcement semantics live in Rust and carry their own unit tests,
@@ -237,7 +317,8 @@ Coverage relevant to blocking behavior:
   `commands/migration.rs` — supporting surfaces.
 
 Run these before merging changes to `web_automation.rs`, `native_host.rs`,
-`app_watcher.rs`, or `enforcer.rs`.
+`app_watcher.rs`, or `enforcer.rs`. CI also runs them on every PR that touches
+`src-tauri/**` (`rust-ci.yml`), so a red job there means one of these failed.
 
 ---
 
@@ -251,6 +332,10 @@ free of Android framework types so it runs as a plain JVM test:
 ```
 cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest
 ```
+
+CI runs this too, as a step of the Android debug-APK job (`android-ci.yml`);
+on failure the HTML report is uploaded as the `kotlin-unit-test-report`
+artifact.
 
 `BrowserUrlParserTest` pins **verbatim URL-bar strings dumped from real
 devices** (`adb shell uiautomator dump`), quirks included. This matters because

@@ -1,12 +1,27 @@
+// Hard stop against shipping the e2e automation server. `e2e-webdriver`
+// compiles an HTTP WebDriver endpoint into the binary so the Tier 2 suite can
+// drive a real app on macOS; in a released blocker that endpoint would be a
+// remote-control bypass of every block the app enforces. Debug-profile e2e
+// builds are the only legitimate use, so make anything else fail to compile.
+#[cfg(all(feature = "e2e-webdriver", not(debug_assertions)))]
+compile_error!(
+    "the `e2e-webdriver` feature must never be enabled in a release build: it \
+     exposes an automation server that can bypass blocking. Build the e2e app \
+     with `npm run build:e2e-app:mac` (debug profile) instead."
+);
+
 #[cfg(feature = "desktop")]
 use tauri::Manager;
 
-/// Set by the tray "Quit" handler to authorise actually exiting the
-/// process. Any other `ExitRequested` (Cmd-Q, Tauri's internal
-/// last-window-closed signal, etc.) is intercepted and turned into a
-/// hide-window — otherwise the user could accidentally kill the
-/// enforcer/watcher and silently lose all blocking.
-static ALLOW_EXIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+// Exiting the process is not an authorised gesture on desktop: there is no
+// tray menu (see the tray builder in `setup`), and both the AppKit
+// `applicationShouldTerminate:` hook and Tauri's `ExitRequested` event are
+// intercepted unconditionally and turned into a hide-window — a blocker the
+// user can quit is a blocker the user can bypass.
+//
+// The one real exit path is in-app uninstall, which calls
+// `std::process::exit(0)` directly (see `commands/uninstall.rs`) and so is not
+// routed through either guard.
 
 /// Flip the macOS activation policy between Regular (Dock icon + app
 /// name in the global menu bar, like a normal foreground app) and
@@ -47,10 +62,10 @@ use tauri::menu::PredefinedMenuItem;
 #[cfg(all(feature = "desktop", target_os = "macos"))]
 use tauri::Emitter;
 
-#[cfg(target_os = "macos")]
-use tauri::{TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
 #[cfg(all(feature = "desktop", target_os = "macos"))]
 use std::sync::Arc;
+#[cfg(target_os = "macos")]
+use tauri::{TitleBarStyle, WebviewUrl, WebviewWindowBuilder};
 
 #[cfg(target_os = "windows")]
 use tauri::{WebviewUrl, WebviewWindowBuilder};
@@ -62,9 +77,9 @@ use tauri::{WebviewUrl, WebviewWindowBuilder};
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 
 pub mod commands;
-pub mod product_identity;
 #[cfg(target_os = "macos")]
 pub mod cross_app_consent;
+pub mod product_identity;
 
 /// Custom NSPanel class for the main Digital Habits: Blocker window. Most of the time
 /// this behaves indistinguishably from a regular NSWindow — but having
@@ -98,49 +113,48 @@ tauri_nspanel::tauri_panel! {
     })
 }
 
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub mod app_watcher;
 #[cfg(target_os = "macos")]
 pub mod app_group;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod app_watcher;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod enforcer;
 #[cfg(target_os = "macos")]
 pub mod window_inventory;
 #[cfg(target_os = "macos")]
 pub mod workspace_events;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub mod enforcer;
 // JOMO-style website blocking via macOS Automation (Apple Events) — the
 // macOS replacement for the Safari/Chromium extension. Firefox stays on
 // the extension + enforcer path.
-#[cfg(target_os = "macos")]
-pub mod web_automation;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod blocking_method;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod data_cache;
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
+pub mod extension_install;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod native_host;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod native_host_install;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub mod extension_install;
-#[cfg(not(any(target_os = "ios", target_os = "android")))]
-pub mod blocking_method;
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub mod profile_scan;
 #[cfg(target_os = "macos")]
 pub mod safari_services;
 #[cfg(target_os = "windows")]
 pub mod watchdog;
+#[cfg(target_os = "macos")]
+pub mod web_automation;
 #[cfg(target_os = "windows")]
 pub mod windows_login;
 #[cfg(target_os = "windows")]
 pub mod windows_process;
 
 /// Add an `applicationShouldTerminate:` override on the existing
-/// NSApp delegate's class that returns `NSTerminateCancel` while
-/// `ALLOW_EXIT` is false. Cmd-Q routes through the AppKit terminate
-/// path, which Tauri's `RunEvent::ExitRequested` does not intercept
-/// in accessory mode — so we hook it at the AppKit layer ourselves.
-/// The tray "Quit" handler sets `ALLOW_EXIT = true` before calling
-/// `app.exit(0)`, so legitimate quits still go through.
+/// NSApp delegate's class that always returns `NSTerminateCancel`.
+/// Cmd-Q routes through the AppKit terminate path, which Tauri's
+/// `RunEvent::ExitRequested` does not intercept in accessory mode — so we
+/// hook it at the AppKit layer ourselves. In-app uninstall exits via
+/// `std::process::exit(0)` and so is not routed through here.
 #[cfg(target_os = "macos")]
 unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
     use cocoa::base::id;
@@ -148,21 +162,17 @@ unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
     use objc::{msg_send, sel, sel_impl};
 
     extern "C" fn should_terminate(_this: id, _sel: Sel, _sender: id) -> u64 {
-        // NSTerminateNow = 1, NSTerminateCancel = 0.
-        if ALLOW_EXIT.load(std::sync::atomic::Ordering::SeqCst) {
-            1
-        } else {
-            log::info!("applicationShouldTerminate: cancelled (ALLOW_EXIT=false)");
-            // Hide instead — same UX as window close.
-            unsafe {
-                let app = cocoa::appkit::NSApp();
-                let _: () = msg_send![app, hide: app];
-            }
-            // Drop the Dock icon + menu bar so the app reverts to
-            // tray-only background mode, matching the close-window UX.
-            crate::set_macos_activation_policy(false);
-            0
+        log::info!("applicationShouldTerminate: cancelled");
+        // Hide instead — same UX as window close.
+        unsafe {
+            let app = cocoa::appkit::NSApp();
+            let _: () = msg_send![app, hide: app];
         }
+        // Drop the Dock icon + menu bar so the app reverts to
+        // tray-only background mode, matching the close-window UX.
+        crate::set_macos_activation_policy(false);
+        // NSTerminateNow = 1, NSTerminateCancel = 0.
+        0
     }
 
     let delegate: id = msg_send![ns_app, delegate];
@@ -233,6 +243,16 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init());
 
+    // Embedded WebDriver server for the Tier 2 e2e suite on macOS, where
+    // `tauri-driver` has no WKWebView driver to talk to. Opt-in via the
+    // `e2e-webdriver` Cargo feature and never on by default — the crate's own
+    // documented `#[cfg(debug_assertions)]` gate would open an automation port
+    // on every `npm run dev`, and in a blocker app that port is a live bypass
+    // of the enforcement the app exists to provide. The `compile_error!` below
+    // makes the release-build mistake impossible rather than merely unlikely.
+    #[cfg(feature = "e2e-webdriver")]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
+
     // tauri-nspanel is what enables the macOS-fullscreen-overlay trick
     // for the app-blocking countdown — see `MainPanel` above and
     // `commands::set_blocking_warning_attention`.
@@ -269,7 +289,8 @@ pub fn run() {
     #[cfg(target_os = "android")]
     let builder = builder.plugin(tauri_plugin_android_blocker::init());
 
-    builder.setup(|app| {
+    builder
+        .setup(|app| {
             // Initialise tauri-plugin-log on EVERY build, not just
             // debug. Previously this block was gated on
             // `cfg!(debug_assertions)`, which meant release builds —
@@ -307,7 +328,11 @@ pub fn run() {
             log::info!(
                 "tcc-probe: ===== Digital Habits: Blocker launch (v{}, profile={}) =====",
                 env!("CARGO_PKG_VERSION"),
-                if cfg!(debug_assertions) { "debug" } else { "release" }
+                if cfg!(debug_assertions) {
+                    "debug"
+                } else {
+                    "release"
+                }
             );
 
             // Pick the initial macOS activation policy based on whether
@@ -373,11 +398,10 @@ pub fn run() {
                 unsafe {
                     // Pure white background
                     let bg_color = NSColor::colorWithRed_green_blue_alpha_(
-                        nil,
-                        1.0,  // R
-                        1.0,  // G
-                        1.0,  // B
-                        1.0,  // A
+                        nil, 1.0, // R
+                        1.0, // G
+                        1.0, // B
+                        1.0, // A
                     );
                     ns_window.setBackgroundColor_(bg_color);
                 }
@@ -386,26 +410,20 @@ pub fn run() {
                 {
                     // Extend default macOS Window menu with app zoom + reopen actions.
                     let app_menu = Menu::default(app.handle())?;
-                    let help_submenu = app_menu
-                        .items()?
-                        .into_iter()
-                        .find_map(|item| {
-                            let submenu = item.as_submenu()?;
-                            match submenu.text() {
-                                Ok(text) if text == "Help" => Some(submenu.clone()),
-                                _ => None,
-                            }
-                        });
-                    let window_submenu = app_menu
-                        .items()?
-                        .into_iter()
-                        .find_map(|item| {
-                            let submenu = item.as_submenu()?;
-                            match submenu.text() {
-                                Ok(text) if text == "Window" => Some(submenu.clone()),
-                                _ => None,
-                            }
-                        });
+                    let help_submenu = app_menu.items()?.into_iter().find_map(|item| {
+                        let submenu = item.as_submenu()?;
+                        match submenu.text() {
+                            Ok(text) if text == "Help" => Some(submenu.clone()),
+                            _ => None,
+                        }
+                    });
+                    let window_submenu = app_menu.items()?.into_iter().find_map(|item| {
+                        let submenu = item.as_submenu()?;
+                        match submenu.text() {
+                            Ok(text) if text == "Window" => Some(submenu.clone()),
+                            _ => None,
+                        }
+                    });
 
                     if let Some(help_submenu) = help_submenu {
                         let report_issue_item = MenuItem::with_id(
@@ -481,33 +499,39 @@ pub fn run() {
                         let reopen_separator_for_state = reopen_separator.clone();
                         let reopen_item_for_state = reopen_item.clone();
                         let sync_reopen_item_visibility = Arc::new(move || {
-                            let should_show_reopen = match app_handle_for_state.get_webview_window("main") {
-                                Some(main_window) => {
-                                    main_window.is_minimized().unwrap_or(false)
-                                        || !main_window.is_visible().unwrap_or(true)
-                                }
-                                None => true,
-                            };
+                            let should_show_reopen =
+                                match app_handle_for_state.get_webview_window("main") {
+                                    Some(main_window) => {
+                                        main_window.is_minimized().unwrap_or(false)
+                                            || !main_window.is_visible().unwrap_or(true)
+                                    }
+                                    None => true,
+                                };
 
-                            let is_shown = window_submenu_for_state.get("window_reopen_main").is_some();
+                            let is_shown =
+                                window_submenu_for_state.get("window_reopen_main").is_some();
                             if should_show_reopen && !is_shown {
-                                let _ = window_submenu_for_state.append(&reopen_separator_for_state);
+                                let _ =
+                                    window_submenu_for_state.append(&reopen_separator_for_state);
                                 let _ = window_submenu_for_state.append(&reopen_item_for_state);
                             } else if !should_show_reopen && is_shown {
                                 let _ = window_submenu_for_state.remove(&reopen_item_for_state);
-                                let _ = window_submenu_for_state.remove(&reopen_separator_for_state);
+                                let _ =
+                                    window_submenu_for_state.remove(&reopen_separator_for_state);
                             }
                         });
 
                         // Initial state (main window is visible at startup, so item stays hidden).
                         sync_reopen_item_visibility();
 
-                        let sync_reopen_item_visibility_on_window = sync_reopen_item_visibility.clone();
+                        let sync_reopen_item_visibility_on_window =
+                            sync_reopen_item_visibility.clone();
                         window.on_window_event(move |_| {
                             sync_reopen_item_visibility_on_window();
                         });
 
-                        let sync_reopen_item_visibility_on_menu = sync_reopen_item_visibility.clone();
+                        let sync_reopen_item_visibility_on_menu =
+                            sync_reopen_item_visibility.clone();
                         app.on_menu_event(move |app, event| {
                             sync_reopen_item_visibility_on_menu();
 
@@ -530,16 +554,20 @@ pub fn run() {
                                         commands::reveal_app(app);
                                     } else {
                                         // Recreate main window if it was fully closed.
-                                        let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                                            .title("")
-                                            .inner_size(1000.0, 900.0)
-                                            .min_inner_size(400.0, 360.0)
-                                            .resizable(true)
-                                            .center()
-                                            // Keep in sync with the initial build above
-                                            // (single-click response after panel-mode dismissal).
-                                            .accept_first_mouse(true)
-                                            .title_bar_style(TitleBarStyle::Overlay);
+                                        let win_builder = WebviewWindowBuilder::new(
+                                            app,
+                                            "main",
+                                            WebviewUrl::default(),
+                                        )
+                                        .title("")
+                                        .inner_size(1000.0, 900.0)
+                                        .min_inner_size(400.0, 360.0)
+                                        .resizable(true)
+                                        .center()
+                                        // Keep in sync with the initial build above
+                                        // (single-click response after panel-mode dismissal).
+                                        .accept_first_mouse(true)
+                                        .title_bar_style(TitleBarStyle::Overlay);
 
                                         if let Ok(new_window) = win_builder.build() {
                                             // Re-apply NSPanel swizzle on the rebuilt
@@ -547,7 +575,9 @@ pub fn run() {
                                             // overlay still works after a close+reopen.
                                             use tauri_nspanel::WebviewWindowExt as _;
                                             if let Err(e) = new_window.to_panel::<MainPanel>() {
-                                                log::warn!("main window (rebuild): to_panel failed: {e:?}");
+                                                log::warn!(
+                                                    "main window (rebuild): to_panel failed: {e:?}"
+                                                );
                                             }
                                             commands::ensure_macos_traffic_lights_visible(app);
 
@@ -556,9 +586,10 @@ pub fn run() {
 
                                             let ns_window = new_window.ns_window().unwrap() as id;
                                             unsafe {
-                                                let bg_color = NSColor::colorWithRed_green_blue_alpha_(
-                                                    nil, 1.0, 1.0, 1.0, 1.0,
-                                                );
+                                                let bg_color =
+                                                    NSColor::colorWithRed_green_blue_alpha_(
+                                                        nil, 1.0, 1.0, 1.0, 1.0,
+                                                    );
                                                 ns_window.setBackgroundColor_(bg_color);
                                             }
                                             set_macos_activation_policy(true);
@@ -610,15 +641,15 @@ pub fn run() {
             // Create main window on iOS — full screen webview
             #[cfg(target_os = "ios")]
             {
-                let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                    .build()?;
+                let _window =
+                    WebviewWindowBuilder::new(app, "main", WebviewUrl::default()).build()?;
             }
 
             // Create main window on Android — full screen webview
             #[cfg(target_os = "android")]
             {
-                let _window = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
-                    .build()?;
+                let _window =
+                    WebviewWindowBuilder::new(app, "main", WebviewUrl::default()).build()?;
             }
 
             // Tray icon (desktop only) — no right-click menu by design:
@@ -690,9 +721,7 @@ pub fn run() {
                         if let Err(e) =
                             native_host_install::sync_extension_mode_native_hosts(&path, false)
                         {
-                            log::warn!(
-                                "native-host sync for extension-mode browsers failed: {e}"
-                            );
+                            log::warn!("native-host sync for extension-mode browsers failed: {e}");
                         }
                         if crate::cross_app_consent::should_run_profile_scans() {
                             if let Err(e) = native_host_install::sync_firefox_native_host(false) {
@@ -713,10 +742,15 @@ pub fn run() {
                 use tauri_plugin_notification::NotificationExt;
                 let n = app.notification();
                 log::info!("tcc-probe: about to check notification permission_state");
-                log::info!("tcc-probe: notification permission_state: {:?}", n.permission_state());
+                log::info!(
+                    "tcc-probe: notification permission_state: {:?}",
+                    n.permission_state()
+                );
                 log::info!("tcc-probe: about to call notification request_permission");
                 match n.request_permission() {
-                    Ok(state) => log::info!("tcc-probe: notification request_permission -> {state:?}"),
+                    Ok(state) => {
+                        log::info!("tcc-probe: notification request_permission -> {state:?}")
+                    }
                     Err(e) => log::warn!("tcc-probe: notification request_permission failed: {e}"),
                 }
             }
@@ -724,12 +758,18 @@ pub fn run() {
             // On macOS, Safari/Chromium use Automation; Firefox extension
             // is installed manually — Firefox native-host manifest sync
             // runs above (EULA-gated) and during onboarding scans.
-            #[cfg(all(not(any(target_os = "ios", target_os = "android")), not(target_os = "macos")))]
+            #[cfg(all(
+                not(any(target_os = "ios", target_os = "android")),
+                not(target_os = "macos")
+            ))]
             if let Err(e) = native_host_install::install() {
                 log::warn!("native-host install on startup failed: {e}");
             }
 
-            #[cfg(all(not(any(target_os = "ios", target_os = "android")), not(target_os = "macos")))]
+            #[cfg(all(
+                not(any(target_os = "ios", target_os = "android")),
+                not(target_os = "macos")
+            ))]
             if !extension_install::startup_install_already_done() {
                 if let Err(e) = extension_install::install() {
                     log::warn!("extension-install hint on startup failed: {e}");
@@ -737,9 +777,7 @@ pub fn run() {
                     extension_install::mark_startup_install_done();
                 }
             } else {
-                log::debug!(
-                    "extension-install: startup auto-install skipped (marker present)"
-                );
+                log::debug!("extension-install: startup auto-install skipped (marker present)");
             }
 
             // Self-heal the watchdog Scheduled Task on Windows. If the
@@ -783,14 +821,19 @@ pub fn run() {
             // user gets a blank window pointing at
             // http://localhost:5173. Release builds — the .pkg / .dmg
             // path users actually install — keep self-healing.
-            #[cfg(all(not(any(target_os = "ios", target_os = "android")), not(debug_assertions)))]
+            #[cfg(all(
+                not(any(target_os = "ios", target_os = "android")),
+                not(debug_assertions)
+            ))]
             {
                 use tauri_plugin_autostart::ManagerExt;
                 #[cfg(target_os = "macos")]
                 crate::commands::uninstall::scrub_stale_autostart_plists();
                 #[cfg(target_os = "windows")]
                 crate::windows_login::scrub_legacy_autostart_run_values();
-                log::info!("tcc-probe: about to call autolaunch().enable() (LaunchAgent plist write)");
+                log::info!(
+                    "tcc-probe: about to call autolaunch().enable() (LaunchAgent plist write)"
+                );
                 if let Err(e) = app.autolaunch().enable() {
                     log::warn!("autostart enable failed: {e}");
                 } else {
@@ -847,9 +890,7 @@ pub fn run() {
             // `ExitRequestApi`) out of it.
             #[cfg(feature = "desktop")]
             if let tauri::RunEvent::ExitRequested { api, .. } = &_event {
-                if !ALLOW_EXIT.load(std::sync::atomic::Ordering::SeqCst) {
-                    api.prevent_exit();
-                }
+                api.prevent_exit();
             }
 
             // Dock-icon click while the window is hidden: surface the

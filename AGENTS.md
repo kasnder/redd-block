@@ -31,6 +31,37 @@ npm run build:android       # requires ANDROID_HOME/NDK_HOME/JAVA_HOME exported 
 
 Version bumps span several files — always use `./scripts/bump-version.sh <version>` (updates `package.json`, `tauri.*.conf.json`, `Cargo.toml`).
 
+### Linting
+
+```bash
+npm run lint                # eslint over src/, scripts/, e2e/, vite.config.js
+npm run lint:fix            # same, with autofixes applied
+cd src-tauri && cargo fmt --all               # also formats tauri-plugin-screentime
+cd tauri-plugin-android-blocker && cargo fmt --all
+```
+
+CI gates `npm run lint` and `cargo fmt --all --check` on every PR (the `Lint`
+job in `ci.yml`), plus `cargo clippy --lib --target aarch64-linux-android
+-- -D warnings` inside the Android job.
+
+Two things to know before adding rules or chasing warnings:
+
+- **eslint is `js/recommended` only, and `no-unused-vars` is a warning, not an
+  error.** There is a backlog of ~199 dead bindings (mostly unused imports) that
+  the gate deliberately does not fail on. Fixing them is worthwhile — Vite emits
+  an asset for every `import url from './x.png'` at transform time whether or
+  not the binding is used, so dead asset imports become exactly the orphans
+  `pruneOrphanAndroidAssets` has to sweep back out — but do it as its own change
+  rather than mixed into feature work.
+- **Clippy only runs against the Android target, which sees about 40% of
+  `src-tauri/src`.** Everything gated `cfg(not(any(ios, android)))` — `app_watcher`,
+  `enforcer`, `native_host`, `profile_scan`, … — plus the macOS/Windows-only
+  modules compile out. The desktop enforcement engine is *not* linted, and is
+  not currently clippy-clean; do not assume a green Android CI means your
+  macOS/Windows changes pass clippy. There is no Linux clippy job because the
+  lib does not compile on Linux at all (the `cfg(not(ios|android))` modules pull
+  macOS/Windows-only crates).
+
 ### Testing
 
 There is no CLI test runner. Tests run **inside the app** in dev mode via the dev console (details in [testing.md](testing.md)):
@@ -39,6 +70,41 @@ There is no CLI test runner. Tests run **inside the app** in dev mode via the de
 - **Tier 2 (integration, real command paths, safe `.invalid` domains):** `runIntegrationTests('core')` or `runIntegrationTests('full')` in the console. Cases in `src/integration-tests.js`. Note: Tier 2 asserts the Rust-derived `current_blocking` snapshot — it does **not** prove a browser actually redirects.
 - **Website-enforcement correctness (Automation redirects, extension blocking) is validated manually** — see `scripts/manual-test-checklist.md`.
 - **Android browser URL parsing** has JVM unit tests: `cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest`. Fixtures in `BrowserUrlParserTest` are raw URL-bar strings dumped from real devices — add one whenever you touch the supported-browser list (details in [testing.md](testing.md)).
+- **Rust backend** has `#[cfg(test)]` unit tests: `cd src-tauri && cargo test --lib` (use `--lib` — bare `cargo test` still tries to build a stale `test_watcher` example).
+
+CI (PRs to `main`) gates everything except Tier 2: `ci.yml` builds the bundle and runs Tier 1 headlessly (`npm run test:tier1`), `rust-ci.yml` runs `cargo test --lib` on macOS when `src-tauri/**` changes, and `android-ci.yml` builds a debug APK and runs the Kotlin unit tests. See the "What runs in CI" table in [testing.md](testing.md).
+
+### Write the failing test first
+
+When fixing a bug or changing enforcement behavior, add the test **before** the
+fix and confirm it fails for the reason you are about to address. A test written
+afterwards only proves the code does what it currently does.
+
+This matters more here than in most codebases, because the characteristic
+failure mode is silence rather than an error:
+
+- A browser-specific URL-bar quirk makes extraction return nothing. The browser
+  stays in the supported map, blocking just stops working for it, and nothing
+  logs an error — that is how Samsung Internet's invisible `U+200E` prefix went
+  unnoticed.
+- `web_automation::tests::file_url_encodes_spaces` asserted the pre-rename
+  product name and could never pass. Nothing ran it, so nobody found out until
+  `cargo test --lib` was wired into CI.
+
+Put the test where CI will actually run it, matching the layer you changed:
+
+| What you changed | Where the test goes |
+| --- | --- |
+| Blocking/schedule/allowlist logic in `src/` | `src/blocking-tests.js` (Tier 1) |
+| Desktop enforcement semantics — derivation, URL decisions, payloads | `#[cfg(test)]` in the Rust module |
+| Android URL-bar parsing / a new browser | `BrowserUrlParserTest` fixtures |
+| Command paths, persistence round-trips | `src/integration-tests.js` (Tier 2) |
+
+Prefer the highest row that can hold the case: Tier 1 and the Rust and Kotlin
+suites run on every relevant PR, Tier 2 does not. Reaching for
+`scripts/manual-test-checklist.md` is correct only when no automated layer can
+express the case — a real browser redirecting, a real app being quit — and not
+because writing the automated test is awkward.
 
 ## Architecture essentials
 
@@ -62,7 +128,7 @@ Desktop website/app rules derive from one JSON file, `redd-block-data.json` (can
 `src/tauri-api.js` is a compat layer. The frontend still calls legacy `*_via_helper` command names that route through `src-tauri/src/commands/helper_shim.rs` (mostly no-ops for website blocking; app blocking forwards to `app_watcher`). This is known tech debt, not a live daemon — there is no `helper-daemon/` in the repo.
 
 ### App lifecycle
-Closing the window **hides to tray** and keeps all watchers running; only tray **Quit** (sets `ALLOW_EXIT`) terminates the process. Enforcement continues across window close. An EULA gate (revision-based, `CURRENT_EULA_REVISION` in `src/app.js`) blocks post-acceptance startup hooks. v1.x cleanup (hosts strip, legacy daemon removal, may prompt for admin once) runs once via `src-tauri/src/commands/migration.rs`.
+Closing the window **hides to tray** and keeps all watchers running. **There is no quit gesture at all** — the tray icon has no menu by design (left-click reveals the window, right-click does nothing), and both `RunEvent::ExitRequested` and, on macOS, an `applicationShouldTerminate:` hook unconditionally intercept every other exit route and turn it into a hide-window. Do not add an escape hatch to either guard without a deliberate decision: a blocker the user can quit is a blocker the user can bypass. The only real way out is **in-app uninstall** (macOS) or the OS uninstaller (Windows), and `commands/uninstall.rs` calls `std::process::exit(0)` specifically to bypass both guards. Enforcement continues across window close. An EULA gate (revision-based, `CURRENT_EULA_REVISION` in `src/app.js`) blocks post-acceptance startup hooks. v1.x cleanup (hosts strip, legacy daemon removal, may prompt for admin once) runs once via `src-tauri/src/commands/migration.rs`.
 
 ## Android build gotchas
 

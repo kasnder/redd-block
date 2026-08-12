@@ -40,9 +40,10 @@ struct WindowRecord {
 /// and windows on other Spaces still count as user-facing.
 #[allow(dead_code)] // Wired into allowlist enforcement in Pass 2
 pub(crate) fn user_facing_window_pids() -> HashSet<u32> {
-    let Some(window_info) =
-        copy_window_info(kCGWindowListOptionAll | kCGWindowListExcludeDesktopElements, kCGNullWindowID)
-    else {
+    let Some(window_info) = copy_window_info(
+        kCGWindowListOptionAll | kCGWindowListExcludeDesktopElements,
+        kCGNullWindowID,
+    ) else {
         return HashSet::new();
     };
 

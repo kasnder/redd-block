@@ -55,17 +55,27 @@ pub struct HelperResult {
 }
 
 impl HelperResult {
-    fn ok() -> Self { Self { success: true, error: None } }
+    fn ok() -> Self {
+        Self {
+            success: true,
+            error: None,
+        }
+    }
     #[allow(dead_code)]
     fn err(msg: impl Into<String>) -> Self {
-        Self { success: false, error: Some(msg.into()) }
+        Self {
+            success: false,
+            error: Some(msg.into()),
+        }
     }
 }
 
 /// Legacy helper-install prompt. No longer needed — the app is
 /// self-contained. Kept as a no-op so the onboarding UI doesn't error.
 #[tauri::command]
-pub fn install_helper() -> HelperResult { HelperResult::ok() }
+pub fn install_helper() -> HelperResult {
+    HelperResult::ok()
+}
 
 /// Legacy helper-uninstall. Routed to `uninstall_legacy_helper` in
 /// `migration.rs` when frontend calls this during cleanup.
@@ -132,10 +142,14 @@ pub fn set_blocked_apps_via_helper(
 /// Now the frontend (or the native-host / Screen Time plugin) is the
 /// evaluator. This shim just acknowledges.
 #[tauri::command]
-pub fn set_schedules_via_helper(_schedules: serde_json::Value) -> HelperResult { HelperResult::ok() }
+pub fn set_schedules_via_helper(_schedules: serde_json::Value) -> HelperResult {
+    HelperResult::ok()
+}
 
 #[tauri::command]
-pub fn set_blocks_via_helper(_blocks: serde_json::Value) -> HelperResult { HelperResult::ok() }
+pub fn set_blocks_via_helper(_blocks: serde_json::Value) -> HelperResult {
+    HelperResult::ok()
+}
 
 // ---- Hosts-file cleanup / diagnostics ----------------------------------
 

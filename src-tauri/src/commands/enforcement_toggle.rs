@@ -34,16 +34,12 @@ pub fn get_enforcement_enabled(app: tauri::AppHandle) -> bool {
 /// is currently active — the user can't weaken enforcement mid-session.
 #[tauri::command]
 pub fn set_enforcement_enabled(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
-    let path = super::canonical_data_path(&app)
-        .ok_or_else(|| "no app data path".to_string())?;
+    let path = super::canonical_data_path(&app).ok_or_else(|| "no app data path".to_string())?;
     let mut data = read_data(&app).unwrap_or_else(|| Value::Object(serde_json::Map::new()));
 
     // Can't disable enforcement while a block is running.
     if !enabled && (any_block_currently_active(&data) || any_schedule_currently_active(&path)) {
-        return Err(
-            "Can't turn off browser enforcement while a block is active."
-                .to_string(),
-        );
+        return Err("Can't turn off browser enforcement while a block is active.".to_string());
     }
 
     // Apply the new value.
@@ -75,7 +71,10 @@ fn any_block_currently_active(data: &Value) -> bool {
         None => return false,
     };
     blocks.iter().any(|b| {
-        let start = b.get("startTime").and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
+        let start = b
+            .get("startTime")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(u64::MAX);
         let end = b.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let paused = b.get("isPaused").and_then(|v| v.as_bool()).unwrap_or(false);
         // "Always" blocks have endTime = null → deserialized as 0 or

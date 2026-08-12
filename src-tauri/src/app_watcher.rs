@@ -232,7 +232,11 @@ pub fn is_protected_app_name(name: &str) -> bool {
 /// "Android Studio") while `sysinfo` reports the bundle executable
 /// (e.g. "studio") — also accept processes whose path lives inside
 /// `/Applications/<label>.app/`.
-fn process_matches_app_label(label: &str, proc_name: &str, proc_exe: Option<&std::path::Path>) -> bool {
+fn process_matches_app_label(
+    label: &str,
+    proc_name: &str,
+    proc_exe: Option<&std::path::Path>,
+) -> bool {
     let stem = proc_name.strip_suffix(".exe").unwrap_or(proc_name);
     if label.eq_ignore_ascii_case(proc_name) || label.eq_ignore_ascii_case(stem) {
         return true;
@@ -248,11 +252,19 @@ fn process_matches_app_label(label: &str, proc_name: &str, proc_exe: Option<&std
     false
 }
 
-fn process_matches_blocked(blocked: &str, proc_name: &str, proc_exe: Option<&std::path::Path>) -> bool {
+fn process_matches_blocked(
+    blocked: &str,
+    proc_name: &str,
+    proc_exe: Option<&std::path::Path>,
+) -> bool {
     process_matches_app_label(blocked, proc_name, proc_exe)
 }
 
-fn process_is_allowed(allowed: &[String], proc_name: &str, proc_exe: Option<&std::path::Path>) -> bool {
+fn process_is_allowed(
+    allowed: &[String],
+    proc_name: &str,
+    proc_exe: Option<&std::path::Path>,
+) -> bool {
     allowed
         .iter()
         .any(|label| process_matches_app_label(label, proc_name, proc_exe))
@@ -692,7 +704,12 @@ fn run(
     // emit a hide either — keeps the panel-mode refcount balanced.
     for (pid, entry) in entries.drain() {
         if entry.warning_raised {
-            emit_warning_hide(app.as_ref(), pid.as_u32(), &entry.matched_name, HideReason::Resolved);
+            emit_warning_hide(
+                app.as_ref(),
+                pid.as_u32(),
+                &entry.matched_name,
+                HideReason::Resolved,
+            );
         }
     }
 }
@@ -747,12 +764,7 @@ fn sweep(
         if !entries.is_empty() {
             for (pid, entry) in entries.drain() {
                 if entry.warning_raised {
-                    emit_warning_hide(
-                        app,
-                        pid.as_u32(),
-                        &entry.matched_name,
-                        HideReason::Resolved,
-                    );
+                    emit_warning_hide(app, pid.as_u32(), &entry.matched_name, HideReason::Resolved);
                 }
             }
         }
@@ -798,7 +810,9 @@ fn sweep(
                 "app_watcher: user ack received for '{}'; entering PreQuit",
                 entry.matched_name
             );
-            entry.phase = PidPhase::PreQuit { quit_at: now + PREQUIT_DURATION };
+            entry.phase = PidPhase::PreQuit {
+                quit_at: now + PREQUIT_DURATION,
+            };
         }
         for pid in intention_dismissed {
             if let Some(entry) = entries.remove(&pid) {
@@ -841,12 +855,7 @@ fn sweep(
                     log::info!(
                         "app_watcher: block-start sighting pid={pid} name='{name}'; raising user-ack warning"
                     );
-                    emit_warning_show(
-                        app,
-                        pid.as_u32(),
-                        &matched_name,
-                        PREQUIT_DURATION.as_secs(),
-                    );
+                    emit_warning_show(app, pid.as_u32(), &matched_name, PREQUIT_DURATION.as_secs());
                     slot.insert(PidEntry {
                         matched_name,
                         phase: PidPhase::AwaitingUserAck,
@@ -868,7 +877,9 @@ fn sweep(
                     request_silent_quit(*pid, &name, proc_);
                     slot.insert(PidEntry {
                         matched_name,
-                        phase: PidPhase::PostQuit { kill_at: now + POSTQUIT_GRACE },
+                        phase: PidPhase::PostQuit {
+                            kill_at: now + POSTQUIT_GRACE,
+                        },
                         warning_raised: false,
                         origin: EntryOrigin::Blocklist,
                         intention_only: false,
@@ -894,7 +905,9 @@ fn sweep(
                                 "app_watcher: PreQuit elapsed for pid={pid} name='{name}'; sending polite quit"
                             );
                             request_graceful_quit(*pid, &name, proc_);
-                            PidPhase::PostQuit { kill_at: now + POSTQUIT_GRACE }
+                            PidPhase::PostQuit {
+                                kill_at: now + POSTQUIT_GRACE,
+                            }
                         }
                     }
                     PidPhase::PostQuit { kill_at } => {
@@ -1034,7 +1047,9 @@ fn advance_pid_entry(
     origin: EntryOrigin,
     intention_only: bool,
     now: Instant,
-    #[cfg(any(target_os = "macos", target_os = "windows"))] allowlist_window_pids: Option<&HashSet<u32>>,
+    #[cfg(any(target_os = "macos", target_os = "windows"))] allowlist_window_pids: Option<
+        &HashSet<u32>,
+    >,
 ) -> bool {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     if origin == EntryOrigin::Allowlist
@@ -1073,12 +1088,7 @@ fn advance_pid_entry(
                 );
                 if proc_.kill() {
                     if warning_raised {
-                        emit_warning_hide(
-                            app,
-                            pid.as_u32(),
-                            matched_name,
-                            HideReason::ForceKilled,
-                        );
+                        emit_warning_hide(app, pid.as_u32(), matched_name, HideReason::ForceKilled);
                     }
                     return true;
                 }
@@ -1148,12 +1158,16 @@ fn sweep_allowlist(
             continue;
         }
         refresh_pid(sys, pid);
-        let proc_exe = sys.process(pid).and_then(|p| p.exe().map(|p| p.to_path_buf()));
+        let proc_exe = sys
+            .process(pid)
+            .and_then(|p| p.exe().map(|p| p.to_path_buf()));
         if process_is_allowed(allowed, &proc_name, proc_exe.as_deref()) {
             continue;
         }
         let Some(proc_) = sys.process(pid) else {
-            log::debug!("app_watcher: allowlist skip pid={pid} name='{proc_name}' — not in process table");
+            log::debug!(
+                "app_watcher: allowlist skip pid={pid} name='{proc_name}' — not in process table"
+            );
             continue;
         };
 
@@ -1208,7 +1222,9 @@ fn raise_allowlist_intention_warning(
     if entries.contains_key(&allowlist_intention_pid()) {
         return;
     }
-    log::info!("app_watcher: allowlist block-start with no closable apps; raising intention warning");
+    log::info!(
+        "app_watcher: allowlist block-start with no closable apps; raising intention warning"
+    );
     emit_warning_show(
         app,
         ALLOWLIST_INTENTION_PID_RAW,
@@ -1246,9 +1262,10 @@ fn visible_non_allowed_regular_apps(allowed: &[String]) -> Vec<(sysinfo::Pid, St
             continue;
         }
         let bundle_ref = bundle_path.as_deref();
-        if allowed.iter().any(|label| {
-            process_matches_app_label(label, &proc_name, bundle_ref)
-        }) {
+        if allowed
+            .iter()
+            .any(|label| process_matches_app_label(label, &proc_name, bundle_ref))
+        {
             continue;
         }
         out.push((pid, proc_name, display_name));
@@ -1258,7 +1275,8 @@ fn visible_non_allowed_regular_apps(allowed: &[String]) -> Vec<(sysinfo::Pid, St
 
 /// User-facing apps/windows that count as closable allowlist targets.
 #[cfg(target_os = "macos")]
-fn visible_regular_running_apps() -> Vec<(sysinfo::Pid, String, String, Option<std::path::PathBuf>)> {
+fn visible_regular_running_apps() -> Vec<(sysinfo::Pid, String, String, Option<std::path::PathBuf>)>
+{
     use cocoa::base::{id, YES};
     use objc::runtime::Class;
     use objc::{msg_send, sel, sel_impl};
@@ -1301,7 +1319,9 @@ fn visible_regular_running_apps() -> Vec<(sysinfo::Pid, String, String, Option<s
             if cstr.is_null() {
                 continue;
             }
-            let name_str = std::ffi::CStr::from_ptr(cstr).to_string_lossy().into_owned();
+            let name_str = std::ffi::CStr::from_ptr(cstr)
+                .to_string_lossy()
+                .into_owned();
             let bundle: id = msg_send![app, bundleURL];
             let bundle_path = if bundle.is_null() {
                 None
@@ -1320,7 +1340,12 @@ fn visible_regular_running_apps() -> Vec<(sysinfo::Pid, String, String, Option<s
                     }
                 }
             };
-            out.push((sysinfo::Pid::from_u32(raw_pid as u32), name_str.clone(), name_str, bundle_path));
+            out.push((
+                sysinfo::Pid::from_u32(raw_pid as u32),
+                name_str.clone(),
+                name_str,
+                bundle_path,
+            ));
         }
         out
     }
@@ -1339,7 +1364,10 @@ const MIN_USER_WINDOW_EDGE_PX: i32 = 80;
 
 #[cfg(target_os = "windows")]
 fn humanize_windows_process_name(proc_name: &str) -> String {
-    let raw = proc_name.trim().strip_suffix(".exe").unwrap_or(proc_name.trim());
+    let raw = proc_name
+        .trim()
+        .strip_suffix(".exe")
+        .unwrap_or(proc_name.trim());
     let spaced = raw
         .replace(['_', '-'], " ")
         .chars()
@@ -1380,10 +1408,7 @@ fn display_name_from_window_title(title: &str, proc_name: &str) -> String {
 }
 
 #[cfg(target_os = "windows")]
-fn is_windows_shell_input_surface(
-    class_name: &str,
-    proc_path: Option<&std::path::Path>,
-) -> bool {
+fn is_windows_shell_input_surface(class_name: &str, proc_path: Option<&std::path::Path>) -> bool {
     let Some(path) = proc_path.and_then(|p| p.to_str()) else {
         return false;
     };
@@ -1419,8 +1444,8 @@ fn collect_user_facing_windows() -> Vec<UserFacingWindow> {
     use windows::core::BOOL;
     use windows::Win32::Foundation::{HWND, LPARAM, RECT};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetClassNameW, GetWindow, GetWindowLongW, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
-        GetWindowThreadProcessId, IsIconic, IsWindowVisible, GWL_EXSTYLE, GW_OWNER,
+        EnumWindows, GetClassNameW, GetWindow, GetWindowLongW, GetWindowRect, GetWindowTextLengthW,
+        GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible, GWL_EXSTYLE, GW_OWNER,
         WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
     };
 
@@ -1452,7 +1477,9 @@ fn collect_user_facing_windows() -> Vec<UserFacingWindow> {
         }
         let width = rect.right - rect.left;
         let height = rect.bottom - rect.top;
-        if !IsIconic(hwnd).as_bool() && (width < MIN_USER_WINDOW_EDGE_PX || height < MIN_USER_WINDOW_EDGE_PX) {
+        if !IsIconic(hwnd).as_bool()
+            && (width < MIN_USER_WINDOW_EDGE_PX || height < MIN_USER_WINDOW_EDGE_PX)
+        {
             return BOOL(1);
         }
 
@@ -1465,7 +1492,9 @@ fn collect_user_facing_windows() -> Vec<UserFacingWindow> {
         if copied <= 0 {
             return BOOL(1);
         }
-        let title = String::from_utf16_lossy(&title_buf[..copied as usize]).trim().to_string();
+        let title = String::from_utf16_lossy(&title_buf[..copied as usize])
+            .trim()
+            .to_string();
         if title.is_empty() {
             return BOOL(1);
         }
@@ -1483,11 +1512,17 @@ fn collect_user_facing_windows() -> Vec<UserFacingWindow> {
             return BOOL(1);
         }
 
-        ctx.windows.push(UserFacingWindow { pid, title, class_name });
+        ctx.windows.push(UserFacingWindow {
+            pid,
+            title,
+            class_name,
+        });
         BOOL(1)
     }
 
-    let mut ctx = CollectCtx { windows: Vec::new() };
+    let mut ctx = CollectCtx {
+        windows: Vec::new(),
+    };
     unsafe {
         let ptr = (&mut ctx) as *mut CollectCtx as isize;
         let _ = EnumWindows(Some(collect_top_level), LPARAM(ptr));
@@ -1496,7 +1531,8 @@ fn collect_user_facing_windows() -> Vec<UserFacingWindow> {
 }
 
 #[cfg(target_os = "windows")]
-fn visible_regular_running_apps() -> Vec<(sysinfo::Pid, String, String, Option<std::path::PathBuf>)> {
+fn visible_regular_running_apps() -> Vec<(sysinfo::Pid, String, String, Option<std::path::PathBuf>)>
+{
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
     let windows = collect_user_facing_windows();
     if windows.is_empty() {
@@ -1568,8 +1604,14 @@ fn frontmost_app_pid_and_name() -> Option<(sysinfo::Pid, String, String)> {
         if cstr.is_null() {
             return None;
         }
-        let name_str = std::ffi::CStr::from_ptr(cstr).to_string_lossy().into_owned();
-        Some((sysinfo::Pid::from_u32(raw_pid as u32), name_str.clone(), name_str))
+        let name_str = std::ffi::CStr::from_ptr(cstr)
+            .to_string_lossy()
+            .into_owned();
+        Some((
+            sysinfo::Pid::from_u32(raw_pid as u32),
+            name_str.clone(),
+            name_str,
+        ))
     }
 }
 
@@ -1577,7 +1619,9 @@ fn frontmost_app_pid_and_name() -> Option<(sysinfo::Pid, String, String)> {
 fn frontmost_app_pid_and_name() -> Option<(sysinfo::Pid, String, String)> {
     use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
     use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId};
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetForegroundWindow, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    };
 
     let hwnd = unsafe { GetForegroundWindow() };
     if hwnd == HWND::default() {
@@ -1600,7 +1644,9 @@ fn frontmost_app_pid_and_name() -> Option<(sysinfo::Pid, String, String)> {
         let mut title_buf = vec![0u16; title_len as usize + 1];
         let copied = unsafe { GetWindowTextW(hwnd, &mut title_buf) };
         if copied > 0 {
-            title = String::from_utf16_lossy(&title_buf[..copied as usize]).trim().to_string();
+            title = String::from_utf16_lossy(&title_buf[..copied as usize])
+                .trim()
+                .to_string();
         }
     }
 
@@ -1619,9 +1665,8 @@ fn frontmost_app_pid_and_name() -> Option<(sysinfo::Pid, String, String)> {
     let proc_path = proc_.exe().map(|p| p.to_path_buf());
     let class_name = {
         let mut buf = [0u16; 512];
-        let copied = unsafe {
-            windows::Win32::UI::WindowsAndMessaging::GetClassNameW(hwnd, &mut buf)
-        };
+        let copied =
+            unsafe { windows::Win32::UI::WindowsAndMessaging::GetClassNameW(hwnd, &mut buf) };
         if copied > 0 {
             String::from_utf16_lossy(&buf[..copied as usize])
         } else {
