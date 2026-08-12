@@ -20,7 +20,11 @@ import {
 } from './override-challenge.js';
 import { createChallengeController } from './challenge-controller.js';
 import { saveData, updateHostsFile } from './persistence.js';
-import { acceptEula, setupAndroidBackButtonHandling } from './blocking-platform.js';
+import {
+    acceptEula,
+    appBlockingWarningRows,
+    setupAndroidBackButtonHandling,
+} from './blocking-platform.js';
 import { CURRENT_EULA_REVISION } from './onboarding.js';
 import { render, isClockTickRunning } from './render.js';
 import { duplicateBlocklist, getNextCopyName, isBlocklistEditFrictionRequired } from './blocklists.js';
@@ -90,6 +94,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     // desktop WebDriver binary, so expose the setup hook for that boundary
     // test rather than duplicating modal-close logic in the harness.
     setupAndroidBackButtonHandling,
+    appBlockingWarningRows,
     getDefaultPauseMinutes,
     clampDefaultPauseMinutes,
     FALLBACK_DEFAULT_PAUSE_MINUTES,
