@@ -9,7 +9,7 @@ import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxO
 import { isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
-import { clearPendingScheduleDraft, renderBlocklists, truncateBlocklistName } from './blocklists.js';
+import { clearPendingScheduleDraft, isBlocklistEditFrictionRequired, renderBlocklists, truncateBlocklistName } from './blocklists.js';
 import { getCommittedScheduleSegmentCount, getInitialExpandedScheduleSegmentIndex, isScheduleSegmentActiveNow, rebuildScheduleSegments, setAlwaysOnMode, setScheduleMode, updateScheduleButtonState, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { getEffectiveScheduleStartOverlayId, rememberLastScheduleStartOverlayId, syncScheduleConfirmOverlaySummary } from './schedule-overlay.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, initializeTimeInputs, pad, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
@@ -2610,9 +2610,10 @@ export function openBlocklistModal(blocklist = null, options = {}) {
         ? state.appData.schedules.find(s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0)
         : null;
     const hasActiveSchedule = !!scheduleForBlocklist;
-    const betweenBlocksEditable = canEditScheduleBetweenBlocks(scheduleForBlocklist);
-    // Hard lock when a one-off is running, or a schedule is running without between-blocks editing.
-    const isActive = hasActiveBlock || (hasActiveSchedule && !betweenBlocksEditable);
+    // Hard lock when a one-off is running, or a schedule is running without
+    // between-blocks editing. One definition, in blocklists.js, so the rule
+    // cannot drift from whatever else comes to depend on it.
+    const isActive = isBlocklistEditFrictionRequired(blocklist?.id, now);
 
     const warningEl = document.getElementById('active-blocklist-warning');
     const modeInputs = document.getElementById('blocklist-modal').querySelectorAll('.radio-option');

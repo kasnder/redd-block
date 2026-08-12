@@ -10,7 +10,7 @@ import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlo
 import { isOneOffBlockEnforced, isSchedulePausedNow } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { handleNowBlockingPause, handleNowBlockingStop, render, renderNowBlockingRow, renderScheduleVisibilityChips } from './render.js';
-import { isScheduleSegmentActiveNow } from './schedule-editor.js';
+import { canEditScheduleBetweenBlocks, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import {
     BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS,
     BLOCKLIST_NAME_MAX_LENGTH,
@@ -301,16 +301,34 @@ export function saveQuickStartAsFocusSpace(id) {
     render();
 }
 
-/** True if the blocklist has an active one-off block or a schedule currently in an active segment (and not paused). */
-export function isBlocklistCurrentlyActive(blocklistId) {
-    const now = Date.now();
+/**
+ * Must an edit that *loosens* this focus space be confirmed with the exit
+ * challenge? Also gates deleting it outright.
+ *
+ * Deliberately pause-INSENSITIVE. A paused space is one the user intends to
+ * resume, so pause → loosen → resume must not be a cheaper route than the
+ * challenge — and pausing is itself frictionless on flexible schedules. Note
+ * that the obvious helpers to reach for here, isOneOffBlockEnforced and
+ * isScheduleSegmentActiveNow, both return false while paused; using either
+ * would silently open that route. T159-T166 pin this down.
+ *
+ * The one exemption is by design: a schedule with allowEditsBetweenBlocks is
+ * editable while it is between segments (canEditScheduleBetweenBlocks).
+ *
+ * Recompute at the moment of use — a block can end, or a segment begin, while
+ * the edit modal sits open.
+ */
+export function isBlocklistEditFrictionRequired(blocklistId, now = Date.now()) {
+    if (!blocklistId) return false;
     const hasActiveBlock = state.appData.activeBlocks.some(
-        b => b.blocklistId === blocklistId && isOneOffBlockEnforced(b, now)
+        b => b.blocklistId === blocklistId && b.startTime <= now && b.endTime > now
     );
     if (hasActiveBlock) return true;
-    const schedule = state.appData.schedules?.find(s => s.blocklistId === blocklistId);
-    if (!schedule?.segments?.length) return false;
-    return isScheduleSegmentActiveNow(schedule, new Date(now));
+    const schedule = state.appData.schedules?.find(
+        s => s.blocklistId === blocklistId && s.segments && s.segments.length > 0
+    );
+    if (!schedule) return false;
+    return !canEditScheduleBetweenBlocks(schedule, new Date(now));
 }
 
 export function clearPendingScheduleDraft(blocklistId) {
@@ -740,6 +758,10 @@ export async function deleteBlocklist(id) {
     const hasActiveBlock = state.appData.activeBlocks.some(
         block => block.blocklistId === id && block.startTime <= now && block.endTime > now
     );
+    // Deliberately NOT isBlocklistEditFrictionRequired: deleting is refused for
+    // any schedule with segments, with no allowEditsBetweenBlocks exemption.
+    // Routing it through the edit gate would make a between-segments flexible
+    // schedule deletable, which is a loosening no one asked for.
     const hasActiveSchedule = state.appData.schedules?.some(
         s => s.blocklistId === id && s.segments && s.segments.length > 0
     );

@@ -1794,6 +1794,92 @@
     }
 
     // ========================================
+    // CATEGORY 20: EDIT FRICTION GATE (T159-T166)
+    // ========================================
+
+    // Which focus spaces must confirm a loosening edit with the exit challenge.
+    //
+    // The pause cases are the point of this group. A paused space is one the
+    // user intends to resume, so pause -> loosen -> resume must not be a cheaper
+    // route than the challenge — and pausing is itself frictionless on flexible
+    // schedules. Every gate in the app has always been pause-INSENSITIVE; these
+    // pin that down before the gate moves behind one shared predicate, because
+    // the obvious helpers to reach for (isOneOffBlockEnforced,
+    // isScheduleSegmentActiveNow) both exempt paused and would silently open it.
+    function runEditFrictionGateTests() {
+        console.log('\n🔒 Category 20: Edit Friction Gate');
+        console.log('----------------------------------');
+
+        const { isBlocklistEditFrictionRequired: required } = window.__REDDBLOCK_INTERNALS__;
+        const saved = window.__REDDBLOCK_INTERNALS__.appData;
+
+        const now = Date.now();
+        const HOUR = 60 * 60 * 1000;
+        // Covers the whole day in both directions so the segment is active
+        // whenever the suite happens to run.
+        const allDaySeg = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, days: [0, 1, 2, 3, 4, 5, 6] };
+        const withData = (blocklists, { schedules = [], activeBlocks = [] } = {}) => {
+            window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists, schedules, activeBlocks });
+        };
+
+        try {
+            (function T159() {
+                const bl = createMockBlocklist({});
+                withData([bl], { activeBlocks: [createMockBlock(bl.id, now - HOUR, now + HOUR)] });
+                assert(required(bl.id, now) === true, 'T159: a running one-off block gates its edits');
+            })();
+
+            (function T160() {
+                const bl = createMockBlocklist({});
+                withData([bl], { activeBlocks: [createMockBlock(bl.id, now - HOUR, now + HOUR, { isPaused: true, pauseEndTime: now + HOUR })] });
+                assert(required(bl.id, now) === true, 'T160: a PAUSED one-off block still gates — pause is not an escape hatch');
+            })();
+
+            (function T161() {
+                const bl = createMockBlocklist({});
+                withData([bl], { activeBlocks: [createMockBlock(bl.id, now - HOUR, now + HOUR, { isPaused: true })] });
+                assert(required(bl.id, now) === true, 'T161: an indefinitely paused block gates too (no pauseEndTime)');
+            })();
+
+            (function T162() {
+                const bl = createMockBlocklist({});
+                withData([bl], { activeBlocks: [createMockBlock(bl.id, now - 2 * HOUR, now - HOUR)] });
+                assert(required(bl.id, now) === false, 'T162: an expired block does not gate');
+            })();
+
+            (function T163() {
+                const bl = createMockBlocklist({});
+                withData([bl], { schedules: [createMockSchedule(bl.id, [allDaySeg])] });
+                assert(required(bl.id, now) === true, 'T163: a scheduled space gates its edits');
+            })();
+
+            (function T164() {
+                const bl = createMockBlocklist({});
+                withData([bl], { schedules: [createMockSchedule(bl.id, [allDaySeg], { isPaused: true, pauseEndTime: now + HOUR })] });
+                assert(required(bl.id, now) === true, 'T164: a PAUSED schedule still gates');
+            })();
+
+            (function T165() {
+                const bl = createMockBlocklist({});
+                withData([bl], { schedules: [createMockSchedule(bl.id, [allDaySeg], { allowEditsBetweenBlocks: true, isPaused: true, pauseEndTime: now + HOUR })] });
+                assert(
+                    required(bl.id, now) === false,
+                    'T165: allowEditsBetweenBlocks is exempt by design, paused or not',
+                );
+            })();
+
+            (function T166() {
+                const bl = createMockBlocklist({});
+                withData([bl]);
+                assert(required(bl.id, now) === false, 'T166: an idle space with no block and no schedule does not gate');
+                assert(required(null, now) === false, 'T166: a missing id does not gate');
+            })();
+        } finally {
+            window.__REDDBLOCK_INTERNALS__.appData = saved;
+        }
+    }
+
+    // ========================================
     // MAIN TEST RUNNER
     // ========================================
 
@@ -1821,6 +1907,7 @@
             runIOSAllowlistPolicyTests();
             runAndroidPayloadTests();
             runIOSSchedulePayloadTests();
+            runEditFrictionGateTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -1845,7 +1932,8 @@
         runProtectedDomainTests,
         runIOSAllowlistPolicyTests,
         runAndroidPayloadTests,
-        runIOSSchedulePayloadTests
+        runIOSSchedulePayloadTests,
+        runEditFrictionGateTests
     };
 
     console.log('🧪 ReddBlock Blocking Tests loaded. Press Cmd+Shift+T to run tests.');

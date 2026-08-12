@@ -93,7 +93,7 @@ import {
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
 import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, deselectBlocklist, handleBlocklistSelect, handlePauseBlockButtonClick, openBlocklistModal, openPauseModal, openResumeConfirmation, proceedWithBlock, proceedWithPause, proceedWithSchedule, proceedWithScheduleEdit, refreshSelectedBlocklistUi, renderScheduleConfirmSegments, setBtnActionLabel, setOverrideCountMaxMode, setStartBlockBtnLeadingIcon, setStartConfirmPrimaryLabel, startBlock, syncAllStopBtnLabelFits, syncOverrideCountUi, syncPauseDurationRowLayout, updateOverridePreview, updatePauseRestartTime, openOverrideModal, openScheduleOverrideModal, showScheduleConfirmModal, showScheduleEditConfirmModal, syncStopBtnLabelFit, setStartBtnBlocklistInfo } from './confirm-modals.js';
-import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, undoDelete, deleteBlocklist, clearPendingScheduleDraft, pendingDelete, saveBlocklistOrderFromDOM, getBlocklistScheduleDraft, saveBlocklistScheduleDraft, isBlocklistCurrentlyActive } from './blocklists.js';
+import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, undoDelete, deleteBlocklist, clearPendingScheduleDraft, pendingDelete, saveBlocklistOrderFromDOM, getBlocklistScheduleDraft, saveBlocklistScheduleDraft } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
     getBlocklistCreateKind,
