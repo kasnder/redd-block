@@ -1,7 +1,7 @@
 // Main render cycle: week calendar, now-blocking chips, blocklist selector
 // sync, and the 1s tick loop. Extracted verbatim from app.js.
 import { state } from './state.js';
-import { getCalendarLanePresentation } from './calendar-layout.js';
+import { getCalendarLanePresentation, getCalendarRowHeight } from './calendar-layout.js';
 import { escapeHtml, getContrastTextColor } from './utils.js';
 import { tSettings, weekdayAbbrevMon0List } from './i18n.js';
 import { isBlockAlwaysOn, isQuickStartBlocklist, QUICK_START_EMOJI } from './blocklist-utils.js';
@@ -944,12 +944,16 @@ export function layoutOverlappingBlocks() {
     document.querySelectorAll('.day-track').forEach(track => {
         const blocks = Array.from(track.querySelectorAll('.calendar-block'));
         // Reset any previous lane styling so single-block rows render at full height.
+        // The row's own grown height has to be reset here too, before the early
+        // return — otherwise a row that was crowded stays tall after the schedules
+        // causing the crowding are deleted.
         blocks.forEach(b => {
             b.style.top = '';
             b.style.bottom = '';
             b.style.height = '';
             b.classList.remove('compact');
         });
+        track.closest('.day-row')?.style.removeProperty('height');
         if (blocks.length <= 1) return;
 
         // Compute time-extents (in % of day width) from current left/width styles.
@@ -1024,6 +1028,14 @@ export function layoutOverlappingBlocks() {
                 data.element.classList.toggle('compact', presentation.compact);
             }
         });
+
+        // Deeply-stacked rows grow instead of slicing the same 38 px thinner. The
+        // depth that matters is the row's worst case, not any one block's, or the
+        // row would size to whichever block happened to be laid out last.
+        const deepestLane = blockData.reduce((max, d) => Math.max(max, d.totalLanes), 1);
+        const rowHeight = getCalendarRowHeight(deepestLane);
+        const row = track.closest('.day-row');
+        if (row) row.style.height = rowHeight === null ? '' : `${rowHeight}px`;
     });
 }
 

@@ -198,7 +198,15 @@ Built artifacts are copied to `for-distribution/` for upload or direct distribut
 
 ### Testing
 
-Testing is organized into two automated tiers plus a manual checklist (see [testing.md](testing.md)):
+Testing is organized into automated tiers, a screenshot harness, and a manual checklist (see [testing.md](testing.md)):
+
+**0. Unit Tests (vitest, instant)**
+
+Pure helpers from `src/`, in isolation. No browser, no app.
+
+```bash
+pnpm test:tier0
+```
 
 **1. Unit Tests (in-app, instant)**
 
@@ -220,7 +228,16 @@ runIntegrationTests('core')   # default, faster critical checks
 runIntegrationTests('full')   # core + expanded non-UI coverage
 ```
 
-**3. Manual Checklist**
+**3. UI Screenshots (headless browser, seconds)**
+
+Renders app screens from fixture data and writes PNGs to `artifacts/ui/`. No Rust toolchain and no Tauri build — just Vite and a Chromium, so it runs on a laptop or in CI on Linux. Nothing else in the stack renders: jsdom has no layout engine, so a `styles.css` change can be wrong in every visible way and still be green.
+
+```bash
+pnpm ui:shoot                                    # every screen
+pnpm ui:shoot --screen=week-crowded --measure    # one screen, with measured geometry
+```
+
+**4. Manual Checklist**
 
 See `scripts/manual-test-checklist.md` for the full pre-release checklist. Key items: macOS Automation setup + enforcer (Safari/Chrome/Brave/Edge), Firefox/Windows extension install, hide-on-close + launch-at-login, v1.x migration cleanup, Screen Time (iOS).
 

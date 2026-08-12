@@ -4,10 +4,12 @@ This document expands the `README.md` testing section with a deeper technical ex
 
 Terminology in this file follows `README.md`:
 
+- **Tier 0** = pure-function unit tests under vitest (`test/tier0/`)
 - **Tier 1** = in-app logic tests
 - **Tier 2** = in-app integration tests (desktop command-path + legacy hosts checks)
+- **UI shots** = a screenshot harness, not a tier — it renders, it does not assert
 
-There is **no Tier 3** anymore — the v1.x privileged helper daemon and its smoke-test scripts were removed in v2.
+There is **no Tier 3** anymore — the v1.x privileged helper daemon and its smoke-test scripts were removed in v2. The UI harness is deliberately named rather than numbered: it is cheaper than Tier 1 but higher-fidelity than Tier 2 about appearance, so it has no place on the cost ladder the numbers describe.
 
 ---
 
@@ -15,8 +17,10 @@ There is **no Tier 3** anymore — the v1.x privileged helper daemon and its smo
 
 Each tier answers a different quality question:
 
+- **Tier 0**: Are the pure helpers in `src/` correct in isolation?
 - **Tier 1**: Is our blocking logic correct as pure behavior?
 - **Tier 2**: Do app → Tauri command paths, data persistence, and migration cleanup behave correctly?
+- **UI shots**: Does the interface actually look right? Nothing else can answer this. Tier 0 runs in jsdom, which has no layout engine — `getBoundingClientRect()` returns zeros, so "does this label fit in this box" is unanswerable there by construction. Tier 1 loads the page but asserts only logic, and Tier 2 asserts the Rust-derived snapshot. A change to `styles.css` can be wrong in every visible way and still be green.
 
 No single tier is sufficient on its own. **Website blocking enforcement** (macOS Automation redirects, Windows/Firefox native messaging) is validated primarily through the **manual checklist** — Tier 2 asserts the Rust-derived enforcement snapshot (`current_blocking`), which proves derivation is correct but not that a browser actually redirects.
 
@@ -24,13 +28,16 @@ No single tier is sufficient on its own. **Website blocking enforcement** (macOS
 
 ## Quick run guide
 
+- **Tier 0**: `pnpm test:tier0`
 - **Tier 1**
   - Start app in dev mode: `pnpm dev`
   - Trigger tests: `Cmd+Shift+T` (macOS) or `Ctrl+Shift+T` (Windows)
   - Or console: `runBlockingTests()`
+  - Headless: `pnpm test:tier1`
 - **Tier 2**
   - In app dev console (default fast profile): `runIntegrationTests('core')`
   - In app dev console (expanded profile): `runIntegrationTests('full')`
+- **UI shots**: `pnpm ui:shoot` (all screens) or `pnpm ui:shoot --screen=week-crowded --measure`
 - **Rust**: `cd src-tauri && cargo test --lib`
 - **Android Kotlin**: `cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest`
 
@@ -44,6 +51,7 @@ summarized below:
 | Workflow | Job | Runs | Trigger |
 | --- | --- | --- | --- |
 | `ci.yml` | Frontend bundle | `vite:build`, `vite:build:android`, `verify:android-bundle` | every PR, every push to `main` |
+| `ci.yml` | Tier 0 unit tests | `pnpm test:tier0` — vitest over `test/tier0/` | every PR, every push to `main` |
 | `ci.yml` | Tier 1 logic tests | `pnpm test:tier1` — `runBlockingTests()` in headless Chromium | every PR, every push to `main` |
 | `release.yml` | Checks (lint + Tier 1) | `pnpm lint`, `pnpm test:tier1` — gates all four build jobs | every release run |
 | `release.yml` | macOS (.pkg) | `cargo test --lib` before signing | every release run |
@@ -312,6 +320,67 @@ construction.
 
 ---
 
+## UI screenshot harness
+
+`pnpm ui:shoot` renders app screens from fixture data in headless Chromium and
+writes PNGs to `artifacts/ui/` (gitignored). Driver: `scripts/ui/shoot.mjs`;
+screens: `test/ui/screens.js`; fixtures: `test/ui/fixtures.js`.
+
+It needs **no Rust toolchain, no Tauri build and no signing** — just the Vite dev
+server and a Chromium. That is the whole point: it runs in seconds on a laptop,
+and identically on Linux in a container or CI, so a styling change can be looked
+at without building the app.
+
+```bash
+pnpm ui:shoot                                    # every screen
+pnpm ui:shoot --screen=week-crowded              # one screen
+pnpm ui:shoot --screen=week-crowded --measure    # also print measured geometry
+```
+
+First run on a fresh machine needs the browser once: `npx playwright install
+chromium`. If you are on an image that ships its own Chromium (a dev container),
+point at it with `UI_SHOOT_CHROMIUM=/path/to/chrome` instead.
+
+### How it boots the app without a backend
+
+The app does not start without a Tauri runtime: `app.js` awaits `loadData()`,
+which is an uncaught `invoke('load_data')`, so a missing transport aborts the
+whole `DOMContentLoaded` handler before anything renders. Rather than adding a
+no-backend code path to `src/`, the driver fakes the transport at the browser
+boundary via `page.addInitScript`, so nothing test-only ships.
+
+The stub is deliberately tiny, and unknown commands resolve `null` rather than
+throwing — that is what stops it needing an entry per command as the backend
+grows. **If a screen ever needs more than a canned constant there, leave that
+screen out of the harness** rather than growing the stub into a second
+implementation of the backend.
+
+Fixtures are then seeded through `window.__REDDBLOCK_INTERNALS__` (the same
+`appData` / `render` / `acceptEula` contract Tier 2 uses).
+
+### What it does not do
+
+There are **no committed reference images and no pixel diffing**. Cross-machine
+font rendering makes those flaky unless the container image is pinned, and the
+maintenance tax lands on every PR. This harness takes pictures; a human or an
+agent decides whether they look right.
+
+It is therefore **not a gate** and does not run in CI today. If a gate is wanted
+later, the thing to assert is *generic invariants* that hold on every screen — no
+text clipped by its container, no horizontal overflow, interactive targets ≥ 24px,
+contrast ≥ 4.5:1 — not per-screen expectations, which age badly and go flaky.
+
+### Adding a screen
+
+Add an entry to `test/ui/screens.js`; do not edit the driver. Always set
+`platform` — `detectPlatform()` has no Linux branch and falls through to
+Windows, so an unstamped screenshot taken on Linux silently claims to be a
+Windows one. Stamping it is also how mobile-only problems become visible:
+hover-dependent affordances such as native `title` tooltips do not exist on iOS
+or Android, and only show up as missing when the page is rendered as those.
+
+---
+
 ## Rust unit tests
 
 Desktop enforcement semantics live in Rust and carry their own unit tests,
@@ -374,15 +443,18 @@ arrives and the friction gate launches.
 
 ## Tier Comparison
 
+- **Tier 0 (unit)**: pure `src/` helpers in isolation, instant, jsdom — no layout, so never a claim about appearance.
 - **Tier 1 (logic)**: high breadth of logic permutations, zero system mutation.
 - **Tier 2 (integration)**: moderate breadth, Tauri command paths with the `current_blocking` enforcement snapshot as read-back.
 - **Rust unit tests**: enforcement decision logic (URL matching, allowlist composition, payload derivation).
 - **Android Kotlin unit tests**: browser URL-bar parsing (`BrowserUrlParser`), against fixtures dumped from real devices.
-- **Manual checklist**: required for website enforcement, permissions, enforcer, and visual UX.
+- **UI shots**: appearance and layout geometry, from fixtures, in a real browser. Renders; does not assert.
+- **Manual checklist**: required for website enforcement, permissions, and enforcer behaviour.
 
 Recommended stance:
 
 - Run Tier 1 during feature work.
+- Run `pnpm ui:shoot` after any change to `styles.css` or to rendering code, and look at the output.
 - Run Tier 2 for data/sync/shim regressions; do not treat passing Tier 2 as proof of website blocking.
 - Run the manual checklist before every release.
 

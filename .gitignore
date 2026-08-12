@@ -69,3 +69,6 @@ redd-focus-web/
 
 # WebdriverIO run logs (Tier 2 e2e)
 logs/
+
+# UI screenshot harness output (scripts/ui/shoot.mjs) — regenerate, never commit.
+artifacts/

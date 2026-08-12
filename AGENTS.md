@@ -249,14 +249,25 @@ Put the test where CI will actually run it, matching the layer you changed:
 | What you changed | Where the test goes |
 | --- | --- |
 | Blocking/schedule/allowlist logic in `src/` | `src/blocking-tests.js` (Tier 1) |
+| A pure helper in `src/` | `test/tier0/<module>.test.js` (vitest) |
 | Desktop enforcement semantics — derivation, URL decisions, payloads | `#[cfg(test)]` in the Rust module |
 | Android URL-bar parsing / a new browser | `BrowserUrlParserTest` fixtures |
 | Command paths, persistence round-trips | `src/integration-tests.js` (Tier 2) |
+| `styles.css`, or anything about how a screen *looks* | a screen in `test/ui/screens.js`, then `pnpm ui:shoot` and **look at it** |
 
 Prefer the highest row that can hold the case. Reaching for
 `scripts/manual-test-checklist.md` is correct only when no automated layer can
 express the case — a real browser redirecting, a real app being quit — and not
 because writing the automated test is awkward.
+
+**A test that names a CSS class is not a test that the UI works.** jsdom has no
+layout engine, so Tier 0 cannot measure a box —
+`getBoundingClientRect()` returns zeros there. Asserting that a bar gained a
+`.compact` class proves the class was added, not that the result is legible, and
+it stays green if the matching rule is deleted from `styles.css`. When the change
+is about appearance, assert *geometry* (`pnpm ui:shoot --measure` reports what a
+real browser measured) and then look at the screenshot. Neither half substitutes
+for the other.
 
 ### What CI does and does not cover
 

@@ -4473,7 +4473,11 @@ body.dark-mode .day-row.weekend{
     box-shadow: none;
 }
 
-.calendar-block.compact > *{
+/* Labels, times and emoji, which have no room left at this height. Resize
+   handles are exempt: a preview block being dragged into a crowded row still has
+   to be resizable, and hiding its handles removes the only way to adjust the
+   segment at exactly the moment the user is creating it. */
+.calendar-block.compact > *:not(.resize-handle){
     display: none;
 }
 
@@ -4594,6 +4598,23 @@ body.dark-mode .day-row.weekend{
 
 .calendar-block.preview.interactive.resize-hover{
     cursor: ew-resize !important;
+}
+
+/* Border reset for compact bands.
+ *
+ * Deliberately placed after every `.calendar-block.<variant>` rule above rather
+ * than beside the other `.compact` declarations. `.scheduled` and `.preview`
+ * both set a dashed light border at the same specificity as `.compact`, so
+ * whichever comes last in the file wins — and next to `.compact` it loses. On a
+ * full-height bar that border reads as a subtle inset; on a 9px band it is two
+ * of those nine pixels, broken into dashes, so the band reads as a dotted rule
+ * rather than as a colour. Bands identify a focus space by hue alone, so the hue
+ * gets the whole box.
+ *
+ * If you add another `.calendar-block.<variant>` rule with a border, it belongs
+ * above this one. */
+.calendar-block.compact{
+    border: none;
 }
 
 .calendar-block.preview.hidden{
