@@ -1,0 +1,9 @@
+# Revisions that are pure formatting churn and should be skipped by `git blame`.
+#
+# Enable locally with:
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# GitHub's blame view honours this file automatically.
+
+# style(rust): apply cargo fmt across all three crates
+3b8d84f81ca9f1852129ea602da7e1878cda57af

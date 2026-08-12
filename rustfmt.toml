@@ -1,0 +1,6 @@
+# Default rustfmt style, pinned only so that editor-on-save formatting matches
+# what `cargo fmt` (and the CI `cargo fmt --check` gate) produce. Without an
+# explicit edition, a bare `rustfmt` invocation assumes edition 2015 and
+# reformats differently from `cargo fmt`, which reads the edition from
+# Cargo.toml. All three crates in this repo are edition 2021.
+edition = "2021"
