@@ -57,3 +57,19 @@ jobs:
       # APK via Gradle. Single ABI to keep CI time down.
       - name: Build debug APK
         run: npm run build:android:debug
+      # Pure-JVM tests for BrowserUrlParser (the URL-bar extraction the whole
+      # Android website block depends on). Runs *after* the APK build because
+      # Gradle cannot configure the project standalone: settings.gradle applies
+      # the generated, gitignored tauri.settings.gradle, which is what pulls in
+      # :tauri-android and :tauri-plugin-android-blocker. The Tauri CLI writes
+      # it during the build above.
+      - name: Kotlin unit tests
+        working-directory: src-tauri/gen/android
+        run: ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest
+      - name: Upload Kotlin test report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kotlin-unit-test-report
+          path: tauri-plugin-android-blocker/android/build/reports/tests/
+          if-no-files-found: ignore

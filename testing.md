@@ -31,6 +31,38 @@ No single tier is sufficient on its own. **Website blocking enforcement** (macOS
 - **Tier 2**
   - In app dev console (default fast profile): `runIntegrationTests('core')`
   - In app dev console (expanded profile): `runIntegrationTests('full')`
+- **Rust**: `cd src-tauri && cargo test --lib`
+- **Android Kotlin**: `cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest`
+
+---
+
+## What runs in CI
+
+Every suite except Tier 2 is gated on pull requests to `main`:
+
+| Workflow | Job | Runs | Trigger |
+| --- | --- | --- | --- |
+| `ci.yml` | Frontend bundle | `vite:build`, `vite:build:android`, `verify:android-bundle` | every PR |
+| `ci.yml` | Tier 1 logic tests | `npm run test:tier1` — `runBlockingTests()` in headless Chromium | every PR |
+| `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes |
+| `android-ci.yml` | Android debug APK | debug APK build, then `:tauri-plugin-android-blocker:testDebugUnitTest` | `src/**`, `src-tauri/**`, plugin, build config |
+
+Notes on the two non-obvious choices:
+
+- **Rust runs on macOS, not Linux.** `web_automation.rs`, `window_inventory.rs`
+  and `workspace_events.rs` are `#[cfg(target_os = "macos")]`, and the
+  `cfg(not(ios|android))` modules depend on macOS/Windows-only crates, so the
+  lib does not compile on a Linux runner at all. No Windows-only module carries
+  tests, so macOS covers the whole suite. The job also runs `npm run vite:build`
+  first — `tauri_build::build()` refuses to run when the configured
+  `frontendDist` (`../dist`) is missing.
+- **Kotlin tests run after the APK build, in the same job.** `settings.gradle`
+  applies the generated, gitignored `tauri.settings.gradle`, which is what adds
+  `:tauri-android` and `:tauri-plugin-android-blocker` to the build. Gradle
+  cannot configure the project until the Tauri CLI has written it.
+
+**Tier 2 is deliberately not in CI**: it drives the real Tauri command layer,
+which needs a running native app rather than a headless browser page.
 
 ---
 
@@ -237,7 +269,8 @@ Coverage relevant to blocking behavior:
   `commands/migration.rs` — supporting surfaces.
 
 Run these before merging changes to `web_automation.rs`, `native_host.rs`,
-`app_watcher.rs`, or `enforcer.rs`.
+`app_watcher.rs`, or `enforcer.rs`. CI also runs them on every PR that touches
+`src-tauri/**` (`rust-ci.yml`), so a red job there means one of these failed.
 
 ---
 
@@ -251,6 +284,10 @@ free of Android framework types so it runs as a plain JVM test:
 ```
 cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest
 ```
+
+CI runs this too, as a step of the Android debug-APK job (`android-ci.yml`);
+on failure the HTML report is uploaded as the `kotlin-unit-test-report`
+artifact.
 
 `BrowserUrlParserTest` pins **verbatim URL-bar strings dumped from real
 devices** (`adb shell uiautomator dump`), quirks included. This matters because

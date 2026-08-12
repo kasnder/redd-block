@@ -39,6 +39,9 @@ There is no CLI test runner. Tests run **inside the app** in dev mode via the de
 - **Tier 2 (integration, real command paths, safe `.invalid` domains):** `runIntegrationTests('core')` or `runIntegrationTests('full')` in the console. Cases in `src/integration-tests.js`. Note: Tier 2 asserts the Rust-derived `current_blocking` snapshot — it does **not** prove a browser actually redirects.
 - **Website-enforcement correctness (Automation redirects, extension blocking) is validated manually** — see `scripts/manual-test-checklist.md`.
 - **Android browser URL parsing** has JVM unit tests: `cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest`. Fixtures in `BrowserUrlParserTest` are raw URL-bar strings dumped from real devices — add one whenever you touch the supported-browser list (details in [testing.md](testing.md)).
+- **Rust backend** has `#[cfg(test)]` unit tests: `cd src-tauri && cargo test --lib` (use `--lib` — bare `cargo test` still tries to build a stale `test_watcher` example).
+
+CI (PRs to `main`) gates everything except Tier 2: `ci.yml` builds the bundle and runs Tier 1 headlessly (`npm run test:tier1`), `rust-ci.yml` runs `cargo test --lib` on macOS when `src-tauri/**` changes, and `android-ci.yml` builds a debug APK and runs the Kotlin unit tests. See the "What runs in CI" table in [testing.md](testing.md).
 
 ## Architecture essentials
 
