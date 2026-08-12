@@ -15,7 +15,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { ask, message } from '@tauri-apps/plugin-dialog';
 import logoReddFocusUrl from './images/logo-reddfocus.svg';
 import { escapeHtml } from './utils.js';
-import { buildWordChallengeState, generateOverrideChallengeText, getCompletedChallengeText, getCurrentChallengeWord, getDifficultyTypingCharCount, getMaxOverrideCharsForType, isMobileWordByWordChallenge, renderChallengeReferenceText, applyChallengeTypedInputSanitization, sanitizeChallengeTargetText, shouldBlockChallengeSpaceKey } from './override-challenge.js';
+import { getDifficultyTypingCharCount, getMaxOverrideCharsForType } from './override-challenge.js';
 import {
     setLanguagePickerOpen,
     WINDOWS_APPS_SETTINGS_URI,
