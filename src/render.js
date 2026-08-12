@@ -1181,6 +1181,14 @@ export function renderBlocklistSelector() {
     }
 }
 
+/// Whether the 1 s clock tick is actually running. Exposed on the dev/test
+/// internals so the e2e harness can tell "the tick swept and found nothing"
+/// apart from "the tick never started" — the two look identical from outside
+/// and need completely different fixes.
+export function isClockTickRunning() {
+    return !!startTickInterval._intervalId;
+}
+
 export function startTickInterval() {
     // Track which blocks have been activated (to avoid repeated password prompts)
     // Initialize state.activatedBlockIds with already-active blocks at startup

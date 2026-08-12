@@ -115,6 +115,22 @@ async function reportStartupDiagnostics() {
     const ticks = await browser.execute(() => window.__TIER2_TIMER_PROBE__);
     console.log(`[tier2] webview timer probe: ${ticks} ticks in 3 s (a live webview gives ~6)`);
 
+    // The webview delivering timers does not mean the *app* started its own.
+    // A7/A9 need `startTickInterval()` to have run — from
+    // runPostAcceptanceStartup(), behind two conditional call sites in app.js.
+    const tickRunning = await browser.execute(
+        () => window.__REDDBLOCK_INTERNALS__?.isClockTickRunning?.() ?? null,
+    );
+    console.log(`[tier2] app clock tick running: ${tickRunning}`);
+    if (tickRunning === false) {
+        throw new Error(
+            'Tier 2 setup: the app never started its 1 s clock tick, so nothing sweeps '
+            + 'expired pauses. startTickInterval() is called from runPostAcceptanceStartup() '
+            + 'behind conditional branches in src/app.js — the EULA is accepted and the '
+            + 'webview delivers timers, so the gate and throttling are both ruled out.',
+        );
+    }
+
     // Assert, don't just log. A bare console line gets buried in CI output, and
     // the whole point is that the next failure names its own cause instead of
     // costing another round trip. A7/A9 give the app ~2.5 s to sweep a 1.2 s
