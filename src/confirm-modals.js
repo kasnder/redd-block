@@ -5,7 +5,7 @@ import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
 import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn } from './blocklist-utils.js';
-import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxOverrideCharsForType, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, sanitizeChallengeTargetText, usesMobileWordCountForOverrideType } from './override-challenge.js';
+import { buildWordChallengeState, getCompletedChallengeText, getCurrentChallengeWord, isMobileWordByWordChallenge, formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxOverrideCharsForType, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, sanitizeChallengeTargetText, usesMobileWordCountForOverrideType } from './override-challenge.js';
 import { isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
@@ -19,10 +19,9 @@ import { bindUiZoomLayoutObserver, scheduleSelectionPromptLayout, scheduleUiZoom
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import {
     IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
-    buildWordChallengeState, clampSameDayMinutes, formatConfirmModalOverrideTypingLine,
+    clampSameDayMinutes, formatConfirmModalOverrideTypingLine,
     formatMinutesAsHHMM, formatTime, generateId,
-    getCompletedChallengeText, getCurrentChallengeWord,
-    isMobileWordByWordChallenge, renderOverrideWordChallengeState,
+    renderOverrideWordChallengeState,
     renderPauseChallengeText, renderPauseWordChallengeState,
     setOverrideWordChallengeMode, setPauseWordChallengeMode,
     shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval,

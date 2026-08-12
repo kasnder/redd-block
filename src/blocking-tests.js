@@ -1880,6 +1880,203 @@
     }
 
     // ========================================
+    // CATEGORY 16: CHALLENGE PRIMITIVES (T94-T115)
+    // ========================================
+
+    // Characterization tests for the typing-challenge primitives shared by the
+    // override / pause / override-all modals. Written BEFORE the controller
+    // refactor and green against the pre-refactor tree: they describe behaviour
+    // that must not change, and are the regression net the dedup leans on.
+    //
+    // These are the only automated coverage this engine has ever had — the three
+    // implementations drifted into 15 differences precisely because nothing
+    // pinned them down.
+    function runChallengePrimitiveTests() {
+        console.log('\n⌨️  Category 16: Challenge Primitives');
+        console.log('------------------------------------');
+
+        const {
+            normalizeChallengeComparableText: norm,
+            sanitizeChallengeTypedInput: sanitizeTyped,
+            sanitizeChallengeTargetText: sanitizeTarget,
+            shouldBlockChallengeSpaceKey: blocksSpace,
+            renderChallengeReferenceText: renderRef,
+            buildWordChallengeState: buildWords,
+            getCurrentChallengeWord: currentWord,
+            getCompletedChallengeText: completedText,
+        } = window.__REDDBLOCK_INTERNALS__;
+
+        // ---- normalizeChallengeComparableText ----
+        // This is the fold the word-by-word comparison does NOT currently apply,
+        // which is why mobile autocorrect can reject a correct answer.
+        (function T94() {
+            assertEqual(norm('don’t'), "don't", 'T94: curly apostrophe folds to ASCII');
+            assertEqual(norm('“hi”'), '"hi"', 'T94: curly quotes fold to ASCII');
+            assertEqual(norm('a—b'), 'a-b', 'T94: em dash folds to hyphen');
+            assertEqual(norm('a–b'), 'a-b', 'T94: en dash folds to hyphen');
+            assertEqual(norm('a−b'), 'a-b', 'T94: minus sign folds to hyphen');
+        })();
+
+        (function T95() {
+            assertEqual(norm('a​b'), 'ab', 'T95: zero-width space is stripped');
+            assertEqual(norm('a­b'), 'ab', 'T95: soft hyphen is stripped, not kept as a hyphen');
+            assertEqual(norm('a b'), 'a b', 'T95: nbsp becomes a normal space');
+            assertEqual(norm('x…'), 'x...', 'T95: ellipsis expands to three dots');
+        })();
+
+        (function T96() {
+            assertEqual(norm(norm('don’t—now')), norm('don’t—now'), 'T96: normalization is idempotent');
+            assertEqual(norm(null), '', 'T96: null normalizes to empty string');
+            assertEqual(norm(undefined), '', 'T96: undefined normalizes to empty string');
+        })();
+
+        // ---- sanitizeChallengeTypedInput ----
+        (function T97() {
+            assertEqual(sanitizeTyped('  lead'), 'lead', 'T97: leading whitespace is stripped');
+            assertEqual(sanitizeTyped('a  b'), 'a b', 'T97: doubled spaces collapse to one');
+            assertEqual(sanitizeTyped('a   b    c'), 'a b c', 'T97: longer runs collapse too');
+            assertEqual(sanitizeTyped('trail  '), 'trail ', 'T97: trailing run collapses but is NOT trimmed (mid-typing)');
+        })();
+
+        // ---- sanitizeChallengeTargetText ----
+        (function T98() {
+            assertEqual(sanitizeTarget('a\nb'), 'a b', 'T98: newlines become spaces');
+            assertEqual(sanitizeTarget('a\r\nb'), 'a b', 'T98: CRLF becomes a single space');
+            assertEqual(sanitizeTarget('  padded  '), 'padded', 'T98: target IS trimmed, unlike typed input');
+            assertEqual(sanitizeTarget('a’b'), "a'b", 'T98: target text is folded too');
+        })();
+
+        // ---- shouldBlockChallengeSpaceKey ----
+        const fakeInput = (value, selectionStart) => ({ value, selectionStart });
+        (function T99() {
+            assert(blocksSpace(fakeInput('', 0), { key: ' ' }) === true, 'T99: leading space is blocked');
+            assert(blocksSpace(fakeInput('a ', 2), { key: ' ' }) === true, 'T99: doubled space is blocked');
+            assert(blocksSpace(fakeInput('a', 1), { key: ' ' }) === false, 'T99: a normal space is allowed');
+            assert(blocksSpace(fakeInput('', 0), { key: 'a' }) === false, 'T99: non-space keys are never blocked');
+            assert(blocksSpace(null, { key: ' ' }) === false, 'T99: null input is safe');
+        })();
+
+        (function T100() {
+            assert(blocksSpace(fakeInput('', 0), { code: 'Space' }) === true, 'T100: event.code Space is recognised');
+            assert(blocksSpace(fakeInput('', 0), { key: ' ', metaKey: true }) === false, 'T100: Cmd+Space is not blocked');
+            assert(blocksSpace(fakeInput('', 0), { key: ' ', ctrlKey: true }) === false, 'T100: Ctrl+Space is not blocked');
+            assert(blocksSpace(fakeInput('', 0), { key: ' ', altKey: true }) === false, 'T100: Alt+Space is not blocked');
+        })();
+
+        // ---- renderChallengeReferenceText (synthetic DOM, nothing attached) ----
+        const scratch = () => document.createElement('div');
+        (function T101() {
+            const el = scratch();
+            renderRef(el, 'hello world', { cursorIndex: 0, errorIndex: -1 });
+            assertEqual(el.textContent, 'hello world', 'T101: plain render writes the full target');
+            assertEqual(el.getAttribute('data-challenge-render'), 'plain', 'T101: plain render is tagged');
+            assertEqual(el.querySelectorAll('.error-char').length, 0, 'T101: no error span when there is no error');
+        })();
+
+        (function T102() {
+            const el = scratch();
+            renderRef(el, 'abc', { errorIndex: 1 });
+            const marks = el.querySelectorAll('.error-char');
+            assertEqual(marks.length, 1, 'T102: exactly one error span');
+            assertEqual(marks[0].textContent, 'b', 'T102: the error span wraps the wrong character');
+            assertEqual(el.getAttribute('data-challenge-render'), 'error', 'T102: error render is tagged');
+        })();
+
+        (function T103() {
+            const el = scratch();
+            renderRef(el, 'a b', { errorIndex: 1 });
+            const mark = el.querySelector('.error-char');
+            assert(mark.classList.contains('error-char-space'), 'T103: a wrong space gets the space variant class');
+        })();
+
+        (function T104() {
+            const el = scratch();
+            renderRef(el, '', {});
+            assertEqual(el.textContent, '', 'T104: empty target renders empty');
+            assertEqual(el.getAttribute('data-challenge-render'), null, 'T104: empty target clears the render tag');
+            renderRef(null, 'x', {});
+            assert(true, 'T104: null element does not throw');
+        })();
+
+        (function T105() {
+            // Out-of-range errorIndex must fall back to the plain path.
+            const el = scratch();
+            renderRef(el, 'abc', { errorIndex: 99 });
+            assertEqual(el.getAttribute('data-challenge-render'), 'plain', 'T105: out-of-range error index renders plain');
+            assertEqual(el.querySelectorAll('.error-char').length, 0, 'T105: and produces no error span');
+        })();
+
+        (function T106() {
+            // The WKWebView smear guard: an identical re-render must not rewrite the node.
+            const el = scratch();
+            renderRef(el, 'stable', {});
+            const first = el.firstChild;
+            renderRef(el, 'stable', {});
+            assert(el.firstChild === first, 'T106: identical re-render reuses the existing text node');
+        })();
+
+        (function T107() {
+            const el = scratch();
+            renderRef(el, '<script>&', {});
+            assertEqual(el.textContent, '<script>&', 'T107: plain render does not interpret markup');
+            const el2 = scratch();
+            renderRef(el2, '<b>x', { errorIndex: 0 });
+            assertEqual(el2.textContent, '<b>x', 'T107: error render escapes markup rather than injecting it');
+        })();
+
+        // ---- word-challenge primitives ----
+        (function T108() {
+            const st = buildWords('one two three');
+            assertEqual(st.words, ['one', 'two', 'three'], 'T108: text splits into words');
+            assertEqual(st.currentIndex, 0, 'T108: starts at the first word');
+            assertEqual(st.typedText, '', 'T108: starts with empty typed text');
+        })();
+
+        (function T109() {
+            assertEqual(buildWords('  a   b  ').words, ['a', 'b'], 'T109: extra whitespace produces no empty words');
+            assertEqual(buildWords('').words, [], 'T109: empty text yields no words');
+            assertEqual(buildWords(null).words, [], 'T109: null text yields no words');
+        })();
+
+        (function T110() {
+            const st = buildWords('one two');
+            assertEqual(currentWord(st), 'one', 'T110: current word at index 0');
+            st.currentIndex = 1;
+            assertEqual(currentWord(st), 'two', 'T110: current word advances with the index');
+            st.currentIndex = 2;
+            assertEqual(currentWord(st), '', 'T110: past the end yields empty string, not undefined');
+            assertEqual(currentWord(null), '', 'T110: null state yields empty string');
+        })();
+
+        (function T111() {
+            const st = buildWords('one two three');
+            assertEqual(completedText(st), '', 'T111: nothing completed at index 0');
+            st.currentIndex = 1;
+            assertEqual(completedText(st), 'one', 'T111: one word completed');
+            st.currentIndex = 2;
+            assertEqual(completedText(st), 'one two', 'T111: completed words rejoin with single spaces');
+            st.currentIndex = 3;
+            assertEqual(completedText(st), 'one two three', 'T111: all words completed');
+            assertEqual(completedText(null), '', 'T111: null state yields empty string');
+        })();
+
+        (function T112() {
+            // The invariant the controller will rely on: completed prefix + current
+            // word reconstructs the typed-so-far target.
+            const text = 'alpha beta gamma';
+            const st = buildWords(text);
+            const seen = [];
+            while (currentWord(st)) {
+                const prefix = completedText(st);
+                seen.push(prefix ? `${prefix} ${currentWord(st)}` : currentWord(st));
+                st.currentIndex++;
+            }
+            assertEqual(seen, ['alpha', 'alpha beta', 'alpha beta gamma'], 'T112: prefix + current word rebuilds the target progressively');
+            assertEqual(completedText(st), text, 'T112: after the last word the completed text equals the whole target');
+        })();
+    }
+
+    // ========================================
     // MAIN TEST RUNNER
     // ========================================
 
@@ -1908,6 +2105,7 @@
             runAndroidPayloadTests();
             runIOSSchedulePayloadTests();
             runEditFrictionGateTests();
+            runChallengePrimitiveTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -1933,7 +2131,8 @@
         runIOSAllowlistPolicyTests,
         runAndroidPayloadTests,
         runIOSSchedulePayloadTests,
-        runEditFrictionGateTests
+        runEditFrictionGateTests,
+        runChallengePrimitiveTests
     };
 
     console.log('🧪 ReddBlock Blocking Tests loaded. Press Cmd+Shift+T to run tests.');

@@ -8,6 +8,16 @@ import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isAllowlistBlocklist, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
 import { buildAndroidScheduleEntries, buildIOSScheduleEntries } from './schedule-engine.js';
+import {
+    buildWordChallengeState,
+    getCompletedChallengeText,
+    getCurrentChallengeWord,
+    normalizeChallengeComparableText,
+    renderChallengeReferenceText,
+    sanitizeChallengeTargetText,
+    sanitizeChallengeTypedInput,
+    shouldBlockChallengeSpaceKey,
+} from './override-challenge.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { acceptEula } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION } from './onboarding.js';
@@ -40,6 +50,15 @@ window.__REDDBLOCK_INTERNALS__ = {
     getMaxOverrideCharsForType,
     buildAndroidScheduleEntries,
     buildIOSScheduleEntries,
+    // Challenge-engine primitives (characterization tests / controller suite)
+    normalizeChallengeComparableText,
+    sanitizeChallengeTypedInput,
+    sanitizeChallengeTargetText,
+    shouldBlockChallengeSpaceKey,
+    renderChallengeReferenceText,
+    buildWordChallengeState,
+    getCurrentChallengeWord,
+    getCompletedChallengeText,
     deriveIOSEffectiveWebsitePolicy,
     deriveIOSEffectiveAppPolicy,
     validateIOSAllowlistLimits,
