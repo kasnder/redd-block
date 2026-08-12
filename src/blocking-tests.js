@@ -17,6 +17,7 @@
  * - T48-T50: Protected Domain Prevention
  * - T51-T54, T51da: Blocklist duplication (schedules copy as pending drafts; DA uses "kopi")
  * - T55-T62: iOS allowlist effective-policy resolvers (pure helpers)
+ * - T63-T65: Default pause length setting (fallback, configured value, clamping)
  */
 
 (function () {
@@ -1586,7 +1587,6 @@
     }
 
     // ========================================
-    // ========================================
     // CATEGORY 18: ANDROID PAYLOAD (T143-T152)
     // ========================================
 
@@ -1887,6 +1887,66 @@
         }
     }
 
+    // CATEGORY 15: DEFAULT PAUSE LENGTH (T63-T65)
+    // ========================================
+
+    // The configurable prefill duration behind the "Stop all"-style gate
+    // (Settings → Default pause length; all platforms). Pure helpers over
+    // appData.settings.defaultPauseMinutes.
+    function runDefaultPauseLengthTests() {
+        console.log('\n⏸️  Category 15: Default Pause Length');
+        console.log('------------------------------------');
+
+        const {
+            getDefaultPauseMinutes,
+            clampDefaultPauseMinutes,
+            FALLBACK_DEFAULT_PAUSE_MINUTES,
+            MAX_DEFAULT_PAUSE_MINUTES
+        } = window.__REDDBLOCK_INTERNALS__;
+
+        const originalAppData = window.__REDDBLOCK_INTERNALS__.appData;
+        const withSetting = (value) => {
+            window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({
+                settings: value === undefined ? {} : { defaultPauseMinutes: value }
+            });
+        };
+
+        try {
+            // T63: unset / invalid values fall back to 15 minutes
+            (function T63() {
+                withSetting(undefined);
+                assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
+                    'T63: unset setting falls back to 10 minutes');
+                withSetting(0);
+                assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
+                    'T63: zero falls back to 10 minutes');
+                withSetting('not a number');
+                assertEqual(getDefaultPauseMinutes(), FALLBACK_DEFAULT_PAUSE_MINUTES,
+                    'T63: non-numeric falls back to 10 minutes');
+            })();
+
+            // T64: a configured value is used verbatim
+            (function T64() {
+                withSetting(45);
+                assertEqual(getDefaultPauseMinutes(), 45, 'T64: configured 45 minutes is used');
+                withSetting(90);
+                assertEqual(getDefaultPauseMinutes(), 90, 'T64: values over an hour survive');
+            })();
+
+            // T65: out-of-range values clamp to [1, one day]
+            (function T65() {
+                assertEqual(clampDefaultPauseMinutes(-5), 1, 'T65: negatives clamp to 1 minute');
+                assertEqual(clampDefaultPauseMinutes(MAX_DEFAULT_PAUSE_MINUTES + 1),
+                    MAX_DEFAULT_PAUSE_MINUTES, 'T65: over a day clamps to a day');
+                withSetting(MAX_DEFAULT_PAUSE_MINUTES * 10);
+                assertEqual(getDefaultPauseMinutes(), MAX_DEFAULT_PAUSE_MINUTES,
+                    'T65: stored oversize value reads back clamped');
+            })();
+        } finally {
+            window.__REDDBLOCK_INTERNALS__.appData = originalAppData;
+        }
+    }
+
     // ========================================
     // MAIN TEST RUNNER
     // ========================================
@@ -1916,6 +1976,7 @@
             runAndroidPayloadTests();
             runIOSSchedulePayloadTests();
             runEditFrictionGateTests();
+            runDefaultPauseLengthTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -1941,7 +2002,8 @@
         runIOSAllowlistPolicyTests,
         runAndroidPayloadTests,
         runIOSSchedulePayloadTests,
-        runEditFrictionGateTests
+        runEditFrictionGateTests,
+        runDefaultPauseLengthTests
     };
 
     console.log('🧪 ReddBlock Blocking Tests loaded. Press Cmd+Shift+T to run tests.');

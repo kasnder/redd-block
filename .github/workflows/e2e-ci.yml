@@ -23,10 +23,22 @@ on:
       - 'e2e/**'
       - 'vite.config.js'
       - '.github/workflows/e2e-ci.yml'
+  # Duplicated rather than anchored — GitHub Actions does not support YAML
+  # aliases. Keep the two lists in sync.
+  push:
+    branches: [main]
+    paths:
+      - 'src/integration-tests.js'
+      - 'src/test-utils.js'
+      - 'e2e/**'
+      - 'vite.config.js'
+      - '.github/workflows/e2e-ci.yml'
 
 concurrency:
   group: e2e-ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Superseded PR runs are wasted work, but every main commit should get its
+  # own verdict.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

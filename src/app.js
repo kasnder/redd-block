@@ -123,6 +123,7 @@ import {
     syncUninstallConfirmModal, updateCleanHostsBtnState, updateHelperStatusIndicator,
     updateManageSectionVisibility, updateOverrideAllButtonVisibility,
 } from './settings.js';
+import { setupDefaultPauseSetting, syncDefaultPauseSettingUi } from './pause-default.js';
 import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, scheduleSelectionPromptLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
 import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
@@ -202,6 +203,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     setupBlocklistsImportExportButtons();
     setupAppForegroundRefresh();
     setupOverrideAll();
+    setupDefaultPauseSetting();
     setupInAppUninstall();
     setupWindowsUninstallGuidance();
     setupMacAutomationIntroModal();
@@ -3404,6 +3406,7 @@ export function applySettingsLanguage() {
     setPlaceholder('challenge-input', tSettings('typeHere'));
     setPlaceholder('pause-challenge-input', tSettings('typeHere'));
     setPlaceholder('override-all-challenge-input', tSettings('typeHere'));
+    setPlaceholder('pause-default-challenge-input', tSettings('typeHere'));
     setText('website-input-error', tSettings('invalidDomainMsg'));
     setText('custom-override-text-error', tSettings('customOverrideEmptyError'));
 
@@ -3583,6 +3586,19 @@ export function applySettingsLanguage() {
     setText('settings-override-all-label', tSettings('settingsOverrideAllLabel'));
     setText('settings-override-all-hint', tSettings('settingsOverrideAllHint'));
     setText('settings-override-all-btn-label', tSettings('settingsOverrideAllBtn'));
+    setText('settings-pause-default-label', tSettings('settingsPauseDefaultLabel'));
+    setText('settings-pause-default-hint', tSettings('settingsPauseDefaultHint'));
+    setText('pause-default-title', tSettings('pauseDefaultTitle'));
+    // Android additionally prefills its native block screen from this setting,
+    // so it gets a subtitle that says so.
+    setText('pause-default-subtitle',
+        tSettings(state.isAndroid ? 'pauseDefaultSubtitleAndroid' : 'pauseDefaultSubtitle'));
+    setText('pause-default-instruction', tSettings('pauseDefaultInstruction'));
+    setText('pause-default-hours-unit', tSettings('pauseDefaultUnitHours'));
+    setText('pause-default-minutes-unit', tSettings('pauseDefaultUnitMinutes'));
+    setText('cancel-pause-default-btn', tSettings('cancel'));
+    setText('confirm-pause-default-btn', tSettings('pauseDefaultSave'));
+    syncDefaultPauseSettingUi();
     setText('settings-uninstall-label', tSettings('uninstallApp'));
     setText('settings-uninstall-hint', tSettings('settingsUninstallHint'));
     setText('settings-uninstall-btn-label', tSettings('uninstallAppBtn'));
