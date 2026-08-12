@@ -1025,8 +1025,7 @@ export function setupOverrideAll() {
             // 'advanced' = a correct but non-final word; the user keeps typing.
             if (challenge.handleConfirm().status !== 'ok') return;
             await performOverrideAll();
-            overrideAllModal.classList.add('hidden');
-            challenge.reset();
+            closeOverrideAllModal();
         });
     }
 }
