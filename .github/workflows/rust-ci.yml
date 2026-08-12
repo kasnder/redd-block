@@ -41,19 +41,20 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
       # `tauri_build::build()` (invoked from src-tauri/build.rs) validates that
       # the configured frontendDist — ../dist — exists, so the lib does not
       # compile on a clean checkout until the frontend has been built once.
-      - run: npm run vite:build
+      - run: pnpm vite:build
       # `--lib` on purpose: bare `cargo test` also compiles the stale
       # `test_watcher` example binary, which no longer builds (see testing.md).
       # build.rs compiles the Swift SafariServices bridge first; macOS runners

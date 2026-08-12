@@ -64,7 +64,7 @@ BUNDLE_BASE="$(resolve_bundle_base "$BUILD_TARGET")"
 APP_PATH="${BUNDLE_BASE}/macos/${APP_NAME}.app"
 
 # Fall back to the legacy non-target path if the targeted .app is missing
-# (e.g. someone ran a plain `tauri build` instead of `npm run build:mac`).
+# (e.g. someone ran a plain `tauri build` instead of `pnpm build:mac`).
 if [[ ! -d "$APP_PATH" && -n "$BUILD_TARGET" ]]; then
     LEGACY_BUNDLE_BASE="${REPO_ROOT}/src-tauri/target/${BUILD_TARGET}/${PROFILE}/bundle"
     if [[ ! -d "$LEGACY_BUNDLE_BASE" ]]; then
@@ -80,7 +80,7 @@ fi
 
 if [[ ! -d "$APP_PATH" ]]; then
     echo "ERROR: $APP_PATH not found."
-    echo "       Run 'npm run build:mac' first (or 'npm run tauri build' for a single-arch dev build)."
+    echo "       Run 'pnpm build:mac' first (or 'pnpm tauri build' for a single-arch dev build)."
     exit 1
 fi
 

@@ -29,11 +29,11 @@ for the app-specific edits to preserve if it's ever re-initialized).
   rustup target add aarch64-linux-android armv7-linux-androideabi \
                     i686-linux-android x86_64-linux-android
   ```
-- **Tauri CLI** (`npm install` provides it locally as `./node_modules/.bin/tauri`).
+- **Tauri CLI** (`pnpm install` provides it locally as `./node_modules/.bin/tauri`).
 
 ## Build cache
 
-Tauri commands launched through npm use a shared Cargo target cache outside the
+Tauri commands launched through pnpm use a shared Cargo target cache outside the
 repository, so linked Git worktrees reuse compiled Rust dependencies instead of
 creating a separate `src-tauri/target/` in each checkout. Set
 `REDD_BLOCK_CARGO_TARGET_DIR` to override the location, or
@@ -43,7 +43,7 @@ The cache includes every Rust target and build profile you use. Stop active
 builds before pruning it:
 
 ```bash
-npm run clean:build-cache -- --all
+pnpm clean:build-cache --all
 ```
 
 This removes generated Cargo, Vite, and Android build output only. It does not
@@ -52,7 +52,7 @@ remove `node_modules` or files in `for-distribution/`.
 ## Environment variables
 
 The Tauri/Gradle build reads the SDK, NDK, and JDK from the environment. These
-are **not** set by `npm install`, so a bare `npm run build:android` fails with an
+are **not** set by `pnpm install`, so a bare `pnpm build:android` fails with an
 empty `ANDROID_HOME` unless you export them (Android Studio sets them itself when
 you build from the IDE). Add to your shell profile, or `export` per session:
 
@@ -81,7 +81,7 @@ export PATH="$HOME/.rustup/toolchains/stable-aarch64-apple-darwin/bin:$PATH"
 ## Debug APK (for local testing)
 
 ```bash
-npm run build:android:debug
+pnpm build:android:debug
 ```
 
 - `--apk` — build the APK, skip the Play Store AAB. (In Tauri CLI 2.11.x the
@@ -144,14 +144,14 @@ console line from `checkAndroidPermissions`
 
 ## Frontend bundle
 
-`tauri android build` runs `npm run vite:build:android` (`vite build --mode
+`tauri android build` runs `pnpm vite:build:android` (`vite build --mode
 android`) via the `beforeBuildCommand` override in `tauri.android.conf.json`, so
 the Android-only build optimizations — `stripNonAndroidUi`,
 `pruneOrphanAndroidAssets`, and the `__ANDROID_BUILD__` compile-time guards —
 apply to the real APK. Plain `tauri build` uses `vite:build` (desktop mode,
 `__ANDROID_BUILD__ = false`).
 
-Measure the shipped bundle with `ANALYZE=1 npx vite build --mode android`, which
+Measure the shipped bundle with `ANALYZE=1 pnpm dlx vite build --mode android`, which
 writes a treemap to `dist/stats.html`. See the build-time platform gating
 section of [../AGENTS.md](../AGENTS.md) for when `__ANDROID_BUILD__` is the right
 tool and when it is not.
@@ -162,19 +162,19 @@ For an iterate-and-reload loop on a running device/emulator (hot-reload of the
 frontend), use dev mode instead of a full build:
 
 ```bash
-npm run dev:android          # = tauri android dev
-npm run tauri -- android dev --open   # also opens Android Studio
+pnpm dev:android          # = tauri android dev
+pnpm tauri android dev --open   # also opens Android Studio
 ```
 
 ## Release build
 
 ```bash
-npm run build:android        # = tauri android build (all ABIs, release, APK + AAB)
+pnpm build:android        # = tauri android build (all ABIs, release, APK + AAB)
 ```
 
 Ordinary release builds still use the generated debug signing config unless the
 Keychain-backed Play Store script below supplies a release key. Do not upload an
-ordinary `npm run build:android` artifact to Google Play.
+ordinary `pnpm build:android` artifact to Google Play.
 
 ## Google Play bundle with macOS Keychain signing
 
@@ -200,9 +200,9 @@ You can open `src-tauri/gen/android/` in Android Studio to run/debug the project
 but the Gradle Rust task calls back into a running Tauri CLI:
 
 1. Keep the CLI running in a terminal while you build:
-   `npm run tauri -- android dev --open`. Without it the build panics with
+   `pnpm tauri android dev --open`. Without it the build panics with
    "failed to read CLI options".
-2. `node`/`npm` and `cargo` must be on Gradle's PATH. Android Studio launched
+2. `node`/`pnpm` and `cargo` must be on Gradle's PATH. Android Studio launched
    from the Dock doesn't inherit your shell PATH — either launch it from a
    terminal (`open -a "Android Studio"`) or rely on the PATH patch in
    `buildSrc/.../BuildTask.kt` (which is dropped if `tauri android init` is

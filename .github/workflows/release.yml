@@ -126,24 +126,27 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: npm run lint
+        run: pnpm lint
 
       - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+        run: pnpm dlx playwright install --with-deps chromium
 
       # Boots the Vite dev server and runs runBlockingTests() headlessly.
       - name: Tier 1 logic tests
-        run: npm run test:tier1
+        run: pnpm test:tier1
 
   build-mac:
     name: macOS (.pkg)
@@ -154,11 +157,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -171,7 +177,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build Safari bridge dylib
         run: bash ./scripts/build-safari-bridge.sh
@@ -184,7 +190,7 @@ jobs:
       # anyway. `--lib` skips the stale test_watcher example (see testing.md).
       - name: Rust unit tests
         run: |
-          npm run vite:build
+          pnpm vite:build
           cd src-tauri && cargo test --lib
 
       - name: Import Apple signing certificates
@@ -212,7 +218,7 @@ jobs:
           security default-keychain -s "$KEYCHAIN_PATH"
           echo "Installer identities before build:"
           security find-identity -v "$KEYCHAIN_PATH" | grep "Developer ID Installer" || true
-          npm run build:mac-all
+          pnpm build:mac-all
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
@@ -231,11 +237,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -248,7 +257,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Install trusted-signing-cli
         shell: pwsh
@@ -277,7 +286,7 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-        run: npm run build:win
+        run: pnpm build:win
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v7
@@ -298,11 +307,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -315,7 +327,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build Microsoft Store packages
         shell: pwsh
@@ -323,7 +335,7 @@ jobs:
           WINDOWS_IDENTITY_NAME: ${{ secrets.WINDOWS_IDENTITY_NAME }}
           WINDOWS_PUBLISHER: ${{ secrets.WINDOWS_PUBLISHER }}
           WINDOWS_PUBLISHER_DISPLAY_NAME: ${{ secrets.WINDOWS_PUBLISHER_DISPLAY_NAME }}
-        run: npm run build:win-store
+        run: pnpm build:win-store
 
       - name: Upload Windows Store artifacts
         uses: actions/upload-artifact@v7
@@ -344,11 +356,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node
         uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -361,7 +376,7 @@ jobs:
           workspaces: src-tauri
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Require App Store Connect secrets
         env:
@@ -394,7 +409,7 @@ jobs:
           APPLE_API_KEY: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
         run: |
           export APPLE_API_KEY_PATH="$HOME/.appstoreconnect/AuthKey.p8"
-          npm run build:ios
+          pnpm build:ios
 
       - name: Stage IPA for publish
         run: |

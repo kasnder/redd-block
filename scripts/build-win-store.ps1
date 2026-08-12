@@ -13,7 +13,7 @@
 #   for-distribution/x86_64-pc-windows-msvc/Digital-Habits-Blocker_<version>.0_x64.msix  <- submit this
 #   for-distribution/x86_64-pc-windows-msvc/nsis|msi/  (optional sideload artifacts)
 #
-# Direct-distribution signing (AZURE_*) is only used by npm run build:win, not this script.
+# Direct-distribution signing (AZURE_*) is only used by pnpm build:win, not this script.
 
 param(
     [switch]$x64Only,

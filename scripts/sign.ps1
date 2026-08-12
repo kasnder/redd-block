@@ -1,6 +1,6 @@
 # Code-sign a Windows binary via Azure Artifact Signing.
 # Invoked by Tauri bundle (see tauri.windows.conf.json). Loads .env from repo root
-# because npm/tauri do not load it automatically.
+# because pnpm/tauri do not load it automatically.
 
 param(
     [Parameter(Mandatory = $true, Position = 0)]

@@ -45,7 +45,7 @@ async function waitForServer(url, timeoutMs) {
 async function main() {
     log('starting Vite dev server on port', PORT);
     // detached:true puts vite in its own process group so we can kill the
-    // whole tree — `npx vite` forks a child that survives a SIGTERM sent only
+    // whole tree — `pnpm dlx vite` forks a child that survives a SIGTERM sent only
     // to the wrapper, otherwise leaking a dev server after the run.
     const vite = spawn(
         'npx',

@@ -5,6 +5,8 @@
 version: 2
 updates:
   # --- Frontend ---
+  # `npm` is Dependabot's name for the whole Node ecosystem; it reads
+  # pnpm-lock.yaml. There is no separate "pnpm" value.
   - package-ecosystem: "npm"
     directory: "/"
     schedule:

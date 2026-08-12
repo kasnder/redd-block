@@ -55,15 +55,16 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
     steps:
       - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
       # No tauri-driver: the app serves WebDriver itself via the
       # `e2e-webdriver` feature. tauri-driver is the documented Windows path
       # but never established a session here (POST /session timed out at
@@ -71,9 +72,9 @@ jobs:
       # --config swaps beforeBuildCommand to the e2e Vite mode so the built
       # binary embeds a bundle that still contains the test runners.
       - name: Build app under test
-        run: npm run build:e2e-app
+        run: pnpm build:e2e-app
       - name: Run Tier 2
-        run: npm run test:tier2
+        run: pnpm test:tier2
       - name: Upload WDIO logs
         if: failure()
         uses: actions/upload-artifact@v7
@@ -89,21 +90,22 @@ jobs:
       CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
     steps:
       - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
       # macOS has no WKWebView driver at all, so the embedded server is the
       # only option here — and now the shared one.
       - name: Build app under test
-        run: npm run build:e2e-app
+        run: pnpm build:e2e-app
       - name: Run Tier 2
-        run: npm run test:tier2
+        run: pnpm test:tier2
       - name: Upload WDIO logs
         if: failure()
         uses: actions/upload-artifact@v7
