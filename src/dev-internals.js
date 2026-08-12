@@ -19,6 +19,12 @@ import {
     validateIOSAllowlistLimits,
     IOS_ALLOWLIST_EXCEPTION_LIMIT,
 } from './allowlist-ios.js';
+import {
+    getDefaultPauseMinutes,
+    clampDefaultPauseMinutes,
+    FALLBACK_DEFAULT_PAUSE_MINUTES,
+    MAX_DEFAULT_PAUSE_MINUTES,
+} from './pause-default.js';
 
 // Expose for integration tests (dev mode only)
 window.__REDDBLOCK_INTERNALS__ = {
@@ -52,6 +58,10 @@ window.__REDDBLOCK_INTERNALS__ = {
     // The e2e harness calls this rather than hand-patching settings, which
     // leaves the app sitting behind the gate with a doctored in-memory value.
     acceptEula,
+    getDefaultPauseMinutes,
+    clampDefaultPauseMinutes,
+    FALLBACK_DEFAULT_PAUSE_MINUTES,
+    MAX_DEFAULT_PAUSE_MINUTES,
 };
 
 // ========================================

@@ -27,6 +27,7 @@ import {
     setOverrideWordChallengeMode, setPauseWordChallengeMode,
     shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval,
 } from './app.js';
+import { getDefaultPauseMinutes } from './pause-default.js';
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
     setBlocklistModalMode,
@@ -3142,10 +3143,15 @@ export function openPauseModal(blockId) {
     }
 
     // Reset duration inputs
-    const defaultMins = state.pauseMaxMinutes !== null ? Math.min(15, state.pauseMaxMinutes) : 15;
-    document.getElementById('pause-days').value = 0;
-    document.getElementById('pause-hours').value = 0;
-    document.getElementById('pause-minutes').value = defaultMins;
+    const configuredDefaultMins = getDefaultPauseMinutes();
+    const defaultMins = state.pauseMaxMinutes !== null
+        ? Math.min(configuredDefaultMins, state.pauseMaxMinutes)
+        : configuredDefaultMins;
+    // Split across the three inputs — the configured default can exceed an
+    // hour, and each field only accepts its own unit's range.
+    document.getElementById('pause-days').value = Math.floor(defaultMins / (24 * 60));
+    document.getElementById('pause-hours').value = Math.floor((defaultMins % (24 * 60)) / 60);
+    document.getElementById('pause-minutes').value = defaultMins % 60;
     initPauseRestartPopovers();
     updatePauseRestartTime();
 
