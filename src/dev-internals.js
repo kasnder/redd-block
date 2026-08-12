@@ -6,7 +6,7 @@
 // never rename them.
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
-import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
+import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isAllowlistBlocklist, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { acceptEula } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION } from './onboarding.js';
@@ -32,6 +32,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     PROTECTED_APP_NAMES,
     isProtectedDomain,
     PROTECTED_DOMAINS,
+    isAllowlistBlocklist,
     duplicateBlocklist,
     getNextCopyName,
     getMaxOverrideCharsForType,

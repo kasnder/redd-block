@@ -4,7 +4,7 @@ import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
-import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isBlockAlwaysOn } from './blocklist-utils.js';
+import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn } from './blocklist-utils.js';
 import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxOverrideCharsForType, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, sanitizeChallengeTargetText, usesMobileWordCountForOverrideType } from './override-challenge.js';
 import { isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
@@ -2780,7 +2780,7 @@ export function formatBlocklistModalSummary(blocklist) {
     const displayApps = getBlocklistDisplayApps(blocklist);
     const appCount = displayApps.length;
     const mode = tSettings(
-        blocklist.mode === 'allowlist'
+        isAllowlistBlocklist(blocklist)
             ? 'blocklistModalSummaryAllows'
             : 'blocklistModalSummaryBlocks'
     );
