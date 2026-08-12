@@ -2112,10 +2112,8 @@ mod tests {
         // check nothing escalates early. Shortening either window is a
         // user-visible regression (an app killed mid-save).
         let start = Instant::now();
-        let mut phase = PidPhase::AwaitingUserAck;
-
         // User clicks "Let's go!" — `sweep` performs this transition.
-        phase = PidPhase::PreQuit {
+        let mut phase = PidPhase::PreQuit {
             quit_at: start + PREQUIT_DURATION,
         };
 
