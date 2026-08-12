@@ -270,11 +270,18 @@ Three things make this work, and all three are easy to trip over:
   fails on any failed case — the same contract `run-tier1-headless.mjs` has
   with Tier 1.
 - **The driver provider is platform-dependent.** Windows uses `external`
-  (`tauri-driver`, no app-side dependency). macOS needs `embedded`, which
-  requires the `tauri-plugin-wdio-webdriver` crate compiled in — that must stay
-  behind a Cargo feature and out of shipped builds, since an embedded
-  remote-control server inside a blocker app is a bypass surface. macOS is not
-  wired up yet.
+  (`tauri-driver`, no app-side dependency) — build with `npm run build:e2e-app`.
+  macOS has no WKWebView driver, so the app serves WebDriver itself via the
+  `embedded` provider; build with `npm run build:e2e-app:mac`, which adds the
+  `e2e-webdriver` Cargo feature.
+
+**`e2e-webdriver` must never ship.** It compiles an HTTP automation server into
+the binary, and in a released blocker that is a remote-control bypass of every
+block the app enforces. It is an explicit opt-in feature rather than the
+crate's documented `#[cfg(debug_assertions)]` gate, which would open the port
+on every `npm run dev` session. `lib.rs` additionally carries a
+`compile_error!` that fails the build if the feature is ever combined with a
+release profile, so the mistake is impossible rather than merely unlikely.
 
 Tier 2 mutates real state, which is why it stays manual locally and runs on a
 disposable runner VM in CI. Its test domains are all `.invalid` by

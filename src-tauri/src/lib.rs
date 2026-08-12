@@ -1,3 +1,15 @@
+// Hard stop against shipping the e2e automation server. `e2e-webdriver`
+// compiles an HTTP WebDriver endpoint into the binary so the Tier 2 suite can
+// drive a real app on macOS; in a released blocker that endpoint would be a
+// remote-control bypass of every block the app enforces. Debug-profile e2e
+// builds are the only legitimate use, so make anything else fail to compile.
+#[cfg(all(feature = "e2e-webdriver", not(debug_assertions)))]
+compile_error!(
+    "the `e2e-webdriver` feature must never be enabled in a release build: it \
+     exposes an automation server that can bypass blocking. Build the e2e app \
+     with `npm run build:e2e-app:mac` (debug profile) instead."
+);
+
 #[cfg(feature = "desktop")]
 use tauri::Manager;
 
@@ -232,6 +244,16 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init());
+
+    // Embedded WebDriver server for the Tier 2 e2e suite on macOS, where
+    // `tauri-driver` has no WKWebView driver to talk to. Opt-in via the
+    // `e2e-webdriver` Cargo feature and never on by default — the crate's own
+    // documented `#[cfg(debug_assertions)]` gate would open an automation port
+    // on every `npm run dev`, and in a blocker app that port is a live bypass
+    // of the enforcement the app exists to provide. The `compile_error!` below
+    // makes the release-build mistake impossible rather than merely unlikely.
+    #[cfg(feature = "e2e-webdriver")]
+    let builder = builder.plugin(tauri_plugin_wdio_webdriver::init());
 
     // tauri-nspanel is what enables the macOS-fullscreen-overlay trick
     // for the app-blocking countdown — see `MainPanel` above and

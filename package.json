@@ -26,6 +26,7 @@
     "vite:build:android": "vite build --mode android",
     "vite:build:e2e": "vite build --mode e2e",
     "build:e2e-app": "npm run tauri -- build --debug --no-bundle --config src-tauri/tauri.e2e.conf.json",
+    "build:e2e-app:mac": "npm run tauri -- build --debug --no-bundle --features e2e-webdriver --config src-tauri/tauri.e2e.conf.json",
     "test:tier2": "wdio run e2e/wdio.conf.js",
     "verify:android-bundle": "node scripts/ci/verify-android-vite-output.mjs",
     "vite:preview": "vite preview",

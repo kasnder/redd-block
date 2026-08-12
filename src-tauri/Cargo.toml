@@ -30,6 +30,16 @@ tauri-build = { version = "2", features = [] }
 [features]
 default = []
 desktop = ["tauri/tray-icon"]
+# Compiles an embedded WebDriver server into the binary so the Tier 2 e2e suite
+# can drive a real app on macOS (where `tauri-driver` has no WKWebView driver).
+#
+# NEVER enable this for anything a user runs. The server exposes automation
+# over HTTP on localhost — in a blocker app that is a remote-control bypass of
+# the thing the app exists to enforce. It is deliberately an explicit opt-in
+# feature rather than the crate's documented `#[cfg(debug_assertions)]` gate,
+# which would open the port on every `npm run dev` session. `lib.rs` also
+# hard-fails the build if this is ever combined with a release profile.
+e2e-webdriver = ["dep:tauri-plugin-wdio-webdriver"]
 
 [dependencies]
 tauri = { version = "2.11", features = ["protocol-asset", "tray-icon"] }
@@ -47,6 +57,13 @@ dotenvy = "0.15"
 
 [dev-dependencies]
 env_logger = "0.11"
+
+# Test-only, opt-in via the `e2e-webdriver` feature. Not a dev-dependency:
+# the binary under test is a real `tauri build`, and dev-dependencies do not
+# apply to that. See the feature comment above for why it must never ship.
+[dependencies.tauri-plugin-wdio-webdriver]
+version = "1.3"
+optional = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
