@@ -90,6 +90,15 @@ android {
     buildFeatures {
         buildConfig = true
     }
+    lint {
+        // `lintVitalAnalyze<Flavor>Release` crashes inside Kotlin's FIR resolver
+        // ("`findFirCompiledSymbol` only works on compiled declarations") while
+        // UAST-visiting the project's own .gradle.kts build scripts — an AGP 9.1.1
+        // / Kotlin 2.2.21 bug, not a finding about this code. It aborts every
+        // release build. Nothing in CI runs lint (see testing.md), so this turns a
+        // hard build failure into the status quo rather than dropping a live gate.
+        checkReleaseBuilds = false
+    }
 }
 
 rust {
