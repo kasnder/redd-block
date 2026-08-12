@@ -239,7 +239,10 @@ async function main() {
         throw new Error(`no screen named "${args.screen}". Known: ${screens.map(s => s.name).join(', ')}`);
     }
 
-    await rm(args.out, { recursive: true, force: true });
+    // Only a full run may clear the directory. Clearing it on a single-screen
+    // run would delete the other screenshots — which is exactly what you are
+    // comparing against while iterating on one screen.
+    if (!args.screen) await rm(args.out, { recursive: true, force: true });
     await mkdir(args.out, { recursive: true });
 
     let stopServer = () => {};
