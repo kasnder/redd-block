@@ -1361,7 +1361,7 @@ pub fn path_to_file_url(path: &std::path::Path) -> String {
 }
 
 /// Like `pct_encode` but also preserves a handful of path-safe sub-delims
-/// so the URL stays readable; the space in "ReDD Blocker" becomes %20.
+/// so the URL stays readable; the spaces in "Digital Habits Blocker" become %20.
 fn pct_encode_path_segment(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for &b in s.as_bytes() {
@@ -1598,7 +1598,7 @@ mod tests {
         let p = std::path::Path::new("/Applications/Digital Habits Blocker.app/Contents/Resources/blocked/blocked.html");
         assert_eq!(
             path_to_file_url(p),
-            "file:///Applications/ReDD%20Blocker.app/Contents/Resources/blocked/blocked.html"
+            "file:///Applications/Digital%20Habits%20Blocker.app/Contents/Resources/blocked/blocked.html"
         );
     }
 }
