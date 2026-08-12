@@ -213,6 +213,18 @@ async function openScreen(browser, screen, eulaRevision) {
             'windows', 'mac', 'ios', 'ios-phone', 'android', 'mobile-phone-home', 'handset-device',
         );
         bodyClasses.forEach(c => document.body.classList.add(c));
+
+        // detectPlatform does not only add classes — it hides desktop chrome on
+        // its mac/iOS/Android branches. Having already run its Windows branch on
+        // Linux, it left the Windows title bar and window controls *visible*, so
+        // restamping classes alone puts a Windows close button on an Android
+        // screenshot and squeezes the layout beneath it. Mirror the DOM side
+        // effects of the branch this platform would really have taken.
+        const showsWindowChrome = bodyClasses.includes('windows');
+        const isMobile = bodyClasses.includes('ios') || bodyClasses.includes('android');
+        document.getElementById('window-controls')?.classList.toggle('hidden', !showsWindowChrome);
+        document.querySelector('.title-bar')?.classList.toggle('hidden', isMobile);
+        document.getElementById('helper-settings-section')?.classList.toggle('hidden', isMobile);
     }, { appData, bodyClasses });
 
     if (screen.theme === 'dark') {
