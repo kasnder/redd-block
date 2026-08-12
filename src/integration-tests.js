@@ -84,6 +84,43 @@
         select.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
+    async function completeIntegrationChallenge(testName, {
+        modalId,
+        textId,
+        inputId,
+        wordInputId,
+        currentWordId,
+        confirmId,
+    }) {
+        const input = document.getElementById(inputId);
+        assertOrThrow(input, `${testName}: challenge input missing`);
+
+        if (!input.classList.contains('hidden')) {
+            const target = document.getElementById(textId)?.textContent || '';
+            assertOrThrow(target.length > 0, `${testName}: challenge text missing`);
+            input.value = target;
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            document.getElementById(confirmId)?.click();
+            return;
+        }
+
+        const wordInput = document.getElementById(wordInputId);
+        const currentWord = document.getElementById(currentWordId);
+        assertOrThrow(wordInput && currentWord, `${testName}: word challenge controls missing`);
+        for (let attempt = 0; attempt < 200 && isVisible(modalId); attempt++) {
+            const expected = currentWord.textContent.trim();
+            assertOrThrow(expected.length > 0, `${testName}: current challenge word missing`);
+            wordInput.value = expected;
+            wordInput.dispatchEvent(new Event('input', { bubbles: true }));
+            document.getElementById(confirmId)?.click();
+            await waitForIntegrationCondition(
+                () => !isVisible(modalId) || currentWord.textContent.trim() !== expected,
+                `${testName} challenge step`,
+            );
+        }
+        assertOrThrow(!isVisible(modalId), `${testName}: challenge did not complete`);
+    }
+
     // v3 enforcement read-back: `get_system_diagnostics` → `current_blocking`
     // is the Rust-derived snapshot of what the extension / Automation watcher
     // enforce (flat blocked `domains`, per-block `blocks[]` with mode, and the
@@ -1026,13 +1063,14 @@
             document.getElementById('override-all-btn')?.click();
             await waitForIntegrationCondition(() => isVisible('override-all-modal'), 'I2 stop-all modal');
 
-            const challengeText = document.getElementById('override-all-challenge-text')?.textContent || '';
-            const challengeInput = document.getElementById('override-all-challenge-input');
-            assertOrThrow(challengeText.length > 0, 'I2: stop-all challenge text missing');
-            assertOrThrow(challengeInput, 'I2: stop-all challenge input missing');
-            challengeInput.value = challengeText;
-            challengeInput.dispatchEvent(new Event('input', { bubbles: true }));
-            document.getElementById('confirm-override-all-btn')?.click();
+            await completeIntegrationChallenge('I2', {
+                modalId: 'override-all-modal',
+                textId: 'override-all-challenge-text',
+                inputId: 'override-all-challenge-input',
+                wordInputId: 'override-all-challenge-word-input',
+                currentWordId: 'override-all-current-word',
+                confirmId: 'confirm-override-all-btn',
+            });
 
             await waitForIntegrationCondition(
                 () => !isVisible('override-all-modal') && isVisible('settings-modal')
