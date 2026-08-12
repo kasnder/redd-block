@@ -54,7 +54,8 @@ fn apply_side_effects(app: &AppHandle, browser: &str, method: Method) -> Result<
     #[cfg(target_os = "macos")]
     match (browser, method) {
         ("safari", Method::Extension) => {
-            let path = super::canonical_data_path(app).ok_or_else(|| "no app data path".to_string())?;
+            let path =
+                super::canonical_data_path(app).ok_or_else(|| "no app data path".to_string())?;
             crate::app_group::sync_blocklist_from(&path)
                 .map_err(|e| format!("App Group sync for Safari: {e}"))?;
         }

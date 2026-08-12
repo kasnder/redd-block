@@ -3,11 +3,7 @@ fn main() {
     // bundle.macOS.frameworks lists target/safari-bridge/libsafari_bridge.dylib
     // and build.rs validates it exists — on a clean CI checkout the file is
     // missing until we compile it here first.
-    if std::env::var("CARGO_CFG_TARGET_OS")
-        .ok()
-        .as_deref()
-        == Some("macos")
-    {
+    if std::env::var("CARGO_CFG_TARGET_OS").ok().as_deref() == Some("macos") {
         build_and_link_safari_bridge();
     }
 
@@ -27,7 +23,7 @@ fn main() {
 
 fn watch_icon_assets() {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let mut svg = manifest_dir.join("../assets/reddblock-icon.svg");
+    let svg = manifest_dir.join("../assets/reddblock-icon.svg");
     if svg.exists() {
         println!("cargo:rerun-if-changed={}", svg.display());
     }
@@ -105,7 +101,10 @@ fn build_and_link_safari_bridge() {
     //     Where the build script just put the dylib. Lets `cargo run`
     //     and `cargo test` resolve the dylib at dev time without us
     //     having to copy it next to the binary.
-    println!("cargo:rustc-link-search=native={}", bridge_out_dir.display());
+    println!(
+        "cargo:rustc-link-search=native={}",
+        bridge_out_dir.display()
+    );
     println!("cargo:rustc-link-lib=dylib=safari_bridge");
     println!("cargo:rustc-link-lib=framework=SafariServices");
     println!("cargo:rustc-link-arg=-Wl,-rpath,@executable_path/../Frameworks/");

@@ -117,8 +117,8 @@ pub fn uninstall_self_macos(
     //    rather than hardcoding `/Applications/ReDD Blocker.app` so a
     //    copy launched from elsewhere (rare, but happens during dev)
     //    deletes the right bundle.
-    let bundle = app_bundle_path()
-        .ok_or_else(|| "could not resolve app bundle path".to_string())?;
+    let bundle =
+        app_bundle_path().ok_or_else(|| "could not resolve app bundle path".to_string())?;
 
     // 4. Try the prompt-free path first: NSFileManager.trashItemAtURL:.
     //    This is Apple's recommended way to move files to Trash and
@@ -128,9 +128,7 @@ pub fn uninstall_self_macos(
     //    binary), and we exit ~200 ms later anyway.
     match try_trash_via_nsfilemanager(&bundle) {
         Ok(()) => {
-            log::info!(
-                "uninstall_self_macos: bundle moved to Trash via NSFileManager: {bundle}"
-            );
+            log::info!("uninstall_self_macos: bundle moved to Trash via NSFileManager: {bundle}");
         }
         Err(e) => {
             // Fall back to the detached bash script (mv → osascript →
@@ -142,8 +140,7 @@ pub fn uninstall_self_macos(
             log::warn!(
                 "uninstall_self_macos: NSFileManager.trashItemAtURL failed ({e}); spawning bash fallback for {bundle}"
             );
-            spawn_self_delete(&bundle)
-                .map_err(|e| format!("self-delete spawn failed: {e}"))?;
+            spawn_self_delete(&bundle).map_err(|e| format!("self-delete spawn failed: {e}"))?;
         }
     }
 

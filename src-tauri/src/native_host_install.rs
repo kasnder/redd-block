@@ -44,11 +44,21 @@ pub fn chromium_extension_ids() -> Vec<String> {
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
-pub enum BrowserTarget { Chrome, Brave, Edge, Firefox }
+pub enum BrowserTarget {
+    Chrome,
+    Brave,
+    Edge,
+    Firefox,
+}
 
 impl BrowserTarget {
     fn all() -> [BrowserTarget; 4] {
-        [BrowserTarget::Chrome, BrowserTarget::Brave, BrowserTarget::Edge, BrowserTarget::Firefox]
+        [
+            BrowserTarget::Chrome,
+            BrowserTarget::Brave,
+            BrowserTarget::Edge,
+            BrowserTarget::Firefox,
+        ]
     }
 
     /// Directory where the browser expects to find native-messaging
@@ -58,10 +68,18 @@ impl BrowserTarget {
         #[cfg(target_os = "macos")]
         {
             let p = match self {
-                BrowserTarget::Chrome => "Library/Application Support/Google/Chrome/NativeMessagingHosts",
-                BrowserTarget::Brave => "Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts",
-                BrowserTarget::Edge => "Library/Application Support/Microsoft Edge/NativeMessagingHosts",
-                BrowserTarget::Firefox => "Library/Application Support/Mozilla/NativeMessagingHosts",
+                BrowserTarget::Chrome => {
+                    "Library/Application Support/Google/Chrome/NativeMessagingHosts"
+                }
+                BrowserTarget::Brave => {
+                    "Library/Application Support/BraveSoftware/Brave-Browser/NativeMessagingHosts"
+                }
+                BrowserTarget::Edge => {
+                    "Library/Application Support/Microsoft Edge/NativeMessagingHosts"
+                }
+                BrowserTarget::Firefox => {
+                    "Library/Application Support/Mozilla/NativeMessagingHosts"
+                }
             };
             Some(home.join(p))
         }
@@ -70,10 +88,7 @@ impl BrowserTarget {
             // Windows doesn't use a per-browser directory; the manifest
             // lives wherever we want and is referenced by registry key.
             let _ = self;
-            Some(
-                crate::product_identity::windows_primary_local_product_dir()?
-                    .join("native-host"),
-            )
+            Some(crate::product_identity::windows_primary_local_product_dir()?.join("native-host"))
         }
         #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
         {
@@ -146,9 +161,8 @@ pub fn is_msix_packaged_exe_path(_path: &std::path::Path) -> bool {
 /// Does not copy files — safe to call from hot paths like profile scan.
 #[cfg(target_os = "windows")]
 fn host_binary_path_for_manifest() -> std::io::Result<String> {
-    let source = std::env::current_exe().map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-    })?;
+    let source = std::env::current_exe()
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
     if is_msix_packaged_exe_path(&source) {
         let dest_dir = native_host_stage_dir().ok_or_else(|| {
             std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve LOCALAPPDATA")
@@ -158,12 +172,9 @@ fn host_binary_path_for_manifest() -> std::io::Result<String> {
             if staged_copy_stale(&source, &dest_exe) {
                 ensure_staged_native_host(&source)?;
             }
-            return dest_exe
-                .to_str()
-                .map(String::from)
-                .ok_or_else(|| {
-                    std::io::Error::new(std::io::ErrorKind::Other, "non-utf8 staged path")
-                });
+            return dest_exe.to_str().map(String::from).ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::Other, "non-utf8 staged path")
+            });
         }
         return ensure_staged_native_host(&source);
     }
@@ -187,9 +198,8 @@ fn host_binary_path_for_manifest() -> std::io::Result<String> {
 fn manifest_binary_path() -> std::io::Result<String> {
     #[cfg(target_os = "windows")]
     {
-        let source = std::env::current_exe().map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-        })?;
+        let source = std::env::current_exe()
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
         if is_msix_packaged_exe_path(&source) {
             return ensure_staged_native_host(&source);
         }
@@ -213,10 +223,7 @@ const STAGED_NATIVE_HOST_EXE: &str = "redd-block.exe";
 
 #[cfg(target_os = "windows")]
 fn native_host_stage_dir() -> Option<PathBuf> {
-    Some(
-        crate::product_identity::windows_primary_local_product_dir()?
-            .join("native-host"),
-    )
+    Some(crate::product_identity::windows_primary_local_product_dir()?.join("native-host"))
 }
 
 /// Staged copy used for native messaging (and Store uninstall cleanup).
@@ -257,7 +264,10 @@ fn copy_dir_recursive(src: &std::path::Path, dest: &std::path::Path) -> std::io:
 }
 
 #[cfg(target_os = "windows")]
-fn sync_install_dir_to_stage(source_dir: &std::path::Path, dest_dir: &std::path::Path) -> std::io::Result<()> {
+fn sync_install_dir_to_stage(
+    source_dir: &std::path::Path,
+    dest_dir: &std::path::Path,
+) -> std::io::Result<()> {
     std::fs::create_dir_all(dest_dir)?;
     let mut copied = 0usize;
     for entry in std::fs::read_dir(source_dir)? {
@@ -285,9 +295,9 @@ fn sync_install_dir_to_stage(source_dir: &std::path::Path, dest_dir: &std::path:
 
 #[cfg(target_os = "windows")]
 fn ensure_staged_native_host(source_exe: &std::path::Path) -> std::io::Result<String> {
-    let source_dir = source_exe.parent().ok_or_else(|| {
-        std::io::Error::new(std::io::ErrorKind::Other, "exe has no parent dir")
-    })?;
+    let source_dir = source_exe
+        .parent()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "exe has no parent dir"))?;
     let dest_dir = native_host_stage_dir().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::Other, "cannot resolve LOCALAPPDATA")
     })?;
@@ -353,7 +363,10 @@ pub fn native_host_is_current(browser: BrowserTarget) -> bool {
 }
 
 #[cfg(target_os = "windows")]
-fn windows_registry_points_at_manifest(browser: BrowserTarget, manifest_path: &std::path::Path) -> bool {
+fn windows_registry_points_at_manifest(
+    browser: BrowserTarget,
+    manifest_path: &std::path::Path,
+) -> bool {
     let Some(registered) = read_hkcu_default(&registry_key_path(browser)) else {
         return false;
     };
@@ -431,7 +444,9 @@ pub fn install() -> std::io::Result<()> {
     let manifest_binary = manifest_binary_path()?;
     install_inner(&manifest_binary);
     mark_startup_install_done_for(&binary);
-    log::info!("tcc-probe: native_host_install::install() exited (wrote manifests + dropped marker)");
+    log::info!(
+        "tcc-probe: native_host_install::install() exited (wrote manifests + dropped marker)"
+    );
     Ok(())
 }
 
@@ -463,7 +478,10 @@ pub fn manifest_needs_update(browser: BrowserTarget, binary: &str) -> bool {
 /// at the current binary so startup does not re-touch other apps' data
 /// dirs (and re-trigger TCC) on every launch.
 #[cfg(target_os = "macos")]
-pub fn sync_extension_mode_native_hosts(path: &std::path::Path, force: bool) -> std::io::Result<()> {
+pub fn sync_extension_mode_native_hosts(
+    path: &std::path::Path,
+    force: bool,
+) -> std::io::Result<()> {
     use crate::blocking_method::{self, Method, MAC_CHROMIUM_KEYS};
 
     let binary = current_binary_path().ok_or_else(|| {
@@ -490,7 +508,10 @@ pub fn sync_extension_mode_native_hosts(path: &std::path::Path, force: bool) -> 
 }
 
 #[cfg(not(target_os = "macos"))]
-pub fn sync_extension_mode_native_hosts(_path: &std::path::Path, _force: bool) -> std::io::Result<()> {
+pub fn sync_extension_mode_native_hosts(
+    _path: &std::path::Path,
+    _force: bool,
+) -> std::io::Result<()> {
     Ok(())
 }
 
@@ -551,7 +572,9 @@ pub fn uninstall_native_host_for(browser: BrowserTarget) -> std::io::Result<()> 
 pub fn install_force() -> std::io::Result<()> {
     #[cfg(target_os = "macos")]
     {
-        log::info!("native_host_install::install_force() skipped on macOS — Firefox setup is manual");
+        log::info!(
+            "native_host_install::install_force() skipped on macOS — Firefox setup is manual"
+        );
         return Ok(());
     }
 
@@ -631,24 +654,38 @@ struct StartupInstallMarker {
 /// one extra TCC prompt, but the failure mode for a wrongly-skipped
 /// install is broken native messaging until the user notices.
 fn startup_install_already_done_for(binary: &str) -> bool {
-    let Some(path) = startup_install_marker_path() else { return false };
-    let Ok(raw) = std::fs::read_to_string(&path) else { return false };
-    let Ok(marker) = serde_json::from_str::<StartupInstallMarker>(&raw) else { return false };
+    let Some(path) = startup_install_marker_path() else {
+        return false;
+    };
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(marker) = serde_json::from_str::<StartupInstallMarker>(&raw) else {
+        return false;
+    };
     marker.binary_path == binary
 }
 
 fn mark_startup_install_done_for(binary: &str) {
-    let Some(path) = startup_install_marker_path() else { return };
+    let Some(path) = startup_install_marker_path() else {
+        return;
+    };
     if let Some(parent) = path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let payload = StartupInstallMarker { binary_path: binary.to_string() };
-    let Ok(bytes) = serde_json::to_vec(&payload) else { return };
+    let payload = StartupInstallMarker {
+        binary_path: binary.to_string(),
+    };
+    let Ok(bytes) = serde_json::to_vec(&payload) else {
+        return;
+    };
     let _ = std::fs::write(&path, bytes);
 }
 
 fn clear_startup_install_marker() {
-    let Some(path) = startup_install_marker_path() else { return };
+    let Some(path) = startup_install_marker_path() else {
+        return;
+    };
     let _ = std::fs::remove_file(&path);
 }
 
@@ -738,8 +775,12 @@ fn registry_key_path(browser: BrowserTarget) -> String {
     // All HKCU — no UAC. Chrome/Brave/Edge use the same schema under
     // their vendor key; Firefox uses Mozilla\NativeMessagingHosts.
     match browser {
-        BrowserTarget::Chrome => format!(r"Software\Google\Chrome\NativeMessagingHosts\{HOST_NAME}"),
-        BrowserTarget::Brave => format!(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\{HOST_NAME}"),
+        BrowserTarget::Chrome => {
+            format!(r"Software\Google\Chrome\NativeMessagingHosts\{HOST_NAME}")
+        }
+        BrowserTarget::Brave => {
+            format!(r"Software\BraveSoftware\Brave-Browser\NativeMessagingHosts\{HOST_NAME}")
+        }
         BrowserTarget::Edge => format!(r"Software\Microsoft\Edge\NativeMessagingHosts\{HOST_NAME}"),
         BrowserTarget::Firefox => format!(r"Software\Mozilla\NativeMessagingHosts\{HOST_NAME}"),
     }
@@ -750,8 +791,8 @@ fn read_hkcu_default(path: &str) -> Option<String> {
     use windows::core::PCWSTR;
     use windows::Win32::Foundation::ERROR_SUCCESS;
     use windows::Win32::System::Registry::{
-        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
-        REG_VALUE_TYPE, REG_SZ,
+        RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ, REG_SZ,
+        REG_VALUE_TYPE,
     };
 
     unsafe {
@@ -795,8 +836,7 @@ fn read_hkcu_default(path: &str) -> Option<String> {
             return None;
         }
         let wide_len = (buf_size as usize / 2).saturating_sub(1);
-        let wide =
-            std::slice::from_raw_parts(buf.as_ptr() as *const u16, wide_len);
+        let wide = std::slice::from_raw_parts(buf.as_ptr() as *const u16, wide_len);
         String::from_utf16(wide).ok()
     }
 }
@@ -832,10 +872,8 @@ fn write_hkcu_default(path: &str, value: &str) -> std::io::Result<()> {
         }
         let data_wide = to_wide(value);
         let bytes_len = (data_wide.len() * 2) as u32;
-        let data_bytes = std::slice::from_raw_parts(
-            data_wide.as_ptr() as *const u8,
-            bytes_len as usize,
-        );
+        let data_bytes =
+            std::slice::from_raw_parts(data_wide.as_ptr() as *const u8, bytes_len as usize);
         let _ = w!("");
         let status = RegSetValueExW(hkey, PCWSTR::null(), Some(0), REG_SZ, Some(data_bytes));
         let _ = RegCloseKey(hkey);
@@ -871,7 +909,10 @@ fn delete_hkcu_key(path: &str) -> std::io::Result<()> {
 #[cfg(target_os = "windows")]
 fn to_wide(s: &str) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
-    std::ffi::OsStr::new(s).encode_wide().chain(std::iter::once(0)).collect()
+    std::ffi::OsStr::new(s)
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect()
 }
 
 /// Tauri command wrappers.

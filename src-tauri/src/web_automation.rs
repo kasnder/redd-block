@@ -177,9 +177,9 @@ pub fn query_automation_permission(browser: SupportedBrowser) -> PermState {
     // osascript serialization; holding it during AEDeterminePermission…
     // (especially from UI polling every ~2s) starved the blocking tick.
     match tcc::permission_status(browser.bundle_id()) {
-        0 => PermState::Granted,                 // noErr
-        -1743 => PermState::Denied,              // errAEEventNotPermitted
-        _ => PermState::Unknown,                 // -1744 not-decided, -600 not-running, errors
+        0 => PermState::Granted,    // noErr
+        -1743 => PermState::Denied, // errAEEventNotPermitted
+        _ => PermState::Unknown,    // -1744 not-decided, -600 not-running, errors
     }
 }
 
@@ -426,9 +426,11 @@ fn tick(
     } else {
         None
     };
-    let frontmost_browser = frontmost_bid
-        .as_deref()
-        .and_then(|bid| SupportedBrowser::all().into_iter().find(|b| b.bundle_id() == bid));
+    let frontmost_browser = frontmost_bid.as_deref().and_then(|bid| {
+        SupportedBrowser::all()
+            .into_iter()
+            .find(|b| b.bundle_id() == bid)
+    });
     let full_pass = restore_pass
         || !events
         || frontmost_bid.is_none()
@@ -535,7 +537,10 @@ fn tick(
             Err(AutomationError::Other(msg)) => {
                 // Transient (browser quitting mid-tick, AppleScript
                 // hiccup) — don't flip the permission state on these.
-                log::debug!("web_automation: read tabs for {} failed: {msg}", browser.label());
+                log::debug!(
+                    "web_automation: read tabs for {} failed: {msg}",
+                    browser.label()
+                );
             }
         }
     }
@@ -545,7 +550,8 @@ fn tick(
     // no automation browsers to scan). Denial-backoff skips must not
     // clear the latch — retry next tick. Matches the extension's
     // restoreUnblockedTabs retry-until-clean behavior.
-    if restore_pass && full_pass && restore_actions == 0 && (scanned > 0 || no_automation_browsers) {
+    if restore_pass && full_pass && restore_actions == 0 && (scanned > 0 || no_automation_browsers)
+    {
         *needs_restore = false;
     }
 }
@@ -638,7 +644,10 @@ fn set_perm_inner(
     }
     match transitioned_to {
         Some(PermState::Denied) => {
-            log::info!("web_automation: {} Automation permission denied", browser.label());
+            log::info!(
+                "web_automation: {} Automation permission denied",
+                browser.label()
+            );
             let _ = app.emit(
                 "web-automation://permission-needed",
                 PermissionInfo {
@@ -650,7 +659,10 @@ fn set_perm_inner(
             );
         }
         Some(PermState::Granted) => {
-            log::info!("web_automation: {} Automation permission granted", browser.label());
+            log::info!(
+                "web_automation: {} Automation permission granted",
+                browser.label()
+            );
             let _ = app.emit(
                 "web-automation://permission-resolved",
                 PermissionInfo {
@@ -671,11 +683,7 @@ pub fn running_supported_browsers() -> Vec<SupportedBrowser> {
     // Name matching only — skip the default per-process CPU/memory/disk/
     // exe/cmdline refresh, which is system-wide work this 1 s tick (and
     // the UI's permission polling) would otherwise repeat forever.
-    sys.refresh_processes_specifics(
-        ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing(),
-    );
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
     let mut out = Vec::new();
     for browser in SupportedBrowser::all() {
         let needle = browser.process_name().to_ascii_lowercase();
@@ -846,7 +854,8 @@ fn run_osascript(script: &str) -> Result<String, AutomationError> {
                 if status.success() {
                     return Ok(stdout);
                 }
-                if stderr.contains("-1743") || stderr.contains("Not authorized to send Apple events")
+                if stderr.contains("-1743")
+                    || stderr.contains("Not authorized to send Apple events")
                 {
                     return Err(AutomationError::NotAuthorized);
                 }
@@ -897,7 +906,10 @@ end if"#,
 /// the app.
 pub fn probe_automation_access_launching(browser: SupportedBrowser) -> PermState {
     let app_name = browser.applescript_name();
-    let script = format!(r#"tell application "{app}" to count windows"#, app = app_name);
+    let script = format!(
+        r#"tell application "{app}" to count windows"#,
+        app = app_name
+    );
     match run_osascript(&script) {
         Ok(_) => PermState::Granted,
         Err(AutomationError::NotAuthorized) => PermState::Denied,
@@ -1058,9 +1070,10 @@ pub fn trigger_permission_prompt(browser: SupportedBrowser) -> Result<(), String
     );
     let result = match run_osascript(&script) {
         Ok(_) => Ok(()),
-        Err(AutomationError::NotAuthorized) => {
-            Err(format!("Automation permission for {} not granted", browser.label()))
-        }
+        Err(AutomationError::NotAuthorized) => Err(format!(
+            "Automation permission for {} not granted",
+            browser.label()
+        )),
         Err(AutomationError::Other(msg)) => Err(msg),
     };
     // The Apple Event launches/activates the browser; bring System
@@ -1164,9 +1177,7 @@ fn block_info_for_url<'a>(url: &str, blocks: &'a [BlockInfo]) -> Option<&'a Bloc
     // stays deterministic when two allowlists started together.
     blocks
         .iter()
-        .filter(|b| {
-            native_host::blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty()
-        })
+        .filter(|b| native_host::blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty())
         .filter(|b| !b.domains.iter().any(|d| domain_matches(&host, d)))
         .min_by_key(|b| {
             (
@@ -1217,16 +1228,19 @@ pub fn url_is_blocked(url: &str, blocks: &[BlockInfo]) -> bool {
     }
 
     // Blocklist blocks: URL matches → blocked.
-    for b in blocks.iter().filter(|b| !native_host::blocklist_mode_is_allowlist(&b.mode)) {
+    for b in blocks
+        .iter()
+        .filter(|b| !native_host::blocklist_mode_is_allowlist(&b.mode))
+    {
         if b.domains.iter().any(|d| domain_matches(&host, d)) {
             return true;
         }
     }
 
     // Allowlist blocks: any active allowlist with domains → block unless allowed.
-    let allowlist_active = blocks.iter().any(|b| {
-        native_host::blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty()
-    });
+    let allowlist_active = blocks
+        .iter()
+        .any(|b| native_host::blocklist_mode_is_allowlist(&b.mode) && !b.domains.is_empty());
     if allowlist_active {
         let allowed = blocks.iter().any(|b| {
             native_host::blocklist_mode_is_allowlist(&b.mode)
@@ -1267,7 +1281,10 @@ fn hostname_of(url: &str) -> Option<String> {
         .find(['/', '?', '#'])
         .unwrap_or(after_scheme.len());
     let authority = &after_scheme[..authority_end];
-    let host_port = authority.rsplit_once('@').map(|(_, h)| h).unwrap_or(authority);
+    let host_port = authority
+        .rsplit_once('@')
+        .map(|(_, h)| h)
+        .unwrap_or(authority);
     let host = if let Some(rest) = host_port.strip_prefix('[') {
         // IPv6 literal: keep everything up to the closing bracket.
         rest.split_once(']').map(|(h, _)| h).unwrap_or(rest)
@@ -1366,7 +1383,21 @@ fn pct_encode_path_segment(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for &b in s.as_bytes() {
         let keep = b.is_ascii_alphanumeric()
-            || matches!(b, b'-' | b'_' | b'.' | b'~' | b'!' | b'$' | b'&' | b'(' | b')' | b'+' | b',' | b'=' | b'@');
+            || matches!(
+                b,
+                b'-' | b'_'
+                    | b'.'
+                    | b'~'
+                    | b'!'
+                    | b'$'
+                    | b'&'
+                    | b'('
+                    | b')'
+                    | b'+'
+                    | b','
+                    | b'='
+                    | b'@'
+            );
         if keep {
             out.push(b as char);
         } else {
@@ -1399,8 +1430,14 @@ mod tests {
 
     #[test]
     fn hostname_extraction() {
-        assert_eq!(hostname_of("https://www.reddit.com/r/x").as_deref(), Some("www.reddit.com"));
-        assert_eq!(hostname_of("http://user:pass@Example.COM:8080/p").as_deref(), Some("example.com"));
+        assert_eq!(
+            hostname_of("https://www.reddit.com/r/x").as_deref(),
+            Some("www.reddit.com")
+        );
+        assert_eq!(
+            hostname_of("http://user:pass@Example.COM:8080/p").as_deref(),
+            Some("example.com")
+        );
         assert_eq!(hostname_of("https://x.com").as_deref(), Some("x.com"));
         assert_eq!(hostname_of("file:///Users/me/x.html"), None);
     }
@@ -1432,7 +1469,10 @@ mod tests {
             999,
         )];
         assert!(!url_is_blocked("https://ulriklyngs.com/blog", &blocks));
-        assert!(!url_is_blocked("https://www.youtube.com/watch?v=1", &blocks));
+        assert!(!url_is_blocked(
+            "https://www.youtube.com/watch?v=1",
+            &blocks
+        ));
         assert!(url_is_blocked("https://twitter.com", &blocks));
         assert!(!url_is_blocked("http://localhost:3000", &blocks));
     }
@@ -1465,7 +1505,13 @@ mod tests {
     fn allowlist_union_allows_hosts_not_on_blocklist() {
         let blocks = vec![
             block("blocked", "blocklist", &["reddit.com"], 50, 400),
-            block("allowed", "allowlist", &["github.com", "stackoverflow.com"], 100, 500),
+            block(
+                "allowed",
+                "allowlist",
+                &["github.com", "stackoverflow.com"],
+                100,
+                500,
+            ),
         ];
         assert!(!url_is_blocked("https://github.com/redd", &blocks));
         assert!(!url_is_blocked("https://stackoverflow.com/q/1", &blocks));
@@ -1476,7 +1522,13 @@ mod tests {
     #[test]
     fn blocklist_precedence_overrides_allowlist_overlap() {
         let blocks = vec![
-            block("blocked", "blocklist", &["github.com", "reddit.com"], 50, 400),
+            block(
+                "blocked",
+                "blocklist",
+                &["github.com", "reddit.com"],
+                50,
+                400,
+            ),
             block("allowed", "allowlist", &["github.com"], 100, 500),
         ];
         assert!(url_is_blocked("https://github.com/redd", &blocks));
@@ -1510,12 +1562,16 @@ mod tests {
         let original = "https://www.reddit.com/";
         let built = build_blocked_url(base, original, &[]);
         assert!(is_block_page_url(&built, base));
-        assert_eq!(original_url_from_block_page(&built).as_deref(), Some(original));
+        assert_eq!(
+            original_url_from_block_page(&built).as_deref(),
+            Some(original)
+        );
     }
 
     #[test]
     fn plan_actions_restores_parked_tab_when_original_no_longer_blocked() {
-        let base = "file:///Applications/ReDD%20Blocker.app/Contents/Resources/blocked/blocked.html";
+        let base =
+            "file:///Applications/ReDD%20Blocker.app/Contents/Resources/blocked/blocked.html";
         let original = "https://www.youtube.com/watch?v=1";
         let parked = build_blocked_url(base, original, &[]);
         let tabs = vec![Tab {
@@ -1542,8 +1598,14 @@ mod tests {
     #[test]
     fn allowlist_block_metadata_prefers_earliest_started_enforcement() {
         let blocks = vec![
-            BlockInfo { source: "activeBlock", ..block("one-off", "allowlist", &["apple.com"], 11_00, 2_000) },
-            BlockInfo { source: "schedule", ..block("schedule", "allowlist", &["google.com"], 10_00, 1_500) },
+            BlockInfo {
+                source: "activeBlock",
+                ..block("one-off", "allowlist", &["apple.com"], 11_00, 2_000)
+            },
+            BlockInfo {
+                source: "schedule",
+                ..block("schedule", "allowlist", &["google.com"], 10_00, 1_500)
+            },
         ];
 
         let info = block_info_for_url("https://example.com", &blocks).expect("allowlist metadata");
@@ -1595,7 +1657,9 @@ mod tests {
 
     #[test]
     fn file_url_encodes_spaces() {
-        let p = std::path::Path::new("/Applications/Digital Habits Blocker.app/Contents/Resources/blocked/blocked.html");
+        let p = std::path::Path::new(
+            "/Applications/Digital Habits Blocker.app/Contents/Resources/blocked/blocked.html",
+        );
         assert_eq!(
             path_to_file_url(p),
             "file:///Applications/Digital%20Habits%20Blocker.app/Contents/Resources/blocked/blocked.html"

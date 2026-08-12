@@ -27,13 +27,12 @@ pub(crate) async fn block_websites<R: Runtime>(
     app: AppHandle<R>,
     domains: Vec<String>,
 ) -> Result<BlockWebsitesResponse> {
-    app.screentime().block_websites(BlockWebsitesRequest { domains })
+    app.screentime()
+        .block_websites(BlockWebsitesRequest { domains })
 }
 
 #[command]
-pub(crate) async fn unblock_websites<R: Runtime>(
-    app: AppHandle<R>,
-) -> Result<SuccessResponse> {
+pub(crate) async fn unblock_websites<R: Runtime>(app: AppHandle<R>) -> Result<SuccessResponse> {
     app.screentime().unblock_websites()
 }
 
@@ -48,9 +47,7 @@ pub(crate) async fn block_apps<R: Runtime>(
 }
 
 #[command]
-pub(crate) async fn unblock_apps<R: Runtime>(
-    app: AppHandle<R>,
-) -> Result<SuccessResponse> {
+pub(crate) async fn unblock_apps<R: Runtime>(app: AppHandle<R>) -> Result<SuccessResponse> {
     app.screentime().unblock_apps()
 }
 
@@ -106,9 +103,9 @@ pub(crate) async fn set_schedules<R: Runtime>(
         "[ReDD Schedule] Rust command set_schedules called with {} entries",
         schedules.len()
     );
-    let result = app.screentime().set_schedules(SetSchedulesRequest {
-        schedules,
-    });
+    let result = app
+        .screentime()
+        .set_schedules(SetSchedulesRequest { schedules });
     match &result {
         Ok(response) => eprintln!(
             "[ReDD Schedule] Rust command set_schedules returned success={}",
@@ -127,7 +124,8 @@ pub(crate) async fn unschedule_block<R: Runtime>(
     app: AppHandle<R>,
     id: Option<String>,
 ) -> Result<SuccessResponse> {
-    app.screentime().unschedule_block(UnscheduleBlockRequest { id })
+    app.screentime()
+        .unschedule_block(UnscheduleBlockRequest { id })
 }
 
 // --- One-off DeviceActivity (pause resume / block end) ---
@@ -138,10 +136,11 @@ pub(crate) async fn register_one_off_activity<R: Runtime>(
     activity_name: String,
     start_timestamp_ms: f64,
 ) -> Result<SuccessResponse> {
-    app.screentime().register_one_off_activity(RegisterOneOffActivityRequest {
-        activity_name,
-        start_timestamp_ms,
-    })
+    app.screentime()
+        .register_one_off_activity(RegisterOneOffActivityRequest {
+            activity_name,
+            start_timestamp_ms,
+        })
 }
 
 #[command]
@@ -153,13 +152,14 @@ pub(crate) async fn set_resume_payload<R: Runtime>(
     category_token_data: Option<Vec<String>>,
     mode: Option<String>,
 ) -> Result<SuccessResponse> {
-    app.screentime().set_resume_payload(SetResumePayloadRequest {
-        block_id,
-        domains,
-        app_token_data,
-        category_token_data,
-        mode,
-    })
+    app.screentime()
+        .set_resume_payload(SetResumePayloadRequest {
+            block_id,
+            domains,
+            app_token_data,
+            category_token_data,
+            mode,
+        })
 }
 
 #[command]
@@ -171,13 +171,14 @@ pub(crate) async fn set_block_end_state<R: Runtime>(
     category_token_data: Option<Vec<String>>,
     mode: Option<String>,
 ) -> Result<SuccessResponse> {
-    app.screentime().set_block_end_state(SetBlockEndStateRequest {
-        block_id,
-        domains,
-        app_token_data,
-        category_token_data,
-        mode,
-    })
+    app.screentime()
+        .set_block_end_state(SetBlockEndStateRequest {
+            block_id,
+            domains,
+            app_token_data,
+            category_token_data,
+            mode,
+        })
 }
 
 // --- Activity Picker ---
@@ -189,9 +190,10 @@ pub(crate) async fn show_activity_picker<R: Runtime>(
     initial_category_token_data: Option<Vec<String>>,
     mode: Option<String>,
 ) -> Result<ActivityPickerResponse> {
-    app.screentime().show_activity_picker(ActivityPickerRequest {
-        initial_application_token_data,
-        initial_category_token_data,
-        mode,
-    })
+    app.screentime()
+        .show_activity_picker(ActivityPickerRequest {
+            initial_application_token_data,
+            initial_category_token_data,
+            mode,
+        })
 }

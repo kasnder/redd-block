@@ -206,8 +206,7 @@ fn strip_managed_sections(content: &str) -> String {
 /// the daemon kept) when it's sane; otherwise awk-strip in place.
 /// Returns the cleaned text and whether we used the legacy backup.
 fn compute_cleaned_hosts() -> Result<(String, bool), String> {
-    let live = std::fs::read_to_string(hosts_path())
-        .map_err(|e| format!("read hosts: {e}"))?;
+    let live = std::fs::read_to_string(hosts_path()).map_err(|e| format!("read hosts: {e}"))?;
     if let Ok(legacy) = std::fs::read_to_string(legacy_hosts_backup_path()) {
         // legacy backup is "valid" if it's non-empty and contains a
         // localhost line — same gate as the helper daemon used.
@@ -414,12 +413,19 @@ pub fn run_elevated_migration(app_data_dir: Option<&Path>) -> ElevatedOutcome {
         Ok(v) => v,
         Err(e) => {
             log::warn!("migration aborted before prompt: {e}");
-            return ElevatedOutcome { success: false, user_cancelled: false };
+            return ElevatedOutcome {
+                success: false,
+                user_cancelled: false,
+            };
         }
     };
     log::info!(
         "migration: prepared cleaned hosts content (via {})",
-        if used_legacy { "legacy backup" } else { "in-place strip" }
+        if used_legacy {
+            "legacy backup"
+        } else {
+            "in-place strip"
+        }
     );
 
     // Best-effort: also write the snapshot ourselves from userspace.
@@ -452,21 +458,30 @@ pub fn run_elevated_migration(app_data_dir: Option<&Path>) -> ElevatedOutcome {
         Ok(p) => p,
         Err(e) => {
             log::warn!("migration aborted: failed to stage cleaned hosts: {e}");
-            return ElevatedOutcome { success: false, user_cancelled: false };
+            return ElevatedOutcome {
+                success: false,
+                user_cancelled: false,
+            };
         }
     };
 
     let status_path = std::env::temp_dir().join(format!("redd-migration-status.{timestamp_nanos}"));
     // Best-effort cleanup of any stale prior status file.
     let _ = std::fs::remove_file(&status_path);
-    log::info!("migration: status marker target = {}", status_path.display());
+    log::info!(
+        "migration: status marker target = {}",
+        status_path.display()
+    );
 
     #[cfg(target_os = "macos")]
     let outcome = run_elevated_macos(&staged, &status_path);
     #[cfg(target_os = "windows")]
     let outcome = run_elevated_windows(&staged, &status_path);
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let outcome = ElevatedOutcome { success: true, user_cancelled: false };
+    let outcome = ElevatedOutcome {
+        success: true,
+        user_cancelled: false,
+    };
 
     let _ = std::fs::remove_file(&staged);
 
@@ -493,7 +508,10 @@ pub fn run_elevated_migration(app_data_dir: Option<&Path>) -> ElevatedOutcome {
     }
     let _ = std::fs::remove_file(&status_path);
     if !marker_ok {
-        return ElevatedOutcome { success: false, ..outcome };
+        return ElevatedOutcome {
+            success: false,
+            ..outcome
+        };
     }
 
     outcome
@@ -551,7 +569,10 @@ fn run_elevated_macos(staged: &Path, status_path: &Path) -> ElevatedOutcome {
     // up front to be defensive.
     if staged_str.contains('\'') || status_str.contains('\'') {
         log::warn!("migration aborted: unexpected quote in staged paths");
-        return ElevatedOutcome { success: false, user_cancelled: false };
+        return ElevatedOutcome {
+            success: false,
+            user_cancelled: false,
+        };
     }
 
     // Script body lives in a sibling .sh file so it can be edited
@@ -574,10 +595,16 @@ fn run_elevated_macos(staged: &Path, status_path: &Path) -> ElevatedOutcome {
         escaped
     );
 
-    match Command::new("/usr/bin/osascript").args(["-e", &script]).output() {
+    match Command::new("/usr/bin/osascript")
+        .args(["-e", &script])
+        .output()
+    {
         Ok(out) => {
             if out.status.success() {
-                ElevatedOutcome { success: true, user_cancelled: false }
+                ElevatedOutcome {
+                    success: true,
+                    user_cancelled: false,
+                }
             } else {
                 let stderr = String::from_utf8_lossy(&out.stderr);
                 // osascript returns -128 / "User cancelled" when the
@@ -586,12 +613,18 @@ fn run_elevated_macos(staged: &Path, status_path: &Path) -> ElevatedOutcome {
                 if !cancelled {
                     log::warn!("elevated migration script failed: {}", stderr.trim());
                 }
-                ElevatedOutcome { success: false, user_cancelled: cancelled }
+                ElevatedOutcome {
+                    success: false,
+                    user_cancelled: cancelled,
+                }
             }
         }
         Err(e) => {
             log::warn!("failed to launch osascript: {e}");
-            ElevatedOutcome { success: false, user_cancelled: false }
+            ElevatedOutcome {
+                success: false,
+                user_cancelled: false,
+            }
         }
     }
 }
@@ -633,7 +666,10 @@ fn run_elevated_windows(staged: &Path, status_path: &Path) -> ElevatedOutcome {
     let inner_path = std::env::temp_dir().join(format!("redd-migration.{timestamp}.ps1"));
     if let Err(e) = std::fs::write(&inner_path, inner_script) {
         log::warn!("failed to stage windows migration script: {e}");
-        return ElevatedOutcome { success: false, user_cancelled: false };
+        return ElevatedOutcome {
+            success: false,
+            user_cancelled: false,
+        };
     }
 
     // Outer launcher: spawn elevated PowerShell to run the inner
@@ -681,11 +717,17 @@ try {{
                     String::from_utf8_lossy(&out.stderr).trim()
                 );
             }
-            ElevatedOutcome { success, user_cancelled: cancelled }
+            ElevatedOutcome {
+                success,
+                user_cancelled: cancelled,
+            }
         }
         Err(e) => {
             log::warn!("failed to launch powershell: {e}");
-            ElevatedOutcome { success: false, user_cancelled: false }
+            ElevatedOutcome {
+                success: false,
+                user_cancelled: false,
+            }
         }
     };
 
@@ -775,7 +817,9 @@ mod tests {
     #[test]
     fn detects_markers() {
         assert!(hosts_has_markers("foo\n# ReDD Block Start\nbar\n"));
-        assert!(hosts_has_markers("# === BEGIN REDD BLOCK (reddfocus.org) ===\n"));
+        assert!(hosts_has_markers(
+            "# === BEGIN REDD BLOCK (reddfocus.org) ===\n"
+        ));
         assert!(!hosts_has_markers("127.0.0.1 localhost\n"));
     }
 }

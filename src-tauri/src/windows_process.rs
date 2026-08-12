@@ -35,8 +35,8 @@ pub fn set_native_host_process_directory() {
         .chain(std::iter::once(0))
         .collect();
     unsafe {
-        let _ = windows::Win32::System::LibraryLoader::SetDllDirectoryW(
-            windows::core::PCWSTR(wide.as_ptr()),
-        );
+        let _ = windows::Win32::System::LibraryLoader::SetDllDirectoryW(windows::core::PCWSTR(
+            wide.as_ptr(),
+        ));
     }
 }
