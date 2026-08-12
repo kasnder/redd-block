@@ -64,15 +64,22 @@ Two things to know before adding rules or chasing warnings:
 
 ### Testing
 
-There is no CLI test runner. Tests run **inside the app** in dev mode via the dev console (details in [testing.md](testing.md)):
+Tier 1 and Tier 2 have CLI runners for CI and remain runnable **inside the app**
+in dev mode via the dev console (details in [testing.md](testing.md)):
 
-- **Tier 1 (logic, instant, no system changes):** start `npm run dev`, then `Cmd+Shift+T` (macOS) / `Ctrl+Shift+T` (Windows), or `runBlockingTests()` in the console. Cases live in `src/blocking-tests.js` (+ helpers in `src/test-utils.js`).
-- **Tier 2 (integration, real command paths, safe `.invalid` domains):** `runIntegrationTests('core')` or `runIntegrationTests('full')` in the console. Cases in `src/integration-tests.js`. Note: Tier 2 asserts the Rust-derived `current_blocking` snapshot — it does **not** prove a browser actually redirects.
+- **Tier 1 (logic, instant, no system changes):** run `npm run test:tier1` headlessly, or start `npm run dev` and use `Cmd+Shift+T` (macOS) / `Ctrl+Shift+T` (Windows) or `runBlockingTests()` in the console. Cases live in `src/blocking-tests.js` (+ helpers in `src/test-utils.js`).
+- **Tier 2 (integration, real command paths, safe `.invalid` domains):** run `npm run build:e2e-app` then `npm run test:tier2` for the full suite over WebDriver, or use `runIntegrationTests('core')` / `runIntegrationTests('full')` in the dev console. Cases live in `src/integration-tests.js`. Note: Tier 2 asserts the Rust-derived `current_blocking` snapshot — it does **not** prove a browser actually redirects.
 - **Website-enforcement correctness (Automation redirects, extension blocking) is validated manually** — see `scripts/manual-test-checklist.md`.
 - **Android browser URL parsing** has JVM unit tests: `cd src-tauri/gen/android && ./gradlew :tauri-plugin-android-blocker:testDebugUnitTest`. Fixtures in `BrowserUrlParserTest` are raw URL-bar strings dumped from real devices — add one whenever you touch the supported-browser list (details in [testing.md](testing.md)).
 - **Rust backend** has `#[cfg(test)]` unit tests: `cd src-tauri && cargo test --lib` (use `--lib` — bare `cargo test` still tries to build a stale `test_watcher` example).
 
-CI (PRs to `main`) gates everything except Tier 2: `ci.yml` builds the bundle and runs Tier 1 headlessly (`npm run test:tier1`), `rust-ci.yml` runs `cargo test --lib` on macOS when `src-tauri/**` changes, and `android-ci.yml` builds a debug APK and runs the Kotlin unit tests. See the "What runs in CI" table in [testing.md](testing.md).
+CI gates every automated suite on relevant PRs and reruns them on relevant
+pushes to `main`: `ci.yml` builds the bundle and runs Tier 1 headlessly,
+`rust-ci.yml` runs `cargo test --lib` on macOS, `android-ci.yml` builds a debug
+APK and runs the Kotlin unit tests, and `e2e-ci.yml` runs Tier 2 over WebDriver
+on macOS and Windows. Releases additionally run lint + Tier 1 before any build
+and `cargo test --lib` before macOS signing. See the "What runs in CI" table in
+[testing.md](testing.md) for triggers and path filters.
 
 ### Write the failing test first
 
@@ -100,8 +107,9 @@ Put the test where CI will actually run it, matching the layer you changed:
 | Android URL-bar parsing / a new browser | `BrowserUrlParserTest` fixtures |
 | Command paths, persistence round-trips | `src/integration-tests.js` (Tier 2) |
 
-Prefer the highest row that can hold the case: Tier 1 and the Rust and Kotlin
-suites run on every relevant PR, Tier 2 does not. Reaching for
+Prefer the highest row that can hold the case. All four automated layers run in
+CI when their workflow path filters match; Tier 2 is the slowest and only runs
+for its test/harness paths. Reaching for
 `scripts/manual-test-checklist.md` is correct only when no automated layer can
 express the case — a real browser redirecting, a real app being quit — and not
 because writing the automated test is awkward.
