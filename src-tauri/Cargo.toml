@@ -24,6 +24,16 @@ incremental = false
 name = "redd_block_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# The `objc` crate's `msg_send!` macro still expands to a
+# `#[cfg(feature = "cargo-clippy")]` guard, which this crate does not (and
+# should not) declare. Without this, every macOS FFI call site emits an
+# `unexpected_cfgs` warning — 64 of them — which would drown a `-D warnings`
+# clippy gate in noise from a dependency we don't control.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(feature, values("cargo-clippy"))',
+] }
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -37,7 +47,7 @@ desktop = ["tauri/tray-icon"]
 # over HTTP on localhost — in a blocker app that is a remote-control bypass of
 # the thing the app exists to enforce. It is deliberately an explicit opt-in
 # feature rather than the crate's documented `#[cfg(debug_assertions)]` gate,
-# which would open the port on every `npm run dev` session. `lib.rs` also
+# which would open the port on every `pnpm dev` session. `lib.rs` also
 # hard-fails the build if this is ever combined with a release profile.
 e2e-webdriver = ["dep:tauri-plugin-wdio-webdriver"]
 # Bundled, signed local system-test app. This is deliberately an alias for the

@@ -78,7 +78,7 @@ pub struct ProfileStatus {
 }
 
 /// Result for a browser vendor across all profiles.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct BrowserStatus {
     /// True when the browser process is currently running. Used by
     /// the enforcer's compliance check (no nag for browsers the user
@@ -112,20 +112,6 @@ pub struct BrowserStatus {
     /// current ReDD Blocker binary (extension blocking bridge).
     #[serde(rename = "nativeHostReady", default)]
     pub native_host_ready: bool,
-}
-
-impl Default for BrowserStatus {
-    fn default() -> Self {
-        Self {
-            present: false,
-            installed: false,
-            profiles: vec![],
-            error: None,
-            duplicate_extensions: None,
-            needs_fda_access: false,
-            native_host_ready: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -237,6 +223,7 @@ pub fn scan_for_diagnostics() -> ScanResult {
     }
 }
 
+#[allow(dead_code)] // used on macOS; dead on Windows
 fn empty_scan_result() -> ScanResult {
     ScanResult {
         firefox: empty("firefox"),
@@ -672,6 +659,7 @@ impl ChromiumBrowser {
     }
 
     /// Install + running flags only — no profile-dir reads (macOS onboarding).
+    #[allow(dead_code)] // used on macOS; dead on Windows
     fn presence_only(self) -> BrowserStatus {
         BrowserStatus {
             present: self.app_present(),
@@ -1018,7 +1006,7 @@ fn scan_safari_extensions_plist_at(path: &Path) -> Result<SafariPlistStatus, Saf
         "tcc-probe: about to read (Safari WebExtensions plist) {}",
         path.display()
     );
-    let bytes = std::fs::read(path).map_err(|e| safari_plist_io_error(e))?;
+    let bytes = std::fs::read(path).map_err(safari_plist_io_error)?;
     parse_safari_extensions_plist(&bytes, &safari_extension_keys())
 }
 
@@ -1092,7 +1080,7 @@ fn parse_safari_duplicate_extensions_at(
         "tcc-probe: about to read (Safari duplicate scan) {}",
         path.display()
     );
-    let bytes = std::fs::read(path).map_err(|e| safari_plist_io_error(e))?;
+    let bytes = std::fs::read(path).map_err(safari_plist_io_error)?;
     parse_safari_duplicate_extensions(bytes.as_slice())
 }
 
@@ -1118,8 +1106,8 @@ fn safari_extensions_both_enabled_conflict(
     embedded: bool,
     mut bundled_present: bool,
     mut bundled_enabled: bool,
-    mut standalone_present: bool,
-    mut standalone_enabled: bool,
+    standalone_present: bool,
+    standalone_enabled: bool,
 ) -> bool {
     if embedded {
         bundled_present = true;
@@ -1179,19 +1167,6 @@ fn scan_safari_duplicate_extensions(
         Some(SafariDuplicateExtensions { detected: true })
     } else {
         None
-    }
-}
-
-#[cfg(target_os = "macos")]
-fn firefox_presence_only() -> BrowserStatus {
-    BrowserStatus {
-        present: firefox_app_present(),
-        installed: firefox_app_installed(),
-        profiles: vec![],
-        error: None,
-        duplicate_extensions: None,
-        needs_fda_access: false,
-        native_host_ready: false,
     }
 }
 
@@ -1455,11 +1430,7 @@ pub fn compliant(result: &ScanResult) -> bool {
         });
     let safari_ok = !result.safari.present
         || (!result.safari.profiles.is_empty()
-            && result
-                .safari
-                .profiles
-                .iter()
-                .all(|p| safari_profile_passes(p)));
+            && result.safari.profiles.iter().all(safari_profile_passes));
     chromium_ok && firefox_ok && safari_ok
 }
 
@@ -1649,7 +1620,7 @@ mod tests {
             false,
             false,
         )));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(true));
         assert_eq!(status.website_access_all, Some(true));
@@ -1665,7 +1636,7 @@ mod tests {
             false,
             false,
         )));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(false));
         assert_eq!(status.website_access_all, Some(true));
@@ -1681,7 +1652,7 @@ mod tests {
             false,
             false,
         )));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(false));
         assert_eq!(status.private_browsing, Some(true));
         assert_eq!(status.website_access_all, Some(true));
@@ -1697,7 +1668,7 @@ mod tests {
             false,
             false,
         )));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(true));
         assert_eq!(status.website_access_all, Some(false));
@@ -1713,7 +1684,7 @@ mod tests {
             true,
             false,
         )));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(true));
         assert_eq!(status.website_access_all, Some(false));
@@ -1741,7 +1712,7 @@ mod tests {
             ),
         );
         let status = parse(&plist(&entries));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(false));
         assert_eq!(status.website_access_all, Some(false));
@@ -1823,7 +1794,7 @@ mod tests {
             ),
         );
         let status = parse(&plist(&entries));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(true));
         assert_eq!(status.website_access_all, Some(false));

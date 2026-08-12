@@ -65,7 +65,7 @@ if (-not $CargoTargetDir) {
 $tauriExe = Join-Path $CargoTargetDir "$target\release\redd-block.exe"
 if (-not (Test-Path $tauriExe)) {
     Write-Host "ERROR: Tauri exe not found at $tauriExe" -ForegroundColor Red
-    Write-Host "Run 'npm run build:win-store' first." -ForegroundColor Yellow
+    Write-Host "Run 'pnpm build:win-store' first." -ForegroundColor Yellow
     exit 1
 }
 

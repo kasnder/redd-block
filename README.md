@@ -86,8 +86,8 @@ Android uses the shared Tauri webview UI plus a local Android plugin. The plugin
 
 You can open `src-tauri/gen/android/` in Android Studio to inspect, run, and build the generated project. Android Studio is still building the Tauri Android app: the Gradle project invokes the Tauri/Rust build steps and packages the shared frontend assets together with the native Android plugin. Two things are required for builds from Android Studio to work:
 
-1. **Keep the Tauri CLI running** in a terminal while you build: `npm run tauri -- android dev --open`. The Gradle Rust task calls back into this process to fetch its build options; without it the build fails with a "failed to read CLI options" panic.
-2. **`node`/`npm` and `cargo` must be on Gradle's PATH.** Android Studio launched from the Dock doesn't inherit your shell PATH, so `buildSrc/.../BuildTask.kt` is patched to prepend the nvm, cargo, and Homebrew bin directories. Note that re-running `tauri android init` regenerates that file and drops the patch — alternatively, launch Android Studio from a terminal (`open -a "Android Studio"`), which inherits your shell PATH.
+1. **Keep the Tauri CLI running** in a terminal while you build: `pnpm tauri android dev --open`. The Gradle Rust task calls back into this process to fetch its build options; without it the build fails with a "failed to read CLI options" panic.
+2. **`node`/`pnpm` and `cargo` must be on Gradle's PATH.** Android Studio launched from the Dock doesn't inherit your shell PATH, so `buildSrc/.../BuildTask.kt` is patched to prepend the nvm, cargo, and Homebrew bin directories. Note that re-running `tauri android init` regenerates that file and drops the patch — alternatively, launch Android Studio from a terminal (`open -a "Android Studio"`), which inherits your shell PATH.
 
 ### Permissions (desktop)
 
@@ -137,16 +137,16 @@ git clone https://github.com/ulyngs/digital-habits-blocker.git
 cd digital-habits-blocker
 
 # Install dependencies
-npm install
+pnpm install
 
 # Run in development mode
-npm run dev
+pnpm dev
 
 # Run on iOS device (opens Xcode, then press ⌘R to build)
-npm run dev:ios
+pnpm dev:ios
 
 # Run on Android emulator/device
-npm run dev:android
+pnpm dev:android
 ```
 
 The app will open automatically. Hot-reloading is enabled for both frontend (Vite) and backend (Tauri).
@@ -158,30 +158,30 @@ first install.
 
 ```bash
 # macOS: Universal binary (Intel + Apple Silicon) → .app
-npm run build:mac
+pnpm build:mac
 
 # macOS: Wrap the .app into a signed/notarized .pkg installer
 # (outputs Digital-Habits-Blocker-{version}.pkg)
-npm run build:mac-pkg
+pnpm build:mac-pkg
 
 # macOS: Both in one go (.app + .pkg)
-npm run build:mac-all
+pnpm build:mac-all
 
 # Windows: NSIS/MSI installers (x64 + ARM64) — direct download / S3
-npm run build:win
+pnpm build:win
 
 # Windows: Microsoft Store (MSIX for Partner Center upload; same pipeline as digital-habits-to-do)
-npm run build:win-store
+pnpm build:win-store
 
 # iOS: Build IPA for App Store upload (via Transporter)
-npm run build:ios
+pnpm build:ios
 
 # Android: Build through Tauri/Gradle (release; unsigned)
-npm run build:android
+pnpm build:android
 ```
 
 For Android — required environment variables (`ANDROID_HOME`/`NDK_HOME`/`JAVA_HOME`,
-not set by `npm install`), debug-APK builds, single-ABI targeting, and the
+not set by `pnpm install`), debug-APK builds, single-ABI targeting, and the
 install/`adb logcat` loop — see [docs/android-build.md](docs/android-build.md).
 
 For Store builds, set `WINDOWS_IDENTITY_NAME` and `WINDOWS_PUBLISHER` in `.env` (Partner Center → Product identity). Release tags submit the MSIX to Partner Center from CI (What’s new from `changelog.md` via `scripts/changelog-to-store-whats-new.js` — write entries per [`changelog-style.md`](changelog-style.md); see [docs/microsoft-store-ci.md](docs/microsoft-store-ci.md)). Manual upload still works from `for-distribution/<target>/`. Run `node scripts/generate-icons-from-svg.js` first if `assets/icons/1024x1024.png` is missing.
@@ -189,7 +189,7 @@ For Store builds, set `WINDOWS_IDENTITY_NAME` and `WINDOWS_PUBLISHER` in `.env` 
 **Local sideload:** `build:win-store` MSIX files are unsigned (Partner Center signs on upload). Sign and install in an **elevated** PowerShell (cert goes in `LocalMachine\TrustedPeople`):
 
 ```powershell
-npm run sign:win-store-msix -- -MsixPath "for-distribution/aarch64-pc-windows-msvc/Digital-Habits-Blocker_3.1.5.0_arm64.msix" -Install
+pnpm sign:win-store-msix -MsixPath "for-distribution/aarch64-pc-windows-msvc/Digital-Habits-Blocker_3.1.5.0_arm64.msix" -Install
 ```
 
 Also turn on **Settings → System → For developers → Developer Mode**. If `0x800B0109` persists, remove old packages first: `Get-AppxPackage *ReDDBlock* | Remove-AppxPackage`.
@@ -205,7 +205,7 @@ Testing is organized into two automated tiers plus a manual checklist (see [test
 Tests blocking logic — time-based scenarios, overlaps, overrides, override-all state transitions, and challenge difficulty selection. No system modification.
 
 ```bash
-npm run dev                   # Start the app
+pnpm dev                   # Start the app
 # Press Cmd+Shift+T (Mac) or Ctrl+Shift+T (Windows)
 # Or type in the dev console: runBlockingTests()
 ```

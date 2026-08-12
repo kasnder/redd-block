@@ -180,7 +180,7 @@ node scripts/sync-ios-version.mjs
 export APP_STORE_CONNECT_API_KEY_ID="<Key ID from App Store Connect>"
 export APP_STORE_CONNECT_API_ISSUER_ID="<Issuer ID from App Store Connect>"
 export APP_STORE_CONNECT_API_KEY_P8="$(base64 -i /path/to/AuthKey_<KEYID>.p8)"
-npm run build:ios
+pnpm build:ios
 node scripts/changelog-to-store-whats-new.js "$VERSION" --platform ios --out whats_new_ios.txt
 fastlane ios submit_app_store "version:${VERSION}" "ipa:for-distribution/Digital Habits Blocker.ipa" notes:whats_new_ios.txt
 ```
@@ -188,6 +188,6 @@ fastlane ios submit_app_store "version:${VERSION}" "ipa:for-distribution/Digital
 ## Manual fallback
 
 If the three secrets are missing, the App Store jobs fail fast with a clear
-message. You can still build locally (`npm run build:ios`) and upload with
+message. You can still build locally (`pnpm build:ios`) and upload with
 Transporter, then fill in What's new by hand in App Store Connect — same as
 before CI submit existed.

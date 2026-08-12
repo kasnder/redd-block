@@ -306,7 +306,7 @@ export default defineConfig(async ({ mode }) => ({
         stripNonAndroidUi(mode === 'android'),
         purgeAndroidCss(mode === 'android'),
         pruneOrphanAndroidAssets(mode === 'android'),
-        // Bundle analysis: `ANALYZE=1 npm run vite:build:android` writes
+        // Bundle analysis: `ANALYZE=1 pnpm vite:build:android` writes
         // dist/stats.html (treemap of what actually ships). Dev-only; no
         // effect on the shipped bundle. Loaded via dynamic import because
         // rollup-plugin-visualizer is ESM-only and this config is CJS.

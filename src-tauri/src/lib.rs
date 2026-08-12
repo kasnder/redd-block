@@ -1,3 +1,8 @@
+#![allow(deprecated)]
+
+// The macOS FFI in this crate still uses the `cocoa` crate. Keep its
+// deprecation migration separate from this lint gate.
+
 // Hard stop against shipping the e2e automation server. `e2e-webdriver`
 // compiles an HTTP WebDriver endpoint into the binary so the Tier 2 suite can
 // drive a real app on macOS; in a released blocker that endpoint would be a
@@ -7,7 +12,7 @@
 compile_error!(
     "the `e2e-webdriver` feature must never be enabled in a release build: it \
      exposes an automation server that can bypass blocking. Build the e2e app \
-     with `npm run build:e2e-app:mac` (debug profile) instead."
+     with `pnpm build:e2e-app:mac` (debug profile) instead."
 );
 
 #[cfg(feature = "desktop")]
@@ -29,6 +34,7 @@ use tauri::Manager;
 /// runtime so the app behaves like Cold Turkey Blocker:
 ///   - window visible  → Regular  (Dock icon, menu bar present)
 ///   - window hidden   → Accessory (tray-only, runs in the background)
+///
 /// The enforcer keeps running regardless of the policy; this is purely
 /// a UI affordance.
 #[cfg(target_os = "macos")]
@@ -184,10 +190,10 @@ unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
     let sel = sel!(applicationShouldTerminate:);
     let method = class_getInstanceMethod(cls, sel) as *mut objc::runtime::Method;
     let imp = should_terminate as extern "C" fn(id, Sel, id) -> u64;
-    let imp_ptr = std::mem::transmute::<_, objc::runtime::Imp>(imp);
+    let imp_ptr = std::mem::transmute::<extern "C" fn(id, Sel, id) -> u64, objc::runtime::Imp>(imp);
     if method.is_null() {
         // Encoding for `NSApplicationTerminateReply (^)(id self, SEL _cmd, id sender)`.
-        let types = b"Q@:@\0".as_ptr() as *const i8;
+        let types = c"Q@:@".as_ptr();
         let added = class_addMethod(cls, sel, imp_ptr, types);
         log::info!("install_terminate_guard: added applicationShouldTerminate: ({added})");
     } else {
@@ -250,7 +256,7 @@ pub fn run() {
     // `tauri-driver` has no WKWebView driver to talk to. Opt-in via the
     // `e2e-webdriver` Cargo feature and never on by default — the crate's own
     // documented `#[cfg(debug_assertions)]` gate would open an automation port
-    // on every `npm run dev`, and in a blocker app that port is a live bypass
+    // on every `pnpm dev`, and in a blocker app that port is a live bypass
     // of the enforcement the app exists to provide. The `compile_error!` below
     // makes the release-build mistake impossible rather than merely unlikely.
     #[cfg(feature = "e2e-webdriver")]

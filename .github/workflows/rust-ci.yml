@@ -41,19 +41,20 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
       # `tauri_build::build()` (invoked from src-tauri/build.rs) validates that
       # the configured frontendDist — ../dist — exists, so the lib does not
       # compile on a clean checkout until the frontend has been built once.
-      - run: npm run vite:build
+      - run: pnpm vite:build
       # `--lib` on purpose: bare `cargo test` also compiles the stale
       # `test_watcher` example binary, which no longer builds (see testing.md).
       # build.rs compiles the Swift SafariServices bridge first; macOS runners
@@ -75,3 +76,43 @@ jobs:
       - name: cargo test --lib --features system-test
         working-directory: src-tauri
         run: cargo test --lib --features system-test --locked
+
+  # Static analysis for the desktop enforcement engine. The Android job's
+  # clippy run compiles out everything gated `cfg(not(any(ios, android)))` —
+  # app_watcher, enforcer, native_host, profile_scan — plus every macOS- and
+  # Windows-only module, so roughly 60% of src-tauri/src had no lint coverage
+  # at all until this job existed.
+  #
+  # Both hosts, because the two see genuinely different code: most of the
+  # dead-code and cfg-dispatch findings here are live on one platform and dead
+  # on the other, and a macOS-only gate would demand deleting Windows code.
+  # There is no Linux entry — the lib does not compile there (see the header).
+  clippy:
+    name: Clippy (desktop, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: clippy-${{ matrix.os }}
+      - run: pnpm install --frozen-lockfile
+      # Same reason as the test job: build.rs validates that ../dist exists.
+      - run: pnpm vite:build
+      # `--lib --bins --tests` includes the native-host entrypoint and unit
+      # tests while still skipping the stale `test_watcher` example.
+      - name: cargo clippy --lib --bins --tests
+        working-directory: src-tauri
+        run: cargo clippy --lib --bins --tests --locked -- -D warnings

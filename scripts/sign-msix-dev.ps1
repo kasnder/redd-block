@@ -122,7 +122,7 @@ if (-not $cert) {
 Write-Host "  Dev cert thumbprint: $($cert.Thumbprint)" -ForegroundColor Gray
 
 # signtool remove does not support .msix (only portable executables). Re-sign in place,
-# or rebuild with `npm run build:win-store` if a prior dev signature causes trouble.
+# or rebuild with `pnpm build:win-store` if a prior dev signature causes trouble.
 Write-Host "  Signing..." -ForegroundColor Gray
 & $signtool.FullName sign /fd SHA256 /sha1 $cert.Thumbprint $MsixPath
 if ($LASTEXITCODE -ne 0) {

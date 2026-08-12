@@ -4,7 +4,7 @@
 #
 # Usage:
 #   scripts/dev-reset-mac-automation-intro.sh
-#   npm run dev
+#   pnpm dev
 #
 # IMPORTANT — do NOT re-accept the EULA after this. Launch straight into
 # the app (EULA should already be accepted). Re-accepting EULA triggers
@@ -96,7 +96,7 @@ cat <<EOF
      (Privacy & Security → Automation) for Chrome/Safari/etc.
 
   2. Launch WITHOUT re-accepting the EULA:
-       npm run dev
+       pnpm dev
 
   The intro appears on startup — not after clicking through EULA.
   If you still get the full browser-setup screen, EULA was reset or

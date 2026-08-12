@@ -14,7 +14,7 @@ For iOS builds, run **section 14 (iOS-Specific)** on a physical device.
 
 ## 1. Automated Tests
 
-- [ ] Start app in dev mode: `npm run dev`
+- [ ] Start app in dev mode: `pnpm dev`
 - [ ] Run Tier 1: **Cmd+Shift+T** (Mac) / **Ctrl+Shift+T** (Windows), or `runBlockingTests()`
 - [ ] Run Tier 2 `core`: `runIntegrationTests('core')`
 - [ ] If the release touches pause/schedule, overlap/clear, or app-blocking command paths, also run Tier 2 `full`

@@ -207,7 +207,7 @@ async function generateAssets() {
         }
     }
 
-    console.log('\\nDone! Remember to rebuild your app with `npm run build:win`.');
+    console.log('\\nDone! Remember to rebuild your app with `pnpm build:win`.');
 }
 
 generateAssets();

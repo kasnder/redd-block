@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build the macOS desktop app bundle (.app). Output is
 # `for-distribution/Digital Habits Blocker.app`. For a shippable installer, run
-# `scripts/build-mac-pkg.sh --release` next (or `npm run build:mac-all`
+# `scripts/build-mac-pkg.sh --release` next (or `pnpm build:mac-all`
 # for both in one go).
 
 set -euo pipefail
@@ -49,7 +49,7 @@ echo "Building Digital Habits Blocker for macOS (${BUILD_TARGET})..."
 # own .dmg target. We distribute via scripts/build-mac-pkg.sh, which
 # wraps the .app in a signed .pkg with migration pre/post-install scripts.
 CI="${TAURI_CI:-false}" \
-npm run tauri -- build --bundles app --target "${BUILD_TARGET}" ${CONFIG_ARGS[@]+"${CONFIG_ARGS[@]}"}
+pnpm tauri build --bundles app --target "${BUILD_TARGET}" ${CONFIG_ARGS[@]+"${CONFIG_ARGS[@]}"}
 
 APP_SOURCE="${TARGET_DIR}/macos/Digital Habits Blocker.app"
 

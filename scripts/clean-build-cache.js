@@ -23,7 +23,7 @@ if ([...args].some((arg) => !allowedArgs.has(arg))) {
 }
 
 if (args.has('--help') || args.has('-h')) {
-  console.log(`Usage: npm run clean:build-cache -- [options]
+  console.log(`Usage: pnpm clean:build-cache [options]
 
 Options:
   (none)          Clean generated caches in the current worktree.

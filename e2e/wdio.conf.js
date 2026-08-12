@@ -70,7 +70,7 @@ function resolveAppBinary() {
     throw new Error(
         `Could not find a built app binary for ${process.platform}. Looked for:\n` +
         candidates.map((c) => `  - ${c}`).join('\n') +
-        `\nBuild one with \`npm run build:e2e-app\`, or set E2E_APP_BINARY.`,
+        `\nBuild one with \`pnpm build:e2e-app\`, or set E2E_APP_BINARY.`,
     );
 }
 

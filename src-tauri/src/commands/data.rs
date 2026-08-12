@@ -843,7 +843,7 @@ mod shared_storage_migration_tests {
         )
         .unwrap();
 
-        copy_shared_storage_forward(&primary, &[legacy.clone()]);
+        copy_shared_storage_forward(&primary, std::slice::from_ref(&legacy));
 
         let dst = primary.join("redd-block-data.json");
         assert!(dst.exists(), "expected primary data file after migration");
