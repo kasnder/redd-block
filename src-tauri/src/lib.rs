@@ -13,28 +13,15 @@ compile_error!(
 #[cfg(feature = "desktop")]
 use tauri::Manager;
 
-/// Authorises actually exiting the process. Every `ExitRequested` (Cmd-Q,
-/// Tauri's internal last-window-closed signal, etc.) is intercepted and
-/// turned into a hide-window while this is false — otherwise the user
-/// could kill the enforcer/watcher and silently lose all blocking.
-///
-/// **Nothing sets this to `true` today, and that is deliberate.** The tray
-/// icon has no menu by design (see the tray builder in `setup`), so there is
-/// no authorised-quit gesture: a blocker the user can quit is a blocker the
-/// user can bypass. The flag is kept as the single seam an authorised exit
-/// would go through if one is ever added, so the two guards below do not
-/// have to be rewritten.
-///
-/// The one real exit path — in-app uninstall — deliberately does not use
-/// this. `commands::uninstall` calls `std::process::exit(0)` directly,
-/// bypassing both guards, because by that point tearing down enforcement is
-/// the intent. See the module docs in `commands/uninstall.rs`.
-///
-/// Read by the macOS `applicationShouldTerminate:` guard and by the
-/// `ExitRequested` handler under the `desktop` feature; neither exists on
-/// Android, hence the cfg.
-#[cfg(any(target_os = "macos", feature = "desktop"))]
-static ALLOW_EXIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+// Exiting the process is not an authorised gesture on desktop: there is no
+// tray menu (see the tray builder in `setup`), and both the AppKit
+// `applicationShouldTerminate:` hook and Tauri's `ExitRequested` event are
+// intercepted unconditionally and turned into a hide-window — a blocker the
+// user can quit is a blocker the user can bypass.
+//
+// The one real exit path is in-app uninstall, which calls
+// `std::process::exit(0)` directly (see `commands/uninstall.rs`) and so is not
+// routed through either guard.
 
 /// Flip the macOS activation policy between Regular (Dock icon + app
 /// name in the global menu bar, like a normal foreground app) and
@@ -163,14 +150,11 @@ pub mod windows_login;
 pub mod windows_process;
 
 /// Add an `applicationShouldTerminate:` override on the existing
-/// NSApp delegate's class that returns `NSTerminateCancel` while
-/// `ALLOW_EXIT` is false. Cmd-Q routes through the AppKit terminate
-/// path, which Tauri's `RunEvent::ExitRequested` does not intercept
-/// in accessory mode — so we hook it at the AppKit layer ourselves.
-/// Since nothing sets `ALLOW_EXIT` (see its docs), this currently cancels
-/// every Cmd-Q unconditionally — which is the intended behaviour, not an
-/// oversight. In-app uninstall exits via `std::process::exit(0)` and so is
-/// not routed through here.
+/// NSApp delegate's class that always returns `NSTerminateCancel`.
+/// Cmd-Q routes through the AppKit terminate path, which Tauri's
+/// `RunEvent::ExitRequested` does not intercept in accessory mode — so we
+/// hook it at the AppKit layer ourselves. In-app uninstall exits via
+/// `std::process::exit(0)` and so is not routed through here.
 #[cfg(target_os = "macos")]
 unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
     use cocoa::base::id;
@@ -178,21 +162,17 @@ unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
     use objc::{msg_send, sel, sel_impl};
 
     extern "C" fn should_terminate(_this: id, _sel: Sel, _sender: id) -> u64 {
-        // NSTerminateNow = 1, NSTerminateCancel = 0.
-        if ALLOW_EXIT.load(std::sync::atomic::Ordering::SeqCst) {
-            1
-        } else {
-            log::info!("applicationShouldTerminate: cancelled (ALLOW_EXIT=false)");
-            // Hide instead — same UX as window close.
-            unsafe {
-                let app = cocoa::appkit::NSApp();
-                let _: () = msg_send![app, hide: app];
-            }
-            // Drop the Dock icon + menu bar so the app reverts to
-            // tray-only background mode, matching the close-window UX.
-            crate::set_macos_activation_policy(false);
-            0
+        log::info!("applicationShouldTerminate: cancelled");
+        // Hide instead — same UX as window close.
+        unsafe {
+            let app = cocoa::appkit::NSApp();
+            let _: () = msg_send![app, hide: app];
         }
+        // Drop the Dock icon + menu bar so the app reverts to
+        // tray-only background mode, matching the close-window UX.
+        crate::set_macos_activation_policy(false);
+        // NSTerminateNow = 1, NSTerminateCancel = 0.
+        0
     }
 
     let delegate: id = msg_send![ns_app, delegate];
@@ -910,9 +890,7 @@ pub fn run() {
             // `ExitRequestApi`) out of it.
             #[cfg(feature = "desktop")]
             if let tauri::RunEvent::ExitRequested { api, .. } = &_event {
-                if !ALLOW_EXIT.load(std::sync::atomic::Ordering::SeqCst) {
-                    api.prevent_exit();
-                }
+                api.prevent_exit();
             }
 
             // Dock-icon click while the window is hidden: surface the
