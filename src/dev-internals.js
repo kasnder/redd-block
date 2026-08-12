@@ -18,6 +18,7 @@ import {
     sanitizeChallengeTypedInput,
     shouldBlockChallengeSpaceKey,
 } from './override-challenge.js';
+import { createChallengeController } from './challenge-controller.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { acceptEula } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION } from './onboarding.js';
@@ -59,6 +60,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     buildWordChallengeState,
     getCurrentChallengeWord,
     getCompletedChallengeText,
+    createChallengeController,
     deriveIOSEffectiveWebsitePolicy,
     deriveIOSEffectiveAppPolicy,
     validateIOSAllowlistLimits,

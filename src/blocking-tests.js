@@ -2077,6 +2077,348 @@
     }
 
     // ========================================
+    // CATEGORY 17: CHALLENGE CONTROLLER (T113-T140)
+    // ========================================
+
+    // The single challenge engine behind the override / pause / override-all
+    // modals. Driven here against synthetic detached DOM — no modal is shown and
+    // no app state is touched — which is possible only because the controller
+    // takes an element map instead of hardcoding getElementById. That is the
+    // point of the refactor as much as the line count is.
+    //
+    // Several cases below pin down bugs that existed in the three hand-copied
+    // implementations; each is labelled with the behaviour it locks in.
+    function runChallengeControllerTests() {
+        console.log('\n🎛️  Category 17: Challenge Controller');
+        console.log('------------------------------------');
+
+        const { createChallengeController } = window.__REDDBLOCK_INTERNALS__;
+
+        // Build a throwaway copy of the challenge stack, matching index.html.
+        function makeHarness() {
+            const root = document.createElement('div');
+            root.innerHTML = `
+                <div class="modal-content">
+                    <div data-el="text" class="challenge-text"></div>
+                    <div data-el="wordProgress" class="challenge-word-progress hidden"></div>
+                    <div data-el="currentWord" class="challenge-current-word hidden"></div>
+                    <input data-el="wordInput" class="challenge-input challenge-word-input hidden">
+                    <textarea data-el="input" class="challenge-input"></textarea>
+                    <div class="challenge-progress"><div data-el="progressBar" class="challenge-progress-bar"></div></div>
+                    <button data-el="confirmBtn"></button>
+                </div>`;
+            const pick = (n) => root.querySelector(`[data-el="${n}"]`);
+            const elements = {
+                textEl: pick('text'),
+                inputEl: pick('input'),
+                wordInputEl: pick('wordInput'),
+                wordProgressEl: pick('wordProgress'),
+                currentWordEl: pick('currentWord'),
+                progressBarEl: pick('progressBar'),
+                confirmBtnEl: pick('confirmBtn'),
+                modalContentEl: root.querySelector('.modal-content'),
+            };
+            return { root, elements, controller: createChallengeController(elements) };
+        }
+
+        // Type into the free-text box the way a user would, then let the
+        // controller's own input listener react.
+        const typeChars = (h, value) => {
+            h.elements.inputEl.value = value;
+            h.elements.inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        const typeWord = (h, value) => {
+            h.elements.wordInputEl.value = value;
+            h.elements.wordInputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+        const barWidth = (h) => h.elements.progressBarEl.style.width;
+
+        // ---- Progress maths ----
+        (function T113() {
+            const h = makeHarness();
+            h.controller.open({ text: 'abcdefghij' });
+            assertEqual(barWidth(h), '0%', 'T113: nothing typed → 0%');
+            typeChars(h, 'abcde');
+            assertEqual(barWidth(h), '50%', 'T113: half typed → 50%');
+            typeChars(h, 'abcdefghij');
+            assertEqual(barWidth(h), '100%', 'T113: fully typed → 100%');
+        })();
+
+        (function T114() {
+            // Bug 1: override and override-all divided by zero and wrote
+            // "width: NaN%", freezing the bar at its previous value.
+            const h = makeHarness();
+            h.controller.open({ text: '' });
+            typeChars(h, 'anything');
+            assertEqual(barWidth(h), '0%', 'T114: empty target gives 0%, never NaN%');
+            assert(!barWidth(h).includes('NaN'), 'T114: no NaN reaches the style attribute');
+        })();
+
+        (function T115() {
+            const h = makeHarness();
+            h.controller.open({ text: 'abc' });
+            typeChars(h, 'abcdefgh');
+            const pct = parseFloat(barWidth(h));
+            assert(pct <= 100, 'T115: over-typing never pushes progress past 100%');
+        })();
+
+        (function T116() {
+            // Progress counts correct leading characters only — a wrong character
+            // stops the count even if later characters would match.
+            const h = makeHarness();
+            h.controller.open({ text: 'abcd' });
+            typeChars(h, 'aXcd');
+            assertEqual(barWidth(h), '25%', 'T116: progress stops at the first wrong character');
+        })();
+
+        // ---- Error highlighting ----
+        (function T117() {
+            const h = makeHarness();
+            h.controller.open({ text: 'abc' });
+            typeChars(h, 'abc');
+            assertEqual(h.elements.textEl.querySelectorAll('.error-char').length, 0, 'T117: a correct prefix shows no error');
+            typeChars(h, 'aXc');
+            const marks = h.elements.textEl.querySelectorAll('.error-char');
+            assertEqual(marks.length, 1, 'T117: a wrong character is highlighted');
+            assertEqual(marks[0].textContent, 'b', 'T117: the highlight lands on the expected character');
+        })();
+
+        // ---- Typed-input sanitization is wired up ----
+        (function T118() {
+            const h = makeHarness();
+            h.controller.open({ text: 'a b' });
+            typeChars(h, '  a');
+            assertEqual(h.elements.inputEl.value, 'a', 'T118: leading whitespace is stripped as you type');
+            typeChars(h, 'a  b');
+            assertEqual(h.elements.inputEl.value, 'a b', 'T118: doubled spaces collapse as you type');
+        })();
+
+        (function T119() {
+            const h = makeHarness();
+            h.controller.open({ text: "don't" });
+            typeChars(h, 'don’t');
+            assertEqual(h.controller.handleConfirm().status, 'ok', 'T119: a smart apostrophe still matches in char mode');
+        })();
+
+        // ---- Confirm, char mode ----
+        (function T120() {
+            const h = makeHarness();
+            h.controller.open({ text: 'target' });
+            typeChars(h, 'wrong');
+            assertEqual(h.controller.handleConfirm().status, 'rejected', 'T120: a wrong answer is rejected');
+            typeChars(h, 'target');
+            assertEqual(h.controller.handleConfirm().status, 'ok', 'T120: the exact answer is accepted');
+        })();
+
+        (function T121() {
+            const h = makeHarness();
+            h.controller.open({ text: 'target' });
+            typeChars(h, 'wrong');
+            h.controller.handleConfirm();
+            assert(h.elements.modalContentEl.classList.contains('wiggle'), 'T121: a rejected answer wiggles the sheet');
+        })();
+
+        // ---- Word-by-word mode ----
+        (function T122() {
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            assert(!h.elements.wordInputEl.classList.contains('hidden'), 'T122: word mode shows the word input');
+            assert(h.elements.inputEl.classList.contains('hidden'), 'T122: word mode hides the free textarea');
+            assert(!h.elements.currentWordEl.classList.contains('hidden'), 'T122: word mode shows the current word');
+            assertEqual(h.elements.currentWordEl.textContent, 'alpha', 'T122: the first word is displayed');
+        })();
+
+        (function T123() {
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta gamma', wordMode: true });
+            typeWord(h, 'alpha');
+            assertEqual(h.controller.handleConfirm().status, 'advanced', 'T123: a correct non-final word advances');
+            assertEqual(h.elements.currentWordEl.textContent, 'beta', 'T123: the next word is displayed');
+            assertEqual(h.elements.wordInputEl.value, '', 'T123: the word input is cleared for the next word');
+        })();
+
+        (function T124() {
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            typeWord(h, 'nope');
+            assertEqual(h.controller.handleConfirm().status, 'rejected', 'T124: a wrong word is rejected');
+            assertEqual(h.elements.currentWordEl.textContent, 'alpha', 'T124: a wrong word does not advance');
+        })();
+
+        (function T125() {
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            typeWord(h, 'beta');
+            assertEqual(h.controller.handleConfirm().status, 'ok', 'T125: the final word completes the challenge');
+        })();
+
+        (function T126() {
+            // Bug 4: word mode compared raw text, so a mobile autocorrected
+            // apostrophe rejected a correct answer. Word mode is mobile-only,
+            // which is exactly where autocorrect substitutes characters.
+            const h = makeHarness();
+            h.controller.open({ text: "don't stop", wordMode: true });
+            typeWord(h, 'don’t');
+            assertEqual(h.controller.handleConfirm().status, 'advanced', 'T126: an autocorrected apostrophe matches in word mode');
+            typeWord(h, 'stop');
+            assertEqual(h.controller.handleConfirm().status, 'ok', 'T126: and the challenge still completes');
+        })();
+
+        (function T127() {
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            typeWord(h, '  alpha  ');
+            assertEqual(h.controller.handleConfirm().status, 'advanced', 'T127: surrounding whitespace is tolerated');
+        })();
+
+        (function T128() {
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            typeWord(h, 'ALPHA');
+            assertEqual(h.controller.handleConfirm().status, 'rejected', 'T128: word matching stays case-sensitive');
+        })();
+
+        (function T129() {
+            // The invariant pause violates today: it leaves typedText empty until
+            // the final word, so it is not a valid "progress so far" value.
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta gamma', wordMode: true });
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            assertEqual(h.controller.getTypedValue(), 'alpha', 'T129: typed value equals the completed prefix after one word');
+            typeWord(h, 'beta');
+            h.controller.handleConfirm();
+            assertEqual(h.controller.getTypedValue(), 'alpha beta', 'T129: and grows with each completed word');
+        })();
+
+        (function T130() {
+            // The bar measures the target reached *including the word currently on
+            // screen*, so it already reads 100% once the last word is displayed —
+            // i.e. after the second-to-last confirm. Preserved from the original
+            // renderOverrideWordChallengeState; asserted as non-decreasing rather
+            // than strictly increasing so the last step is allowed to stay at 100.
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta gamma', wordMode: true });
+            const widths = [parseFloat(barWidth(h))];
+            for (const w of ['alpha', 'beta', 'gamma']) {
+                typeWord(h, w);
+                h.controller.handleConfirm();
+                widths.push(parseFloat(barWidth(h)));
+            }
+            assert(widths.every((w, i) => i === 0 || w >= widths[i - 1]), 'T130: the bar never goes backwards');
+            assert(widths[1] > widths[0], 'T130: the bar advances on the first word');
+            assertEqual(widths[widths.length - 1], 100, 'T130: the completed challenge fills the bar');
+        })();
+
+        (function T131() {
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta gamma', wordMode: true });
+            assertEqual(h.elements.wordProgressEl.textContent, 'Word 1 of 3', 'T131: the word counter is 1-indexed');
+            typeWord(h, 'alpha');
+            h.controller.handleConfirm();
+            assertEqual(h.elements.wordProgressEl.textContent, 'Word 2 of 3', 'T131: and tracks the current word');
+        })();
+
+        // ---- skipChallenge ----
+        (function T132() {
+            // Bug 2: override-all's skip path left stale text in a now-hidden
+            // textarea, so confirm compared it against '' and wiggled — with the
+            // field unreachable, an unrecoverable dead end.
+            const h = makeHarness();
+            h.controller.open({ text: 'something' });
+            typeChars(h, 'partial answer');
+            h.controller.open({ skipChallenge: true });
+            assertEqual(h.elements.inputEl.value, '', 'T132: skipChallenge clears the free textarea');
+            assertEqual(h.elements.wordInputEl.value, '', 'T132: skipChallenge clears the word input');
+            assertEqual(h.controller.handleConfirm().status, 'ok', 'T132: a skipped challenge confirms immediately');
+        })();
+
+        (function T133() {
+            const h = makeHarness();
+            h.controller.open({ skipChallenge: true });
+            assertEqual(h.elements.confirmBtnEl.disabled, false, 'T133: skipChallenge leaves confirm enabled');
+            assertEqual(h.elements.textEl.textContent, '', 'T133: skipChallenge shows no challenge text');
+        })();
+
+        // ---- Visibility is class-driven only ----
+        (function T134() {
+            // Bug: override-all mixed the hidden class with inline style.display,
+            // and the inline value was never cleared — so a class-only dedup would
+            // silently leave elements hidden forever.
+            const h = makeHarness();
+            h.controller.open({ text: 'alpha beta', wordMode: true });
+            h.controller.open({ text: 'plain text' });
+            assertEqual(h.elements.inputEl.style.display, '', 'T134: no inline display is left on the textarea');
+            assertEqual(h.elements.wordInputEl.style.display, '', 'T134: nor on the word input');
+            assert(!h.elements.inputEl.classList.contains('hidden'), 'T134: char mode re-shows the textarea');
+            assert(h.elements.wordInputEl.classList.contains('hidden'), 'T134: and re-hides the word input');
+        })();
+
+        // ---- Reopening resets cleanly ----
+        (function T135() {
+            const h = makeHarness();
+            h.controller.open({ text: 'first' });
+            typeChars(h, 'first');
+            h.controller.open({ text: 'second' });
+            assertEqual(h.elements.inputEl.value, '', 'T135: reopening clears the previous answer');
+            assertEqual(barWidth(h), '0%', 'T135: reopening resets the progress bar');
+            assertEqual(h.controller.handleConfirm().status, 'rejected', 'T135: the previous answer no longer passes');
+        })();
+
+        (function T136() {
+            const h = makeHarness();
+            h.controller.open({ text: 'abc' });
+            typeChars(h, 'wrong');
+            h.controller.handleConfirm();
+            h.controller.open({ text: 'abc' });
+            assert(!h.elements.modalContentEl.classList.contains('wiggle'), 'T136: reopening clears a stale wiggle');
+        })();
+
+        (function T137() {
+            const h = makeHarness();
+            h.controller.open({ text: 'abc', progressColor: '#ff0000' });
+            assert(h.elements.progressBarEl.style.background.length > 0, 'T137: a progress colour is applied');
+            h.controller.open({ text: 'abc' });
+            assert(h.elements.progressBarEl.style.background.length > 0, 'T137: a default gradient is applied when no colour is given');
+        })();
+
+        // ---- Enter routes through the confirm button ----
+        (function T138() {
+            // Bug 3: pause called its submit function directly, so Enter worked
+            // even while its own confirm button was disabled.
+            const h = makeHarness();
+            h.controller.open({ text: 'abc' });
+            let clicks = 0;
+            h.elements.confirmBtnEl.addEventListener('click', () => { clicks++; });
+            typeChars(h, 'abc');
+            h.elements.inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+            assertEqual(clicks, 1, 'T138: Enter submits via the confirm button');
+            h.elements.confirmBtnEl.disabled = true;
+            h.elements.inputEl.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+            assertEqual(clicks, 1, 'T138: a disabled confirm button suppresses Enter');
+        })();
+
+        (function T139() {
+            const h = makeHarness();
+            h.controller.open({ text: 'a b' });
+            h.elements.inputEl.value = '';
+            const ev = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+            h.elements.inputEl.dispatchEvent(ev);
+            assert(ev.defaultPrevented, 'T139: a leading space is blocked at the keydown');
+        })();
+
+        (function T140() {
+            const h = makeHarness();
+            h.controller.open({ text: 'abc' });
+            const ev = new ClipboardEvent('paste', { bubbles: true, cancelable: true });
+            h.elements.inputEl.dispatchEvent(ev);
+            assert(ev.defaultPrevented, 'T140: pasting into the challenge is blocked');
+        })();
+    }
+
+    // ========================================
     // MAIN TEST RUNNER
     // ========================================
 
@@ -2106,6 +2448,7 @@
             runIOSSchedulePayloadTests();
             runEditFrictionGateTests();
             runChallengePrimitiveTests();
+            runChallengeControllerTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -2132,7 +2475,8 @@
         runAndroidPayloadTests,
         runIOSSchedulePayloadTests,
         runEditFrictionGateTests,
-        runChallengePrimitiveTests
+        runChallengePrimitiveTests,
+        runChallengeControllerTests
     };
 
     console.log('🧪 ReddBlock Blocking Tests loaded. Press Cmd+Shift+T to run tests.');
