@@ -36,7 +36,7 @@ function toggleOverlayEditorFormat(format) {
     const range = quillInstance.getSelection(true);
     if (!range) return;
     const current = quillInstance.getFormat(range);
-    quillInstance.format(format, !current[format], Quill.sources.USER);
+    quillInstance.format(format, !current[format], quillConstructor.sources.USER);
     quillInstance.getModule('toolbar')?.update(range);
 }
 
