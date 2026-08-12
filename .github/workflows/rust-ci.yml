@@ -1,6 +1,7 @@
 # Run the Rust unit tests (`src-tauri/src/**/#[cfg(test)]`) on PRs that touch
-# the backend. Kept out of ci.yml so frontend-only PRs do not pay for a macOS
-# runner, mirroring how android-ci.yml isolates the Android toolchain.
+# the backend, and on the resulting commits on main. Kept out of ci.yml so
+# frontend-only PRs do not pay for a macOS runner, mirroring how android-ci.yml
+# isolates the Android toolchain.
 #
 # macOS is the only host that compiles every tested module: `web_automation`,
 # `window_inventory` and `workspace_events` are `#[cfg(target_os = "macos")]`,
@@ -16,10 +17,20 @@ on:
       - 'src-tauri/**'
       - 'scripts/build-safari-bridge.sh'
       - '.github/workflows/rust-ci.yml'
+  # Duplicated rather than anchored — GitHub Actions does not support YAML
+  # aliases. Keep the two lists in sync.
+  push:
+    branches: [main]
+    paths:
+      - 'src-tauri/**'
+      - 'scripts/build-safari-bridge.sh'
+      - '.github/workflows/rust-ci.yml'
 
 concurrency:
   group: rust-ci-${{ github.ref }}
-  cancel-in-progress: true
+  # See ci.yml: superseded PR runs are wasted work, but every main commit should
+  # get its own verdict.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
