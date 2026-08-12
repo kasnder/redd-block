@@ -58,9 +58,15 @@ jobs:
       # `test_watcher` example binary, which no longer builds (see testing.md).
       # build.rs compiles the Swift SafariServices bridge first; macOS runners
       # ship the Xcode toolchain it needs.
+      #
+      # `--locked` on purpose too: without it, a Cargo.lock that has drifted
+      # out of sync with Cargo.toml is silently re-resolved in every checkout
+      # instead of failing, so the committed lock stops pinning anything and
+      # every developer gets a different dependency graph. Adding or bumping a
+      # dependency now requires committing the regenerated lock alongside it.
       - name: cargo test --lib
         working-directory: src-tauri
-        run: cargo test --lib
+        run: cargo test --lib --locked
       # The system-test app's isolation guarantees — that it can never read,
       # import, or wipe production data — are asserted by tests that only
       # exist under `--features system-test`, so the default run above
@@ -68,4 +74,4 @@ jobs:
       # implies `e2e-webdriver`, which `lib.rs` refuses to compile in release.
       - name: cargo test --lib --features system-test
         working-directory: src-tauri
-        run: cargo test --lib --features system-test
+        run: cargo test --lib --features system-test --locked
