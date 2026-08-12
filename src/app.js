@@ -118,7 +118,7 @@ import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelect
 import { formatTitleBarScheduleStartWhen, hasAnyEnforcedBlocks, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, pickEarliestUpcomingScheduledBlock, refreshDesktopHelperStatus, resolveOneShotOccurrences, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
 import {
-    overrideAllChallengeText, overrideAllWordChallengeState, refreshUninstallButtonState,
+    refreshUninstallButtonState,
     setupGraceSetting, setupHelpMenuLinks, setupHelperSettings, setupInAppUninstall,
     setupOverrideAll, setupSettingsHelpButtons, setupWindowsUninstallGuidance,
     syncUninstallConfirmModal, updateCleanHostsBtnState, updateHelperStatusIndicator,
@@ -2387,31 +2387,6 @@ export function formatBlockTimeRemainingShort(totalMins) {
 }
 
 
-
-export function setOverrideAllWordChallengeMode(enabled) {
-    document.getElementById('override-all-word-progress')?.classList.toggle('hidden', !enabled);
-    document.getElementById('override-all-current-word')?.classList.toggle('hidden', !enabled);
-    document.getElementById('override-all-challenge-word-input')?.classList.toggle('hidden', !enabled);
-    document.getElementById('override-all-challenge-input')?.classList.toggle('hidden', enabled);
-}
-
-export function renderOverrideAllWordChallengeState() {
-    const progressLabelEl = document.getElementById('override-all-word-progress');
-    const currentWordEl = document.getElementById('override-all-current-word');
-    const wordInput = document.getElementById('override-all-challenge-word-input');
-    const progressBar = document.getElementById('override-all-progress-bar');
-    if (!overrideAllWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
-    const currentWord = getCurrentChallengeWord(overrideAllWordChallengeState);
-    const completedText = getCompletedChallengeText(overrideAllWordChallengeState);
-    const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
-    progressLabelEl.textContent = `Word ${overrideAllWordChallengeState.currentIndex + 1} of ${overrideAllWordChallengeState.words.length}`;
-    currentWordEl.textContent = currentWord;
-    wordInput.value = '';
-    progressBar.style.width = overrideAllChallengeText.length > 0
-        ? `${Math.min(100, (targetText.length / overrideAllChallengeText.length) * 100)}%`
-        : '0%';
-    document.getElementById('confirm-override-all-btn').disabled = !currentWord;
-}
 
 // Clean up URL for display (remove protocol, www, trailing slash)
 
