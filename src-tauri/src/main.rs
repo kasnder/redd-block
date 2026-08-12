@@ -8,7 +8,7 @@
 
 fn main() {
     // Debug builds load `.env` from the workspace root so dev-only
-    // settings (REDD_DEV_EXT_ID, etc.) are picked up by `npm run dev`,
+    // settings (REDD_DEV_EXT_ID, etc.) are picked up by `pnpm dev`,
     // direct `cargo run`, and the browser-spawned native-host process
     // alike. Production builds skip this entirely — release users
     // should never have a `.env` adjacent to the bundle anyway.

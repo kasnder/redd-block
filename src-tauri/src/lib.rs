@@ -7,7 +7,7 @@
 compile_error!(
     "the `e2e-webdriver` feature must never be enabled in a release build: it \
      exposes an automation server that can bypass blocking. Build the e2e app \
-     with `npm run build:e2e-app:mac` (debug profile) instead."
+     with `pnpm build:e2e-app:mac` (debug profile) instead."
 );
 
 #[cfg(feature = "desktop")]
@@ -247,7 +247,7 @@ pub fn run() {
     // `tauri-driver` has no WKWebView driver to talk to. Opt-in via the
     // `e2e-webdriver` Cargo feature and never on by default — the crate's own
     // documented `#[cfg(debug_assertions)]` gate would open an automation port
-    // on every `npm run dev`, and in a blocker app that port is a live bypass
+    // on every `pnpm dev`, and in a blocker app that port is a live bypass
     // of the enforcement the app exists to provide. The `compile_error!` below
     // makes the release-build mistake impossible rather than merely unlikely.
     #[cfg(feature = "e2e-webdriver")]

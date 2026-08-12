@@ -37,7 +37,7 @@ desktop = ["tauri/tray-icon"]
 # over HTTP on localhost — in a blocker app that is a remote-control bypass of
 # the thing the app exists to enforce. It is deliberately an explicit opt-in
 # feature rather than the crate's documented `#[cfg(debug_assertions)]` gate,
-# which would open the port on every `npm run dev` session. `lib.rs` also
+# which would open the port on every `pnpm dev` session. `lib.rs` also
 # hard-fails the build if this is ever combined with a release profile.
 e2e-webdriver = ["dep:tauri-plugin-wdio-webdriver"]
 

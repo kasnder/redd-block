@@ -74,8 +74,8 @@ case below).
   `scripts/sync-ios-version.mjs` — `tauri.ios.conf.json` plus the generated
   Xcode project and its `Info.plist`s. The iOS side is the one a hand edit
   always misses.
-- **`npm run build:android` needs `ANDROID_HOME` / `NDK_HOME` / `JAVA_HOME`
-  exported** — `npm install` does not set them. See
+- **`pnpm build:android` needs `ANDROID_HOME` / `NDK_HOME` / `JAVA_HOME`
+  exported** — `pnpm install` does not set them. See
   [docs/android-build.md](docs/android-build.md).
 - **Use `cargo test --lib`**, not bare `cargo test` — the latter still tries to
   build a stale `test_watcher` example.
@@ -84,10 +84,31 @@ case below).
   in both directories, so formatting only one leaves the other red:
 
   ```bash
-  npm run lint                                    # eslint over src/, scripts/, e2e/, vite.config.js
-  (cd src-tauri && cargo fmt --all)               # --all here also covers tauri-plugin-screentime
+  pnpm lint                                             # eslint over src/, scripts/, e2e/, vite.config.js
+  (cd src-tauri && cargo fmt --all)                     # --all here also covers tauri-plugin-screentime
   (cd tauri-plugin-android-blocker && cargo fmt --all)
   ```
+
+### pnpm is the only supported package manager
+
+`npm install` fails by design — a `preinstall` guard (`only-allow pnpm`) stops
+it, and `package-lock.json` is gitignored. This is not a style preference:
+
+- **Worktrees are the reason.** Agent tasks run one git worktree each, and every
+  worktree gets its own `node_modules` (~250 MB with npm). pnpm's
+  content-addressed store hardlinks instead, so worktree *n+1* costs
+  approximately nothing. With five worktrees checked out the measured
+  difference was 1051 MB naive vs 856 MB actual, and the only directory
+  contributing nothing to that saving was the npm-installed one.
+- **Two lockfiles is the failure mode this replaced.** The repo carried both
+  `package-lock.json` and `pnpm-lock.yaml` for a while. Nothing in CI validated
+  the pnpm one, so it was one dependency change away from silently describing a
+  different tree than the one anyone built against.
+
+The trap when converting a command: **pnpm does not strip `--`**. `npm run
+tauri -- build` passes `build`; `pnpm run tauri -- build` passes `--` *and*
+`build`, and the tauri CLI chokes on it. Write `pnpm tauri build` — pnpm
+forwards trailing args, flags included, without the separator.
 
 ## Architecture essentials
 
@@ -177,11 +198,11 @@ Tier 1 and Tier 2 have CLI runners, and both also run **inside the app** in dev
 mode via the dev console. Full details, including the "What runs in CI" table:
 [testing.md](testing.md).
 
-- **Tier 1** (logic, instant, no system changes): `npm run test:tier1`
+- **Tier 1** (logic, instant, no system changes): `pnpm test:tier1`
   headlessly, or `Cmd+Shift+T` / `Ctrl+Shift+T` / `runBlockingTests()` in dev.
   Cases in `src/blocking-tests.js`.
 - **Tier 2** (integration, real command paths, safe `.invalid` domains):
-  `npm run build:e2e-app` then `npm run test:tier2` over WebDriver, or
+  `pnpm build:e2e-app` then `pnpm test:tier2` over WebDriver, or
   `runIntegrationTests('core' | 'full')` in the dev console. Cases in
   `src/integration-tests.js`. **Tier 2 asserts the Rust-derived
   `current_blocking` snapshot — it does not prove a browser actually redirects.**

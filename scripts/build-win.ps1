@@ -20,7 +20,7 @@ function Show-SigningFailureHint {
     }
     Write-Host ""
     Write-Host "  Fix AZURE_CLIENT_SECRET in .env (use the secret Value, not the Secret ID)." -ForegroundColor Yellow
-    Write-Host "  Or build unsigned for local testing: npm run build:win:unsigned" -ForegroundColor Yellow
+    Write-Host "  Or build unsigned for local testing: pnpm build:win:unsigned" -ForegroundColor Yellow
     Write-Host ""
 }
 

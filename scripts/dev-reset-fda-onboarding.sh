@@ -164,15 +164,15 @@ cat <<EOF
 
   2. (Then) rebuild and launch (required — source fixes are not in
      /Applications until you rebuild):
-       npm run tauri build
+       pnpm tauri build
        open "/Applications/Digital Habits Blocker.app"
 
   Or for dev:
-       npm run tauri dev
+       pnpm tauri dev
 
   Expected:
     - Welcome (explains ReDD Focus + FDA on Mac) → EULA (always in
-      `npm run dev`; persisted acceptance reset with --eula) →
+      `pnpm dev`; persisted acceptance reset with --eula) →
       FDA overlay (Mac only, required — no skip).
     - Zero cross-app prompts until FDA is granted.
     - After FDA grant, ReDD Focus is installed in browsers; extension

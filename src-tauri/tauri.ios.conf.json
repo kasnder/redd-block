@@ -9,7 +9,7 @@
         "resources": []
     },
     "build": {
-        "beforeBuildCommand": "npm run vite:build"
+        "beforeBuildCommand": "pnpm vite:build"
     },
     "app": {
         "trayIcon": null

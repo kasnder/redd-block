@@ -25,7 +25,7 @@ No single tier is sufficient on its own. **Website blocking enforcement** (macOS
 ## Quick run guide
 
 - **Tier 1**
-  - Start app in dev mode: `npm run dev`
+  - Start app in dev mode: `pnpm dev`
   - Trigger tests: `Cmd+Shift+T` (macOS) or `Ctrl+Shift+T` (Windows)
   - Or console: `runBlockingTests()`
 - **Tier 2**
@@ -44,8 +44,8 @@ summarized below:
 | Workflow | Job | Runs | Trigger |
 | --- | --- | --- | --- |
 | `ci.yml` | Frontend bundle | `vite:build`, `vite:build:android`, `verify:android-bundle` | every PR, every push to `main` |
-| `ci.yml` | Tier 1 logic tests | `npm run test:tier1` — `runBlockingTests()` in headless Chromium | every PR, every push to `main` |
-| `release.yml` | Checks (lint + Tier 1) | `npm run lint`, `npm run test:tier1` — gates all four build jobs | every release run |
+| `ci.yml` | Tier 1 logic tests | `pnpm test:tier1` — `runBlockingTests()` in headless Chromium | every PR, every push to `main` |
+| `release.yml` | Checks (lint + Tier 1) | `pnpm lint`, `pnpm test:tier1` — gates all four build jobs | every release run |
 | `release.yml` | macOS (.pkg) | `cargo test --lib` before signing | every release run |
 | `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes, on PRs and `main` |
 | `android-ci.yml` | Android debug APK | debug APK build, then `:tauri-plugin-android-blocker:testDebugUnitTest` | `src/**`, `src-tauri/**`, plugin, build config, on PRs and `main` |
@@ -74,7 +74,7 @@ Notes on the non-obvious choices:
   and `workspace_events.rs` are `#[cfg(target_os = "macos")]`, and the
   `cfg(not(ios|android))` modules depend on macOS/Windows-only crates, so the
   lib does not compile on a Linux runner at all. No Windows-only module carries
-  tests, so macOS covers the whole suite. The job also runs `npm run vite:build`
+  tests, so macOS covers the whole suite. The job also runs `pnpm vite:build`
   first — `tauri_build::build()` refuses to run when the configured
   `frontendDist` (`../dist`) is missing.
 - **Kotlin tests run after the APK build, in the same job.** `settings.gradle`
@@ -273,8 +273,8 @@ Tier 2 can also be driven from outside the app by attaching a WebDriver session
 to the built app's webview:
 
 ```
-npm run build:e2e-app      # app built with the test runners kept in the bundle
-npm run test:tier2         # drives runIntegrationTests('full') and fails on any failure
+pnpm build:e2e-app      # app built with the test runners kept in the bundle
+pnpm test:tier2         # drives runIntegrationTests('full') and fails on any failure
 ```
 
 Three things make this work, and all three are easy to trip over:
@@ -283,7 +283,7 @@ Three things make this work, and all three are easy to trip over:
   `test-utils.js` / `blocking-tests.js` / `integration-tests.js` from the
   bundle, so `runIntegrationTests` would not exist in the webview.
   `src-tauri/tauri.e2e.conf.json` swaps `beforeBuildCommand` to
-  `npm run vite:build:e2e`, which keeps the `<script>` tags *and* emits the
+  `pnpm vite:build:e2e`, which keeps the `<script>` tags *and* emits the
   three classic scripts into the output root (Vite never bundles them).
 - **`e2e/specs/tier2.e2e.js` is a driver, not a test.** All the assertions stay
   in `src/integration-tests.js` so the suite remains runnable by hand from the
@@ -302,7 +302,7 @@ Three things make this work, and all three are easy to trip over:
 the binary, and in a released blocker that is a remote-control bypass of every
 block the app enforces. It is an explicit opt-in feature rather than the
 crate's documented `#[cfg(debug_assertions)]` gate, which would open the port
-on every `npm run dev` session. `lib.rs` additionally carries a
+on every `pnpm dev` session. `lib.rs` additionally carries a
 `compile_error!` that fails the build if the feature is ever combined with a
 release profile, so the mistake is impossible rather than merely unlikely.
 

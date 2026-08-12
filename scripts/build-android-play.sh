@@ -158,7 +158,7 @@ setup_keychain() {
 }
 
 build_play_bundle() {
-    require_command npm
+    require_command pnpm
     require_command keytool
     require_command security
     require_command shasum
@@ -184,7 +184,7 @@ build_play_bundle() {
     export REDD_BLOCK_ANDROID_KEY_PASSWORD="$key_password"
 
     printf 'Building signed Google Play bundle with alias %s...\n' "$alias"
-    npm run build:android -- --apk false --aab true
+    pnpm build:android --apk false --aab true
 
     local aab
     aab=$(find "$ANDROID_PROJECT/app/build/outputs/bundle" -type f -name '*.aab' -print \
