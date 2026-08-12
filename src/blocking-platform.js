@@ -17,7 +17,7 @@ import { canEditScheduleBetweenBlocks, isScheduleSegmentActiveNow } from './sche
 import { applyScheduleStartOverlayPresentation, getScheduleStartOverlayForWarningApps, playAppBlockingLetsGoVoice } from './schedule-overlay.js';
 import { closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, initializeOverrideModalChallenge, openPauseModal, populateOverrideConfirmModalContent } from './confirm-modals.js';
 import { isModalVisible } from './modal-manager.js';
-import { updateManageSectionVisibility } from './settings.js';
+import { updateManageSectionVisibility, closeOverrideAllModal } from './settings.js';
 import { closeDefaultPauseModal } from './pause-default.js';
 import { CURRENT_EULA_REVISION, getAcceptedEulaRevision, hasAcceptedEula, isFirstRunOnboardingInProgress } from './onboarding.js';
 import { generateId, runPostAcceptanceStartup } from './app.js';
@@ -1106,6 +1106,7 @@ export const ANDROID_MODAL_CLOSE_FNS = {
     'pause-default-modal': closeDefaultPauseModal,
     'start-block-confirm-modal': closeStartBlockConfirmModal,
     'start-schedule-confirm-modal': closeScheduleConfirmModal,
+    'override-all-modal': closeOverrideAllModal,
 };
 
 // Tauri's generated WryActivity.onKeyDown only calls webView.goBack() on
@@ -1118,6 +1119,9 @@ export const ANDROID_MODAL_CLOSE_FNS = {
 // popstate (which goBack() triggers) close the topmost open modal
 // instead of letting the Activity finish.
 export function setupAndroidBackButtonHandling() {
+    if (document.documentElement.dataset.androidBackHandling === '1') return;
+    document.documentElement.dataset.androidBackHandling = '1';
+
     let trapArmed = false;
 
     function topmostVisibleModal() {

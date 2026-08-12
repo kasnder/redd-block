@@ -571,6 +571,8 @@ export const SETTINGS_TRANSLATIONS = {
         quickStartHintAfter: 'instead?',
         quickStartNeedItems: 'Add at least one website or app to start.',
         activeBlocklistWarning: 'This blocklist is active. Some settings are locked.',
+        /** Word-by-word challenge counter (mobile). */
+        challengeWordProgressFmt: 'Word {current} of {total}',
         name: 'Name',
         blocklistModeLabel: 'Mode',
         blocklistModeSentenceBefore: 'When this list is active,',
@@ -840,7 +842,6 @@ export const SETTINGS_TRANSLATIONS = {
         pauseDefaultValueMinutesFmt: '{m} min',
         pauseDefaultValueHoursFmt: '{h} hr',
         pauseDefaultValueHoursMinutesFmt: '{h} hr {m} min',
-        challengeWordProgressFmt: 'Word {current} of {total}',
         // In-app uninstall (macOS only)
         uninstallApp: 'Uninstall Digital Habits: Blocker',
         uninstallAppBtn: 'Uninstall…',
@@ -1448,6 +1449,7 @@ export const SETTINGS_TRANSLATIONS = {
         quickStartHintAfter: 'i stedet?',
         quickStartNeedItems: 'Tilføj mindst én hjemmeside eller en app for at starte.',
         activeBlocklistWarning: 'Denne blokliste er aktiv. Nogle indstillinger er låst.',
+        challengeWordProgressFmt: 'Ord {current} af {total}',
         name: 'Navn',
         blocklistModeLabel: 'Tilstand',
         blocklistModeSentenceBefore: 'Når denne blokering er aktiv,',
@@ -1715,7 +1717,6 @@ export const SETTINGS_TRANSLATIONS = {
         pauseDefaultValueMinutesFmt: '{m} min',
         pauseDefaultValueHoursFmt: '{h} t',
         pauseDefaultValueHoursMinutesFmt: '{h} t {m} min',
-        challengeWordProgressFmt: 'Ord {current} af {total}',
         // In-app uninstall (macOS only)
         uninstallApp: 'Afinstaller Digital Habits: Blocker',
         uninstallAppBtn: 'Afinstaller…',
@@ -2298,6 +2299,7 @@ export const SETTINGS_TRANSLATIONS = {
         quickStartHintAfter: '？',
         quickStartNeedItems: '请至少添加一个网站或应用再开始。',
         activeBlocklistWarning: '此专注空间正在运行，部分设置已锁定。',
+        challengeWordProgressFmt: '第 {current} 个词，共 {total} 个',
         name: '名称',
         blocklistModeLabel: '模式',
         blocklistModeSentenceBefore: '此列表生效时，',
@@ -2546,7 +2548,6 @@ export const SETTINGS_TRANSLATIONS = {
         pauseDefaultValueMinutesFmt: '{m} 分钟',
         pauseDefaultValueHoursFmt: '{h} 小时',
         pauseDefaultValueHoursMinutesFmt: '{h} 小时 {m} 分钟',
-        challengeWordProgressFmt: '第 {current} / {total} 个词',
         uninstallApp: '卸载 Digital Habits: Blocker',
         uninstallAppBtn: '卸载...',
         uninstallDisabledHint: '请先停止正在运行的阻止，然后才能卸载。',

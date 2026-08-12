@@ -1,6 +1,7 @@
 // Confirm modals: start/pause/resume/override flows, calendar previews,
 // blocklist edit modal, modal undo stack. Extracted verbatim from app.js.
 import { state } from './state.js';
+import { getChallengeController } from './challenge-controller.js';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
@@ -19,12 +20,8 @@ import { bindUiZoomLayoutObserver, scheduleSelectionPromptLayout, scheduleUiZoom
 import { ensureIOSAllowlistStartable } from './allowlist-ios.js';
 import {
     IOS_STOP_BTN_META_COLLAPSE_SLACK_PX, MINUTES_PER_DAY, MAX_SAME_DAY_END_MINUTES,
-    buildWordChallengeState, clampSameDayMinutes, formatConfirmModalOverrideTypingLine,
+    clampSameDayMinutes, formatConfirmModalOverrideTypingLine,
     formatMinutesAsHHMM, formatTime, generateId,
-    getCompletedChallengeText, getCurrentChallengeWord,
-    isMobileWordByWordChallenge, renderOverrideWordChallengeState,
-    renderPauseChallengeText, renderPauseWordChallengeState,
-    setOverrideWordChallengeMode, setPauseWordChallengeMode,
     shouldUseCompactMobileScheduleDayLabels, snapMinutesToInterval,
 } from './app.js';
 import { getDefaultPauseMinutes } from './pause-default.js';
@@ -2842,9 +2839,7 @@ export function closeOverrideModal() {
     document.getElementById('override-modal').classList.add('hidden');
     state.overrideBlockId = null;
     state.overrideBlocklistIdForHelper = null;
-    state.challengeText = '';
-    state.overrideWordChallengeState = null;
-    setOverrideWordChallengeMode(false);
+    getChallengeController('override').reset();
     delete window.overrideScheduleId;
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
     const confirmBtn = document.getElementById('confirm-override-btn');
@@ -2852,36 +2847,13 @@ export function closeOverrideModal() {
 }
 
 export function initializeOverrideModalChallenge(difficulty, progressColor = null) {
-    state.challengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
-
-    // Sanitize: remove linebreaks, collapse spaces, fold typographic lookalikes
-    state.challengeText = sanitizeChallengeTargetText(state.challengeText);
-
-    document.getElementById('challenge-text').textContent = state.challengeText;
-    document.getElementById('challenge-input').value = '';
-    document.getElementById('challenge-word-input').value = '';
-    state.overrideWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(state.challengeText) : null;
-    setOverrideWordChallengeMode(!!state.overrideWordChallengeState);
-
-    const progressBar = document.getElementById('challenge-progress-bar');
-    progressBar.style.width = '0%';
-    if (progressColor) {
-        progressBar.style.background = progressColor;
-    } else {
-        progressBar.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
-    }
-
-    // Reset wiggle state
-    document.querySelector('#override-modal .modal-content').classList.remove('wiggle');
-
+    // Signature preserved: the Android friction gate deliberately bypasses
+    // openOverrideModal and calls this directly (blocking-platform.js), setting
+    // state.overrideBlockId itself.
+    const controller = getChallengeController('override');
+    controller.open({ difficulty, progressColor });
     document.getElementById('override-modal').classList.remove('hidden');
-    if (state.overrideWordChallengeState) {
-        renderOverrideWordChallengeState();
-        requestAnimationFrame(() => document.getElementById('challenge-word-input')?.focus());
-    } else {
-        document.getElementById('confirm-override-btn').disabled = false;
-        requestAnimationFrame(() => document.getElementById('challenge-input')?.focus());
-    }
+    requestAnimationFrame(() => controller.focus());
 }
 
 // ── Pause/Resume Block ──
@@ -3169,55 +3141,25 @@ export function openPauseModal(blockId) {
     updatePauseRestartTime();
 
     const instructionEl = document.getElementById('pause-modal-instruction');
-    if (frictionless) {
-        if (instructionEl) instructionEl.textContent = tSettings('pauseDifficultyLiftedByAllowEdits');
-        state.pauseChallengeText = '';
-        state.pauseWordChallengeState = null;
-        setPauseWordChallengeMode(false);
-        document.getElementById('pause-challenge-text').textContent = '';
-        document.getElementById('pause-challenge-input').value = '';
-        document.getElementById('pause-challenge-word-input').value = '';
-        document.getElementById('confirm-pause-btn').disabled = false;
-    } else {
-        if (instructionEl) instructionEl.textContent = tSettings('pauseInstruction');
-        // Generate challenge text
-        const difficulty = blocklist.overrideDifficulty || { type: 'random-words', count: 50 };
-        state.pauseChallengeText = generateOverrideChallengeText(difficulty.type, difficulty.count, difficulty.customText);
-
-        state.pauseChallengeText = sanitizeChallengeTargetText(state.pauseChallengeText);
-
-        document.getElementById('pause-challenge-text').textContent = state.pauseChallengeText;
-        document.getElementById('pause-challenge-input').value = '';
-        document.getElementById('pause-challenge-word-input').value = '';
-        state.pauseWordChallengeState = isMobileWordByWordChallenge(difficulty) ? buildWordChallengeState(state.pauseChallengeText) : null;
-        setPauseWordChallengeMode(!!state.pauseWordChallengeState);
-
-        const progressBar = document.getElementById('pause-challenge-progress-bar');
-        progressBar.style.width = '0%';
-        if (blocklist.color) {
-            progressBar.style.background = blocklist.color;
-        } else {
-            progressBar.style.background = 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)';
-        }
+    if (instructionEl) {
+        instructionEl.textContent = tSettings(frictionless
+            ? 'pauseDifficultyLiftedByAllowEdits'
+            : 'pauseInstruction');
     }
 
-    // Reset wiggle
-    document.querySelector('#pause-modal .modal-content').classList.remove('wiggle');
+    // A flexible schedule between segments pauses without friction. The
+    // challenge stack is hidden by #pause-modal.pause-frictionless in CSS;
+    // skipChallenge clears both inputs so nothing stale can be submitted.
+    getChallengeController('pause').open({
+        difficulty: blocklist.overrideDifficulty || { type: 'random-words', count: 50 },
+        progressColor: blocklist.color,
+        skipChallenge: frictionless,
+    });
 
     document.getElementById('pause-modal').classList.remove('hidden');
     requestAnimationFrame(() => {
         syncPauseDurationRowLayout();
-        if (frictionless) {
-            document.getElementById('confirm-pause-btn').disabled = false;
-            return;
-        }
-        if (state.pauseWordChallengeState) {
-            renderPauseWordChallengeState();
-            document.getElementById('pause-challenge-word-input')?.focus();
-        } else {
-            document.getElementById('confirm-pause-btn').disabled = false;
-            document.getElementById('pause-challenge-input')?.focus();
-        }
+        getChallengeController('pause').focus();
     });
 }
 
@@ -3240,9 +3182,9 @@ export function closePauseModal() {
     pauseModal?.classList.remove('pause-frictionless');
     state.pauseBlockId = null;
     state.pauseScheduleData = null;
-    state.pauseChallengeText = '';
-    state.pauseWordChallengeState = null;
-    setPauseWordChallengeMode(false);
+    getChallengeController('pause').reset();
+    // Pause re-disables its confirm button on close; the challenge re-enables it
+    // on the next open. (The other two modals leave theirs enabled.)
     document.getElementById('confirm-pause-btn').disabled = true;
 }
 
@@ -3412,61 +3354,14 @@ export function selectPauseRestartTimeOption(e) {
     syncPauseDurationRowLayout();
 }
 
-function wigglePauseModal() {
-    const modal = document.querySelector('#pause-modal .modal-content');
-    if (!modal) return;
-    modal.classList.remove('wiggle');
-    void modal.offsetWidth;
-    modal.classList.add('wiggle');
-}
-
 export async function proceedWithPause() {
     if (!state.pauseBlockId && !state.pauseScheduleData) return;
 
-    if (!state.pauseScheduleData?.frictionless) {
-        if (state.pauseWordChallengeState) {
-            const typedWord = document.getElementById('pause-challenge-word-input').value.trim();
-            const expectedWord = getCurrentChallengeWord(state.pauseWordChallengeState);
-            if (typedWord === expectedWord) {
-                state.pauseWordChallengeState.currentIndex++;
-                if (state.pauseWordChallengeState.currentIndex < state.pauseWordChallengeState.words.length) {
-                    renderPauseWordChallengeState();
-                    document.getElementById('pause-challenge-word-input')?.focus();
-                    return;
-                }
-                state.pauseWordChallengeState.typedText = state.pauseChallengeText;
-            } else {
-                wigglePauseModal();
-                document.getElementById('pause-current-word').textContent = expectedWord;
-                return;
-            }
-        }
-
-        const typed = state.pauseWordChallengeState
-            ? (state.pauseWordChallengeState.typedText || '')
-            : document.getElementById('pause-challenge-input').value;
-        const target = state.pauseChallengeText;
-        if (typed !== target) {
-            let firstErrorIndex = -1;
-            for (let i = 0; i < Math.max(typed.length, target.length); i++) {
-                if (typed[i] !== target[i]) {
-                    firstErrorIndex = i;
-                    break;
-                }
-            }
-            if (firstErrorIndex === -1 && typed.length < target.length) {
-                firstErrorIndex = typed.length;
-            }
-            wigglePauseModal();
-            if (state.pauseWordChallengeState) {
-                document.getElementById('pause-current-word').textContent =
-                    getCurrentChallengeWord(state.pauseWordChallengeState);
-            } else {
-                renderPauseChallengeText(firstErrorIndex);
-            }
-            return;
-        }
-    }
+    // The controller already knows whether this open was frictionless, so the
+    // frictionless short-circuit lives there rather than being re-derived here.
+    const result = getChallengeController('pause').handleConfirm();
+    // 'advanced' = a correct but non-final word; the user keeps typing.
+    if (result.status !== 'ok') return;
 
     const days = parseInt(document.getElementById('pause-days').value) || 0;
     const hours = parseInt(document.getElementById('pause-hours').value) || 0;

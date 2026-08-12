@@ -22,7 +22,7 @@ import {
     getCompletedChallengeText,
     getCurrentChallengeWord,
     isMobileWordByWordChallenge,
-} from './app.js';
+} from './override-challenge.js';
 import { findHardestChallenge } from './settings.js';
 import { hasAnyBlockingStateToClear, syncSchedulesToHelper } from './schedule-engine.js';
 

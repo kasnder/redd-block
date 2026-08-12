@@ -117,7 +117,7 @@ import { render, kickClockNow, startTickInterval, updateWeekCalendar, syncSelect
 import { formatTitleBarScheduleStartWhen, hasAnyEnforcedBlocks, isNonRepeatingSchedule, isOneOffBlockEnforced, isSchedulePausedNow, pickEarliestUpcomingScheduledBlock, refreshDesktopHelperStatus, resolveOneShotOccurrences, scheduleHasFutureSingleOccurrence, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { dismissTopmostEscapeLayer, isModalVisible, refreshOpenHelperUi, startHelperUiRefreshLoop, stopHelperUiRefreshLoop } from './modal-manager.js';
 import {
-    overrideAllChallengeText, overrideAllWordChallengeState, refreshUninstallButtonState,
+    refreshUninstallButtonState,
     setupGraceSetting, setupHelpMenuLinks, setupHelperSettings, setupInAppUninstall,
     setupOverrideAll, setupSettingsHelpButtons, setupWindowsUninstallGuidance,
     syncUninstallConfirmModal, updateCleanHostsBtnState, updateHelperStatusIndicator,
@@ -127,7 +127,8 @@ import { setupDefaultPauseSetting, syncDefaultPauseSettingUi } from './pause-def
 import { setupTheme, setupUiZoomShortcuts, scheduleUiZoomResponsiveLayout, scheduleSelectionPromptLayout, getEffectiveViewportWidth, bindUiZoomLayoutObserver } from './theme.js';
 import { checkForAppUpdate, getLatestVersionPlatformKey, isVersionHigher, resolveMicrosoftStorePackage, updateBannerWhatsNewButtonHtml } from './update-banner.js';
 import { updateDownloadInProgress } from './update-banner.js';
-import { getWordList5, getIOSRandomWordsCharCount, generateRandomWordsByCount, generateRandomWords, generateOverrideChallengeText, generateGibberish, normalizeOverrideCount, normalizeCustomOverrideText, getTypingCharsPerMinuteForType, getMaxOverrideCharsForType, getOverrideGeneratedCharCount, getDifficultyTypingCharCount, getOverridePreviewText, getOverrideEstimatedMinutes, formatOverrideMaxDifficultyHint, usesMobileWordCountForOverrideType, isMobileOverrideChallengePlatform, formatIOSGibberishChallenge, renderChallengeReferenceText, applyChallengeTypedInputSanitization, shouldBlockChallengeSpaceKey, MIN_OVERRIDE_CHARS, DEFAULT_OVERRIDE_COUNT, TARGET_MAX_OVERRIDE_MINUTES, MAX_IOS_OVERRIDE_WORD_COUNT, OVERRIDE_PREVIEW_TRUNCATE_AT } from './override-challenge.js';
+import { getChallengeController } from './challenge-controller.js';
+import { getWordList5, getIOSRandomWordsCharCount, generateRandomWordsByCount, generateRandomWords, generateGibberish, normalizeOverrideCount, normalizeCustomOverrideText, getTypingCharsPerMinuteForType, getMaxOverrideCharsForType, getOverrideGeneratedCharCount, getDifficultyTypingCharCount, getOverridePreviewText, getOverrideEstimatedMinutes, formatOverrideMaxDifficultyHint, usesMobileWordCountForOverrideType, isMobileOverrideChallengePlatform, formatIOSGibberishChallenge, MIN_OVERRIDE_CHARS, DEFAULT_OVERRIDE_COUNT, TARGET_MAX_OVERRIDE_MINUTES, MAX_IOS_OVERRIDE_WORD_COUNT, OVERRIDE_PREVIEW_TRUNCATE_AT } from './override-challenge.js';
 import { escapeHtml, cleanUrlForDisplay, parseRgbFromColorString, rgbToHex, rgbToHsl, hslToRgb, getRelativeLuminance, getEnteringChipColor, getContrastTextColor } from './utils.js';
 import { SETTINGS_TRANSLATIONS, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List, tSettings, tSettingsFmt, LANGUAGE_FLAG_SVG, LANGUAGE_NATIVE_LABELS, languageNativeLabel, SUPPORTED_LANGUAGE_CODES } from './i18n.js';
 /** Windows Settings → Apps → Installed apps (Apps & features). */
@@ -1984,80 +1985,13 @@ function setupModalListeners() {
 
 // Override modal listeners
 function setupOverrideModalListeners() {
-    const challengeInput = document.getElementById('challenge-input');
-    const challengeWordInput = document.getElementById('challenge-word-input');
-    const progressBar = document.getElementById('challenge-progress-bar');
-    const challengeTextEl = document.getElementById('challenge-text');
-    const challengeCurrentWordEl = document.getElementById('challenge-current-word');
-
-    function getOverrideTypedValue() {
-        return state.overrideWordChallengeState?.typedText ?? challengeInput.value;
-    }
-
-    function renderChallengeText(errorIndex = -1, cursorIndex = 0) {
-        renderChallengeReferenceText(challengeTextEl, state.challengeText, { errorIndex, cursorIndex });
-    }
-
-    // Prevent paste - users must type manually
-    challengeInput.addEventListener('paste', (e) => {
-        e.preventDefault();
-    });
-    challengeWordInput.addEventListener('paste', (e) => {
-        e.preventDefault();
-    });
-
-    challengeInput.addEventListener('input', () => {
-        const typed = applyChallengeTypedInputSanitization(challengeInput);
-        const target = state.challengeText;
-
-        // Calculate progress and find first error
-        let correctChars = 0;
-        let firstErrorIndex = -1;
-        for (let i = 0; i < typed.length && i < target.length; i++) {
-            if (typed[i] === target[i]) {
-                correctChars++;
-            } else {
-                firstErrorIndex = i;
-                break; // Stop at first mismatch
-            }
-        }
-
-        const progress = (correctChars / target.length) * 100;
-        progressBar.style.width = `${progress}%`;
-
-        // Highlight mismatch (if any) and keep the current typing position in view
-        renderChallengeText(firstErrorIndex, correctChars);
-    });
-
-    challengeWordInput.addEventListener('input', () => {
-        if (!state.overrideWordChallengeState) return;
-        challengeCurrentWordEl.textContent = getCurrentChallengeWord(state.overrideWordChallengeState);
-    });
-
-    // Enter key submits the override
-    challengeInput.addEventListener('keydown', (e) => {
-        if (shouldBlockChallengeSpaceKey(challengeInput, e)) {
-            e.preventDefault();
-            return;
-        }
-        if (e.key === 'Enter') {
-            e.preventDefault(); // Prevent newline in textarea
-            document.getElementById('confirm-override-btn').click();
-        }
-    });
-    challengeWordInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            document.getElementById('confirm-override-btn').click();
-        }
-    });
+    // Typing, progress, paste-blocking and Enter now live in the shared
+    // controller (challenge-controller.js); it wires its own listeners on first
+    // use. What stays here is the override modal's confirm action, which is what
+    // actually distinguishes it from pause and stop-all.
+    getChallengeController('override');
 
     document.getElementById('cancel-override-btn').addEventListener('click', () => {
-        // Check for helper removal special case
-        if (state.overrideBlockId === 'helper-removal' && window.helperRemovalCancelCallback) {
-            window.helperRemovalCancelCallback();
-            return;
-        }
         closeOverrideModal();
     });
 
@@ -2093,58 +2027,9 @@ function setupOverrideModalListeners() {
         updatePauseRestartTime();
     });
 
-    // Pause challenge input — mirror stop/override challenge UX
-    const pauseChallengeInput = document.getElementById('pause-challenge-input');
-    const pauseChallengeWordInput = document.getElementById('pause-challenge-word-input');
-    const pauseProgressBar = document.getElementById('pause-challenge-progress-bar');
-    const pauseCurrentWordEl = document.getElementById('pause-current-word');
-
-    pauseChallengeInput.addEventListener('paste', (e) => {
-        e.preventDefault();
-    });
-    pauseChallengeInput.addEventListener('input', () => {
-        const typed = applyChallengeTypedInputSanitization(pauseChallengeInput);
-        const target = state.pauseChallengeText;
-
-        let correctChars = 0;
-        let firstErrorIndex = -1;
-        for (let i = 0; i < typed.length && i < target.length; i++) {
-            if (typed[i] === target[i]) {
-                correctChars++;
-            } else {
-                firstErrorIndex = i;
-                break;
-            }
-        }
-
-        const progress = target.length > 0 ? (correctChars / target.length) * 100 : 0;
-        pauseProgressBar.style.width = `${progress}%`;
-        renderPauseChallengeText(firstErrorIndex, correctChars);
-    });
-    pauseChallengeWordInput.addEventListener('paste', (e) => {
-        e.preventDefault();
-    });
-    pauseChallengeWordInput.addEventListener('input', () => {
-        if (!state.pauseWordChallengeState) return;
-        pauseCurrentWordEl.textContent = getCurrentChallengeWord(state.pauseWordChallengeState);
-    });
-
-    pauseChallengeInput.addEventListener('keydown', (e) => {
-        if (shouldBlockChallengeSpaceKey(pauseChallengeInput, e)) {
-            e.preventDefault();
-            return;
-        }
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            proceedWithPause();
-        }
-    });
-    pauseChallengeWordInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            proceedWithPause();
-        }
-    });
+    // Pause shares the same engine; its confirm action (proceedWithPause) lives
+    // in confirm-modals.js alongside the duration controls.
+    getChallengeController('pause');
 
     const pauseDurationSection = document.querySelector('#pause-modal .pause-duration-section');
     if (pauseDurationSection && typeof ResizeObserver !== 'undefined') {
@@ -2164,56 +2049,13 @@ function setupOverrideModalListeners() {
     window.addEventListener('orientationchange', () => syncMobileScheduleDayLabelsViewportMode());
 
     document.getElementById('confirm-override-btn').addEventListener('click', async () => {
-        if (state.overrideWordChallengeState) {
-            const expectedWord = getCurrentChallengeWord(state.overrideWordChallengeState);
-            const typedWord = challengeWordInput.value.trim();
-            if (typedWord === expectedWord) {
-                state.overrideWordChallengeState.currentIndex++;
-                const completedText = getCompletedChallengeText(state.overrideWordChallengeState);
-                state.overrideWordChallengeState.typedText = state.overrideWordChallengeState.currentIndex >= state.overrideWordChallengeState.words.length
-                    ? state.challengeText
-                    : completedText;
-                if (state.overrideWordChallengeState.currentIndex < state.overrideWordChallengeState.words.length) {
-                    renderOverrideWordChallengeState();
-                    challengeWordInput.focus();
-                    return;
-                }
-            } else {
-                const modalContent = document.querySelector('#override-modal .modal-content');
-                modalContent.classList.remove('wiggle');
-                void modalContent.offsetWidth;
-                modalContent.classList.add('wiggle');
-                challengeCurrentWordEl.textContent = getCurrentChallengeWord(state.overrideWordChallengeState);
-                return;
-            }
-        }
+        const result = getChallengeController('override').handleConfirm();
+        // A correct but non-final word: the controller already advanced the UI.
+        if (result.status !== 'ok') return;
 
-        const typed = getOverrideTypedValue();
-        const target = state.challengeText;
-
-        // Find first mismatch
-        let firstErrorIndex = -1;
-        if (typed !== target) {
-            for (let i = 0; i < Math.max(typed.length, target.length); i++) {
-                if (typed[i] !== target[i]) {
-                    firstErrorIndex = i;
-                    break;
-                }
-            }
-            // If typed is shorter than target, first missing char is the error
-            if (firstErrorIndex === -1 && typed.length < target.length) {
-                firstErrorIndex = typed.length;
-            }
-        }
-
-        if (typed === target && (state.overrideBlockId || window.overrideScheduleId)) {
-            // Check for helper removal special case
-            if (state.overrideBlockId === 'helper-removal' && window.helperRemovalConfirmCallback) {
-                window.helperRemovalConfirmCallback();
-                return;
-            }
-
-            if (state.overrideBlockId && state.overrideBlockId !== 'helper-removal') {
+        // Stop a running block, or tear down a schedule.
+        if (state.overrideBlockId || window.overrideScheduleId) {
+            if (state.overrideBlockId) {
                 const overriddenBlock = state.appData.activeBlocks.find(b => b.id === state.overrideBlockId);
                 const blocklistIdToClear = state.overrideBlocklistIdForHelper ?? (overriddenBlock ? overriddenBlock.blocklistId : null);
                 state.appData.activeBlocks = state.appData.activeBlocks.filter(b => b.id !== state.overrideBlockId);
@@ -2301,19 +2143,6 @@ function setupOverrideModalListeners() {
             await refreshOpenHelperUi();
 
             closeOverrideModal();
-        } else {
-            // Wrong! Wiggle and highlight error
-            const modalContent = document.querySelector('#override-modal .modal-content');
-            modalContent.classList.remove('wiggle');
-            void modalContent.offsetWidth; // Trigger reflow
-            modalContent.classList.add('wiggle');
-
-            // Highlight first wrong character
-            if (state.overrideWordChallengeState) {
-                challengeCurrentWordEl.textContent = getCurrentChallengeWord(state.overrideWordChallengeState);
-            } else {
-                renderChallengeText(firstErrorIndex);
-            }
         }
     });
 
@@ -2450,112 +2279,6 @@ export function formatBlockTimeRemainingShort(totalMins) {
 }
 
 
-export function buildWordChallengeState(text) {
-    const words = String(text || '').split(/\s+/).filter(Boolean);
-    return {
-        words,
-        currentIndex: 0,
-        typedText: ''
-    };
-}
-
-
-export function isMobileWordByWordChallenge(difficulty) {
-    return !!(isMobileOverrideChallengePlatform() && (difficulty?.type === 'random-words' || difficulty?.type === 'gibberish'));
-}
-
-export function getCurrentChallengeWord(state) {
-    if (!state || state.currentIndex >= state.words.length) return '';
-    return state.words[state.currentIndex];
-}
-
-export function getCompletedChallengeText(state) {
-    if (!state || state.currentIndex <= 0) return '';
-    return state.words.slice(0, state.currentIndex).join(' ');
-}
-
-export function setOverrideWordChallengeMode(enabled) {
-    document.getElementById('challenge-word-progress')?.classList.toggle('hidden', !enabled);
-    document.getElementById('challenge-current-word')?.classList.toggle('hidden', !enabled);
-    document.getElementById('challenge-word-input')?.classList.toggle('hidden', !enabled);
-    document.getElementById('challenge-input')?.classList.toggle('hidden', enabled);
-}
-
-export function renderOverrideWordChallengeState() {
-    const progressLabelEl = document.getElementById('challenge-word-progress');
-    const currentWordEl = document.getElementById('challenge-current-word');
-    const wordInput = document.getElementById('challenge-word-input');
-    const progressBar = document.getElementById('challenge-progress-bar');
-    if (!state.overrideWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
-    const currentWord = getCurrentChallengeWord(state.overrideWordChallengeState);
-    const completedText = getCompletedChallengeText(state.overrideWordChallengeState);
-    const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
-    progressLabelEl.textContent = `Word ${state.overrideWordChallengeState.currentIndex + 1} of ${state.overrideWordChallengeState.words.length}`;
-    currentWordEl.textContent = currentWord;
-    wordInput.value = '';
-    progressBar.style.width = state.challengeText.length > 0
-        ? `${Math.min(100, (targetText.length / state.challengeText.length) * 100)}%`
-        : '0%';
-    document.getElementById('confirm-override-btn').disabled = !currentWord;
-}
-
-export function setPauseWordChallengeMode(enabled) {
-    document.getElementById('pause-word-progress')?.classList.toggle('hidden', !enabled);
-    document.getElementById('pause-current-word')?.classList.toggle('hidden', !enabled);
-    document.getElementById('pause-challenge-word-input')?.classList.toggle('hidden', !enabled);
-    document.getElementById('pause-challenge-input')?.classList.toggle('hidden', enabled);
-}
-
-export function renderPauseChallengeText(errorIndex = -1, cursorIndex = 0) {
-    renderChallengeReferenceText(
-        document.getElementById('pause-challenge-text'),
-        state.pauseChallengeText,
-        { errorIndex, cursorIndex }
-    );
-}
-
-export function renderPauseWordChallengeState() {
-    const progressLabelEl = document.getElementById('pause-word-progress');
-    const currentWordEl = document.getElementById('pause-current-word');
-    const wordInput = document.getElementById('pause-challenge-word-input');
-    const progressBar = document.getElementById('pause-challenge-progress-bar');
-    if (!state.pauseWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
-    const currentWord = getCurrentChallengeWord(state.pauseWordChallengeState);
-    const completedText = getCompletedChallengeText(state.pauseWordChallengeState);
-    const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
-    progressLabelEl.textContent = `Word ${state.pauseWordChallengeState.currentIndex + 1} of ${state.pauseWordChallengeState.words.length}`;
-    currentWordEl.textContent = currentWord;
-    wordInput.value = '';
-    progressBar.style.width = state.pauseChallengeText.length > 0
-        ? `${Math.min(100, (targetText.length / state.pauseChallengeText.length) * 100)}%`
-        : '0%';
-    document.getElementById('confirm-pause-btn').disabled = !currentWord;
-}
-
-export function setOverrideAllWordChallengeMode(enabled) {
-    document.getElementById('override-all-word-progress')?.classList.toggle('hidden', !enabled);
-    document.getElementById('override-all-current-word')?.classList.toggle('hidden', !enabled);
-    document.getElementById('override-all-challenge-word-input')?.classList.toggle('hidden', !enabled);
-    document.getElementById('override-all-challenge-input')?.classList.toggle('hidden', enabled);
-}
-
-export function renderOverrideAllWordChallengeState() {
-    const progressLabelEl = document.getElementById('override-all-word-progress');
-    const currentWordEl = document.getElementById('override-all-current-word');
-    const wordInput = document.getElementById('override-all-challenge-word-input');
-    const progressBar = document.getElementById('override-all-progress-bar');
-    if (!overrideAllWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
-    const currentWord = getCurrentChallengeWord(overrideAllWordChallengeState);
-    const completedText = getCompletedChallengeText(overrideAllWordChallengeState);
-    const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
-    progressLabelEl.textContent = `Word ${overrideAllWordChallengeState.currentIndex + 1} of ${overrideAllWordChallengeState.words.length}`;
-    currentWordEl.textContent = currentWord;
-    wordInput.value = '';
-    progressBar.style.width = overrideAllChallengeText.length > 0
-        ? `${Math.min(100, (targetText.length / overrideAllChallengeText.length) * 100)}%`
-        : '0%';
-    document.getElementById('confirm-override-all-btn').disabled = !currentWord;
-}
 
 // Clean up URL for display (remove protocol, www, trailing slash)
 

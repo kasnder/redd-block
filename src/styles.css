@@ -14355,7 +14355,11 @@ body.dark-mode .modal-btn.black-btn:hover{
     margin-top: 0;
 }
 
-.start-confirm-modal.override-challenge .challenge-text{
+/* #override-all-modal's content lacks .start-confirm-modal, so without the
+   second selector it alone fell through to the 16px in the shared block below —
+   an accidental divergence, not a deliberate one. */
+.start-confirm-modal.override-challenge .challenge-text,
+#override-all-modal .override-challenge .challenge-text{
     margin-top: 12px;
 }
 
