@@ -10,7 +10,7 @@ import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxO
 import { isAndroidAllowlistUnsupported, isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
-import { clearPendingScheduleDraft, isBlocklistEditFrictionRequired, renderBlocklists, truncateBlocklistName } from './blocklists.js';
+import { clearPendingScheduleDraft, getRunningEnforcementTarget, isBlocklistEditFrictionRequired, renderBlocklists, truncateBlocklistName } from './blocklists.js';
 import { getCommittedScheduleSegmentCount, getInitialExpandedScheduleSegmentIndex, isScheduleSegmentActiveNow, rebuildScheduleSegments, setAlwaysOnMode, setScheduleMode, updateScheduleButtonState, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { getEffectiveScheduleStartOverlayId, rememberLastScheduleStartOverlayId, syncScheduleConfirmOverlaySummary } from './schedule-overlay.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, initializeTimeInputs, pad, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
@@ -2464,6 +2464,125 @@ export function applyModalBlocklistTint(hexColor) {
     }
 }
 
+export function openBlocklistEditPauseModal(blocklistId = state.editingBlocklistId) {
+    const target = getRunningEnforcementTarget(blocklistId);
+    if (!target) return;
+
+    if (target.type === 'block') {
+        state.pauseScheduleData = null;
+        openPauseModal(target.block.id);
+        return;
+    }
+
+    state.pauseScheduleData = {
+        blocklistId,
+        isActiveNow: isScheduleSegmentActiveNow(target.schedule),
+        frictionless: canEditScheduleBetweenBlocks(target.schedule),
+    };
+    openPauseModal(null);
+}
+
+/**
+ * Swap the modal's locked-item sets without touching what the user has typed
+ * into it. setModalData rebuilds the working lists from saved data, which is
+ * right when the modal opens and wrong when we re-sync an already-open modal:
+ * an item added before hitting Pause would vanish with no message.
+ */
+function applyModalLockedItems(lockedWebsitesList, lockedAppsList) {
+    window.lockedWebsites = lockedWebsitesList;
+    window.lockedApps = lockedAppsList;
+    window.renderModalTags?.();
+}
+
+/**
+ * @param {object|null} blocklist
+ * @param {number} now
+ * @param {{ preserveModalItems?: boolean }} options - set when re-syncing a
+ *   modal that is already open, so in-progress edits survive the refresh.
+ */
+function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { preserveModalItems = false } = {}) {
+    const isActive = isBlocklistEditFrictionRequired(blocklist?.id, now);
+    const warningEl = document.getElementById('active-blocklist-warning');
+    const pauseBtn = document.getElementById('active-blocklist-pause-btn');
+    const overrideInputs = [
+        document.getElementById('override-type'),
+        document.getElementById('override-count'),
+        document.getElementById('custom-override-text'),
+        document.getElementById('override-max-difficulty-checkbox')
+    ];
+    const maxDifficultyWrap = document.getElementById('override-max-difficulty-wrap');
+    const overrideTypeSelect = document.getElementById('override-type');
+    const overrideCountInput = document.getElementById('override-count');
+    const overrideCountWrapperEl = document.getElementById('override-count-wrapper');
+    const overrideMethodRowEl = document.getElementById('override-method-row');
+    const overridePreviewBlockEl = document.getElementById('override-preview-block');
+    const overrideTimeEstimateEl = document.getElementById('override-count-time-estimate');
+
+    const runningTarget = getRunningEnforcementTarget(blocklist?.id, now);
+
+    const canPauseToEdit = isActive && !!runningTarget;
+    pauseBtn?.classList.toggle('hidden', !canPauseToEdit);
+    if (pauseBtn) {
+        pauseBtn.onclick = canPauseToEdit
+            ? () => openBlocklistEditPauseModal(blocklist.id)
+            : null;
+    }
+
+    if (isActive) {
+        warningEl.classList.remove('hidden');
+        overrideInputs.forEach(el => el.disabled = true);
+        overrideTypeSelect?.classList.add('form-select-disabled');
+        overrideCountInput?.classList.add('form-input-disabled');
+        overrideTimeEstimateEl?.classList.add('time-estimate-disabled');
+        overrideMethodRowEl?.classList.add('blocklist-active-locked');
+        overrideCountWrapperEl?.classList.add('blocklist-active-locked');
+        maxDifficultyWrap?.classList.add('max-difficulty-disabled', 'blocklist-active-locked');
+        overridePreviewBlockEl?.classList.add('blocklist-active-locked');
+        document.getElementById('override-count-minus')?.setAttribute('disabled', '');
+        document.getElementById('override-count-plus')?.setAttribute('disabled', '');
+
+        if (preserveModalItems) {
+            applyModalLockedItems(blocklist.websites || [], getBlocklistModalLockedApps(blocklist));
+        } else {
+            window.setModalData(
+                blocklist.websites || [],
+                getBlocklistRegularApps(blocklist),
+                getBlocklistIOSScreenTimeSelection(blocklist),
+                blocklist.websites || [],
+                getBlocklistModalLockedApps(blocklist)
+            );
+        }
+        return;
+    }
+
+    warningEl.classList.add('hidden');
+    overrideInputs.forEach(el => el.disabled = false);
+    overrideTypeSelect?.classList.remove('form-select-disabled');
+    overrideCountInput?.classList.remove('form-input-disabled');
+    overrideTimeEstimateEl?.classList.remove('time-estimate-disabled');
+    overrideMethodRowEl?.classList.remove('blocklist-active-locked');
+    overrideCountWrapperEl?.classList.remove('blocklist-active-locked');
+    maxDifficultyWrap?.classList.remove('max-difficulty-disabled', 'blocklist-active-locked');
+    overridePreviewBlockEl?.classList.remove('blocklist-active-locked');
+    const maxDifficultyOn = document.getElementById('override-max-difficulty-checkbox')?.checked;
+    document.getElementById('override-count-minus')?.toggleAttribute('disabled', !!maxDifficultyOn);
+    document.getElementById('override-count-plus')?.toggleAttribute('disabled', !!maxDifficultyOn);
+
+    if (preserveModalItems) {
+        applyModalLockedItems([], []);
+    } else {
+        window.setModalData(
+            blocklist?.websites || [],
+            getBlocklistRegularApps(blocklist),
+            getBlocklistIOSScreenTimeSelection(blocklist),
+            [],
+            []
+        );
+    }
+
+    if (maxDifficultyOn) setOverrideCountMaxMode(true);
+}
+
 // Open blocklist modal
 export function openBlocklistModal(blocklist = null, options = {}) {
     // Keep narrow-desktop sheet chrome in sync before showing create/edit.
@@ -2610,112 +2729,7 @@ export function openBlocklistModal(blocklist = null, options = {}) {
         }
     }
 
-    // Check if active (block or schedule)
-    const now = Date.now();
-    const hasActiveBlock = blocklist?.id && state.appData.activeBlocks.some(
-        b => b.blocklistId === blocklist.id && b.startTime <= now && b.endTime > now
-    );
-    const scheduleForBlocklist = blocklist?.id && state.appData.schedules
-        ? state.appData.schedules.find(s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0)
-        : null;
-    const hasActiveSchedule = !!scheduleForBlocklist;
-    // Hard lock when a one-off is running, or a schedule is running without
-    // between-blocks editing. One definition, in blocklists.js, so the rule
-    // cannot drift from whatever else comes to depend on it.
-    const isActive = isBlocklistEditFrictionRequired(blocklist?.id, now);
-
-    const warningEl = document.getElementById('active-blocklist-warning');
-    const modeInputs = document.getElementById('blocklist-modal').querySelectorAll('.radio-option');
-    const overrideInputs = [
-        document.getElementById('override-type'),
-        document.getElementById('override-count'),
-        document.getElementById('custom-override-text'),
-        document.getElementById('override-max-difficulty-checkbox')
-    ];
-    const maxDifficultyWrap = document.getElementById('override-max-difficulty-wrap');
-
-    // Get override elements for styling
-    const overrideTypeSelect = document.getElementById('override-type');
-    const overrideCountInput = document.getElementById('override-count');
-    const overrideCountWrapperEl = document.getElementById('override-count-wrapper');
-    const overrideMethodRowEl = document.getElementById('override-method-row');
-    const overridePreviewBlockEl = document.getElementById('override-preview-block');
-    const overrideTimeEstimateEl = document.getElementById('override-count-time-estimate');
-
-    // Mode stays locked whenever any block/schedule is running.
-    if (hasActiveBlock || hasActiveSchedule) {
-        modeInputs.forEach(el => el.classList.add('disabled'));
-    } else {
-        modeInputs.forEach(el => el.classList.remove('disabled'));
-    }
-
-    if (isActive) {
-        warningEl.classList.remove('hidden');
-        overrideInputs.forEach(el => el.disabled = true);
-
-        // Style override type dropdown (like repeat dropdown)
-        if (overrideTypeSelect) {
-            overrideTypeSelect.classList.add('form-select-disabled');
-        }
-
-        // Style override count input (like repeat dropdown)
-        if (overrideCountInput) {
-            overrideCountInput.classList.add('form-input-disabled');
-        }
-
-        if (overrideTimeEstimateEl) {
-            overrideTimeEstimateEl.classList.add('time-estimate-disabled');
-        }
-        if (overrideMethodRowEl) overrideMethodRowEl.classList.add('blocklist-active-locked');
-        if (overrideCountWrapperEl) overrideCountWrapperEl.classList.add('blocklist-active-locked');
-        if (maxDifficultyWrap) maxDifficultyWrap.classList.add('max-difficulty-disabled', 'blocklist-active-locked');
-        if (overridePreviewBlockEl) overridePreviewBlockEl.classList.add('blocklist-active-locked');
-        document.getElementById('override-count-minus')?.setAttribute('disabled', '');
-        document.getElementById('override-count-plus')?.setAttribute('disabled', '');
-
-        // Pass existing items as locked
-        window.setModalData(
-            blocklist.websites || [],
-            getBlocklistRegularApps(blocklist),
-            getBlocklistIOSScreenTimeSelection(blocklist),
-            blocklist.websites || [],
-            getBlocklistModalLockedApps(blocklist)
-        );
-    } else {
-        warningEl.classList.add('hidden');
-        overrideInputs.forEach(el => el.disabled = false);
-
-        // Remove disabled styling
-        if (overrideTypeSelect) {
-            overrideTypeSelect.classList.remove('form-select-disabled');
-        }
-        if (overrideCountInput) {
-            overrideCountInput.classList.remove('form-input-disabled');
-        }
-        if (overrideTimeEstimateEl) {
-            overrideTimeEstimateEl.classList.remove('time-estimate-disabled');
-        }
-        if (overrideMethodRowEl) overrideMethodRowEl.classList.remove('blocklist-active-locked');
-        if (overrideCountWrapperEl) overrideCountWrapperEl.classList.remove('blocklist-active-locked');
-        if (maxDifficultyWrap) maxDifficultyWrap.classList.remove('max-difficulty-disabled', 'blocklist-active-locked');
-        if (overridePreviewBlockEl) overridePreviewBlockEl.classList.remove('blocklist-active-locked');
-        const maxDifficultyOn = document.getElementById('override-max-difficulty-checkbox')?.checked;
-        document.getElementById('override-count-minus')?.toggleAttribute('disabled', !!maxDifficultyOn);
-        document.getElementById('override-count-plus')?.toggleAttribute('disabled', !!maxDifficultyOn);
-
-        window.setModalData(
-            blocklist?.websites || [],
-            getBlocklistRegularApps(blocklist),
-            getBlocklistIOSScreenTimeSelection(blocklist),
-            [],
-            []
-        );
-    }
-
-    // Re-apply max-difficulty grey-out for count when blocklist is not active (above else branch removes it)
-    if (!isActive && document.getElementById('override-max-difficulty-checkbox')?.checked) {
-        setOverrideCountMaxMode(true);
-    }
+    syncBlocklistEditFrictionUi(blocklist);
 
     // Set advanced options - default to checked (true) if not set
     const showItemDetailsCheckbox = document.getElementById('show-item-details-checkbox');
@@ -3357,6 +3371,10 @@ export function selectPauseRestartTimeOption(e) {
 export async function proceedWithPause() {
     if (!state.pauseBlockId && !state.pauseScheduleData) return;
 
+    const pausedBlocklistId = state.pauseScheduleData?.blocklistId
+        || state.appData.activeBlocks.find(b => b.id === state.pauseBlockId)?.blocklistId
+        || null;
+
     // The controller already knows whether this open was frictionless, so the
     // frictionless short-circuit lives there rather than being re-derived here.
     const result = getChallengeController('pause').handleConfirm();
@@ -3450,6 +3468,12 @@ export async function proceedWithPause() {
     render();
     refreshSelectedBlocklistUi(keepSelectedId);
     syncPauseButtonForSelectedBlocklist();
+    const editingBlocklist = state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId);
+    if (editingBlocklist
+        && editingBlocklist.id === pausedBlocklistId
+        && !document.getElementById('blocklist-modal')?.classList.contains('hidden')) {
+        syncBlocklistEditFrictionUi(editingBlocklist, Date.now(), { preserveModalItems: true });
+    }
     closePauseModal();
 }
 export function updateOverridePreview() {

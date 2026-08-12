@@ -5486,6 +5486,28 @@ body.dark-mode .time-part.active{
     flex-shrink: 0;
 }
 
+.warning-banner-action{
+    flex-shrink: 0;
+    margin-left: auto;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    background: transparent;
+    color: inherit;
+    padding: 4px 10px;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.warning-banner-action:hover{
+    background: rgba(146, 64, 14, 0.08);
+}
+
+.warning-banner-action:focus-visible{
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+}
+
 .mode-option.disabled{
     opacity: 0.5;
     pointer-events: none;

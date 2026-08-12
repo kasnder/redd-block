@@ -1152,13 +1152,76 @@
         });
     }
 
-    async function testI5_letsGoAcknowledgesBeforeShellReconcile() {
+    async function testI5_editWarningPauseUnlocksModal() {
+        return runIsolatedIntegrationTest('I5', async () => {
+            hideAllIntegrationModals();
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'I5 Modal' });
+            const block = addActiveBlock(bl.id, { durationMs: 5 * 60 * 1000 });
+            await callSaveData();
+            callRender();
+
+            const card = document.querySelector(`.blocklist-card[data-id="${bl.id}"]`);
+            assertOrThrow(card, 'I5: focus-space card missing');
+            let editButton = card.querySelector('.edit-btn');
+            if (!editButton) {
+                card.querySelector('.blocklist-menu-btn')?.click();
+                editButton = card.querySelector('.edit-blocklist-item');
+            }
+            assertOrThrow(editButton, 'I5: edit button missing');
+            editButton.click();
+
+            await waitForIntegrationCondition(() => isVisible('blocklist-modal'), 'I5 edit modal');
+            assertOrThrow(isVisible('active-blocklist-warning'), 'I5: active warning missing');
+            const pauseButton = document.getElementById('active-blocklist-pause-btn');
+            assertOrThrow(pauseButton && !pauseButton.classList.contains('hidden'), 'I5: warning Pause button missing');
+
+            // Type an unsaved addition before pausing: the post-pause refresh
+            // must swap the locked sets without rebuilding the working list
+            // from saved data, or this silently disappears.
+            const websiteInput = document.getElementById('modal-website-input');
+            assertOrThrow(websiteInput, 'I5: modal website input missing');
+            websiteInput.value = TEST_DOMAINS.b;
+            websiteInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            const tagText = () => document.getElementById('modal-websites-tags')?.textContent || '';
+            assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: pending website was not added before pausing');
+
+            pauseButton.click();
+            await waitForIntegrationCondition(() => isVisible('pause-modal'), 'I5 pause modal');
+
+            await completeIntegrationChallenge('I5', {
+                modalId: 'pause-modal',
+                textId: 'pause-challenge-text',
+                inputId: 'pause-challenge-input',
+                wordInputId: 'pause-challenge-word-input',
+                currentWordId: 'pause-current-word',
+                confirmId: 'confirm-pause-btn',
+            });
+
+            await waitForIntegrationCondition(
+                () => !isVisible('pause-modal')
+                    && isVisible('blocklist-modal')
+                    && !!getAppData().activeBlocks.find(candidate => candidate.id === block.id)?.isPaused,
+                'I5 pause unlocks edit modal',
+            );
+            assertOrThrow(!isVisible('active-blocklist-warning'), 'I5: warning stayed visible after pause');
+            assertOrThrow(!document.getElementById('override-type')?.disabled, 'I5: override settings stayed locked after pause');
+            assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: unsaved website edit was discarded by the pause refresh');
+            assertOrThrow(
+                !document.querySelector('#modal-websites-tags .tag.locked'),
+                'I5: website tags stayed locked after pause',
+            );
+            hideAllIntegrationModals();
+            return { passed: true };
+        });
+    }
+
+    async function testI6_letsGoAcknowledgesBeforeShellReconcile() {
         const internals = getInternals();
         const tauriAPI = getTauriAPI();
         const warningRows = internals?.appBlockingWarningRows;
         const letsGoButton = document.getElementById('app-blocking-lets-go-btn');
-        assertOrThrow(warningRows instanceof Map, 'I5: warning row state unavailable');
-        assertOrThrow(letsGoButton, 'I5: Let\'s go button missing');
+        assertOrThrow(warningRows instanceof Map, 'I6: warning row state unavailable');
+        assertOrThrow(letsGoButton, 'I6: Let\'s go button missing');
 
         const originalAcknowledge = tauriAPI.letsGoAcknowledge;
         const originalReconcile = tauriAPI.reconcileBlockingWarningShell;
@@ -1178,7 +1241,7 @@
 
             assertOrThrow(
                 calls[0] === 'acknowledge',
-                `I5: warning shell reconciled before native acknowledgement (${calls.join(' -> ')})`,
+                `I6: warning shell reconciled before native acknowledgement (${calls.join(' -> ')})`,
             );
         } finally {
             warningRows.clear();
@@ -1203,7 +1266,8 @@
             { group: 'I', name: 'I2: Stop-all success restores Settings', fn: testI2_stopAllSuccessRestoresSettings },
             { group: 'I', name: 'I3: Stop and pause cancel workflows', fn: testI3_stopAndPauseCancelWorkflows },
             { group: 'I', name: 'I4: Android back closes topmost modal', fn: testI4_androidBackClosesTopmostModal },
-            { group: 'I', name: 'I5: Let\'s go acknowledges before shell reconcile', fn: testI5_letsGoAcknowledgesBeforeShellReconcile }
+            { group: 'I', name: 'I5: Edit warning Pause unlocks modal', fn: testI5_editWarningPauseUnlocksModal },
+            { group: 'I', name: 'I6: Let\'s go acknowledges before shell reconcile', fn: testI6_letsGoAcknowledgesBeforeShellReconcile }
         ];
 
         if (profile === PROFILE_CORE) return coreTests;
