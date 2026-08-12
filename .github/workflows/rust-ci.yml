@@ -82,13 +82,10 @@ jobs:
         os: [macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-          cache: pnpm
+          cache: npm
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -96,11 +93,11 @@ jobs:
         with:
           workspaces: src-tauri
           key: clippy-${{ matrix.os }}
-      - run: pnpm install --frozen-lockfile
+      - run: npm ci
       # Same reason as the test job: build.rs validates that ../dist exists.
-      - run: pnpm vite:build
-      # `--lib` matches the Android clippy invocation and skips the stale
-      # `test_watcher` example.
-      - name: cargo clippy --lib
+      - run: npm run vite:build
+      # `--lib --bins --tests` includes the native-host entrypoint and unit
+      # tests while still skipping the stale `test_watcher` example.
+      - name: cargo clippy --lib --bins --tests
         working-directory: src-tauri
-        run: cargo clippy --lib -- -D warnings
+        run: cargo clippy --lib --bins --tests -- -D warnings

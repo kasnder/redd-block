@@ -1225,7 +1225,9 @@ mod tests {
             Duration::from_secs(GRACE_MAX_SECS)
         );
         assert_eq!(clamp_grace_secs(60), Duration::from_secs(60));
-        assert!(GRACE_MIN_SECS > 0 && GRACE_MIN_SECS < GRACE_MAX_SECS);
+        const _: () = {
+            assert!(GRACE_MIN_SECS > 0 && GRACE_MIN_SECS < GRACE_MAX_SECS);
+        };
     }
 
     #[test]

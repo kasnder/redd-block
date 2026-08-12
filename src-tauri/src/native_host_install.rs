@@ -400,16 +400,16 @@ pub fn native_host_is_current(_browser: BrowserTarget) -> bool {
 ///
 /// For an explicit "reinstall manifests now" affordance (e.g. user
 /// hits a Reinstall hints button in the UI), use [`install_force`].
-// On macOS this function is an early return by design (Firefox setup is
-// manual there); the rest of the body is the Windows/Linux path.
-#[cfg_attr(target_os = "macos", allow(unreachable_code))]
+// macOS Firefox setup is manual; native-host manifests are synced separately
+// for the Chromium browsers that explicitly use extension mode.
+#[cfg(target_os = "macos")]
 pub fn install() -> std::io::Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        log::info!("native_host_install::install() skipped on macOS — Firefox setup is manual");
-        return Ok(());
-    }
+    log::info!("native_host_install::install() skipped on macOS — Firefox setup is manual");
+    Ok(())
+}
 
+#[cfg(not(target_os = "macos"))]
+pub fn install() -> std::io::Result<()> {
     let binary =
         current_binary_path().ok_or_else(|| std::io::Error::other("cannot resolve current exe"))?;
 
@@ -569,18 +569,14 @@ pub fn uninstall_native_host_for(browser: BrowserTarget) -> std::io::Result<()> 
 /// hints" command — they're explicitly asking us to refresh, so the
 /// TCC prompt is contextually expected. Drops the marker on success
 /// so the next startup call stays silent.
-// On macOS this function is an early return by design (Firefox setup is
-// manual there); the rest of the body is the Windows/Linux path.
-#[cfg_attr(target_os = "macos", allow(unreachable_code))]
+#[cfg(target_os = "macos")]
 pub fn install_force() -> std::io::Result<()> {
-    #[cfg(target_os = "macos")]
-    {
-        log::info!(
-            "native_host_install::install_force() skipped on macOS — Firefox setup is manual"
-        );
-        return Ok(());
-    }
+    log::info!("native_host_install::install_force() skipped on macOS — Firefox setup is manual");
+    Ok(())
+}
 
+#[cfg(not(target_os = "macos"))]
+pub fn install_force() -> std::io::Result<()> {
     let binary =
         current_binary_path().ok_or_else(|| std::io::Error::other("cannot resolve current exe"))?;
     log::info!("tcc-probe: native_host_install::install_force() entered, binary={binary}");
@@ -591,6 +587,7 @@ pub fn install_force() -> std::io::Result<()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "macos"))]
 fn install_inner(binary: &str) {
     for browser in install_targets() {
         log::info!("tcc-probe: native_host_install::install_one({browser:?}) start");
@@ -644,6 +641,7 @@ fn startup_install_marker_path() -> Option<PathBuf> {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
+#[cfg(not(target_os = "macos"))]
 struct StartupInstallMarker {
     binary_path: String,
 }
@@ -655,6 +653,7 @@ struct StartupInstallMarker {
 /// is deliberate: the failure mode for a needless re-run is at most
 /// one extra TCC prompt, but the failure mode for a wrongly-skipped
 /// install is broken native messaging until the user notices.
+#[cfg(not(target_os = "macos"))]
 fn startup_install_already_done_for(binary: &str) -> bool {
     let Some(path) = startup_install_marker_path() else {
         return false;
@@ -668,6 +667,7 @@ fn startup_install_already_done_for(binary: &str) -> bool {
     marker.binary_path == binary
 }
 
+#[cfg(not(target_os = "macos"))]
 fn mark_startup_install_done_for(binary: &str) {
     let Some(path) = startup_install_marker_path() else {
         return;

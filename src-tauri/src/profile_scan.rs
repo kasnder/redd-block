@@ -1171,20 +1171,6 @@ fn scan_safari_duplicate_extensions(
 }
 
 #[cfg(target_os = "macos")]
-#[allow(dead_code)] // used by the non-macOS scan path
-fn firefox_presence_only() -> BrowserStatus {
-    BrowserStatus {
-        present: firefox_app_present(),
-        installed: firefox_app_installed(),
-        profiles: vec![],
-        error: None,
-        duplicate_extensions: None,
-        needs_fda_access: false,
-        native_host_ready: false,
-    }
-}
-
-#[cfg(target_os = "macos")]
 fn safari_presence_only() -> BrowserStatus {
     let installed = Path::new("/Applications/Safari.app").exists()
         || dirs::home_dir()
@@ -1634,7 +1620,7 @@ mod tests {
             false,
             false,
         )));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(true));
         assert_eq!(status.website_access_all, Some(true));
@@ -1650,7 +1636,7 @@ mod tests {
             false,
             false,
         )));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(false));
         assert_eq!(status.website_access_all, Some(true));
@@ -1666,7 +1652,7 @@ mod tests {
             false,
             false,
         )));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(false));
         assert_eq!(status.private_browsing, Some(true));
         assert_eq!(status.website_access_all, Some(true));
@@ -1682,7 +1668,7 @@ mod tests {
             false,
             false,
         )));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(true));
         assert_eq!(status.website_access_all, Some(false));
@@ -1698,7 +1684,7 @@ mod tests {
             true,
             false,
         )));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(true));
         assert_eq!(status.website_access_all, Some(false));
@@ -1726,7 +1712,7 @@ mod tests {
             ),
         );
         let status = parse(&plist(&entries));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(false));
         assert_eq!(status.website_access_all, Some(false));
@@ -1808,7 +1794,7 @@ mod tests {
             ),
         );
         let status = parse(&plist(&entries));
-        assert_eq!(status.installed, true);
+        assert!(status.installed);
         assert_eq!(status.enabled, Some(true));
         assert_eq!(status.private_browsing, Some(true));
         assert_eq!(status.website_access_all, Some(false));

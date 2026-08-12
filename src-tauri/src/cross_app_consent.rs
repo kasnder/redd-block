@@ -127,7 +127,7 @@ fn safari_fda_marker_path() -> Option<PathBuf> {
 
 #[cfg(target_os = "macos")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SafariFdaChoice {
+pub(crate) enum SafariFdaChoice {
     Granted,
     Revoked,
 }
@@ -169,7 +169,7 @@ pub fn safari_extensions_plist_readable() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-pub fn safari_fda_choice() -> Option<SafariFdaChoice> {
+pub(crate) fn safari_fda_choice() -> Option<SafariFdaChoice> {
     let path = safari_fda_marker_path()?;
     let raw = std::fs::read_to_string(&path).ok()?;
     SafariFdaChoice::parse(&raw)

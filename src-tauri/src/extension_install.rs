@@ -49,14 +49,9 @@
 //   a clean slate.
 //
 // - **Firefox**:
-//   - macOS: write an `ExtensionSettings` entry to
-//     `/Applications/Firefox.app/Contents/Resources/distribution/policies.json`.
-//     Firefox treats this as a managed enterprise policy: on next launch
-//     it silently force-installs the extension from AMO; the user sees
-//     "Managed by your administrator" in `about:addons` and can't
-//     disable / remove it from the UI. The policy ALSO auto-grants
-//     private-browsing access via `private_browsing: true` (Firefox's
-//     schema has this; Chromium's doesn't).
+//   - macOS: install the extension manually through onboarding. Older
+//     releases could leave an enterprise policy in the Firefox bundle;
+//     uninstall still removes that stale policy when present.
 //
 //     Earlier versions of this module sideloaded a signed XPI into
 //     `~/Library/Application Support/Mozilla/Extensions/{guid}/`, but
@@ -196,10 +191,10 @@ impl BrowserTarget {
     }
 }
 
-/// `policies.json` path inside the Firefox app bundle on macOS. We
-/// only target the standard `/Applications/Firefox.app` location —
-/// users with Firefox in a non-standard place fall back to the
-/// existing onboarding "Install in Firefox" link.
+/// Legacy `policies.json` path inside the Firefox app bundle on macOS.
+/// We only clean the standard `/Applications/Firefox.app` location;
+/// users with Firefox in a non-standard place fall back to the existing
+/// onboarding flow.
 #[cfg(target_os = "macos")]
 fn firefox_policies_json_path() -> PathBuf {
     PathBuf::from("/Applications/Firefox.app/Contents/Resources/distribution/policies.json")
@@ -240,11 +235,6 @@ pub fn install() -> std::io::Result<()> {
             );
             maybe_scrub_external_uninstalls_once();
             log::info!("tcc-probe: extension_install::maybe_scrub_external_uninstalls_once() done");
-            log::info!("tcc-probe: extension_install::install_firefox_policy() start");
-            if let Err(e) = install_firefox_policy() {
-                log::warn!("extension-install Firefox policy failed: {e}");
-            }
-            log::info!("tcc-probe: extension_install::install_firefox_policy() done");
         }
         log::info!("tcc-probe: extension_install::install() exited");
         Ok(())
@@ -622,148 +612,7 @@ fn strip_tombstone_from_prefs(prefs_path: &std::path::Path) -> std::io::Result<(
     Ok(())
 }
 
-// ---- Firefox (enterprise policies, macOS only) -----------------------------
-
-/// Force-install the ReDD Focus extension via Firefox enterprise
-/// policies. Writes (or merges into) `policies.json` inside the
-/// Firefox app bundle's `Resources/distribution/` directory. Firefox
-/// reads this file on launch and treats listed extensions as managed
-/// — silently auto-installs from AMO, locks them ("Managed by your
-/// administrator" badge), and prevents user removal.
-///
-/// Idempotent: re-running merges our entry into whatever's already
-/// there. Preserves any other policies the user / admin has set.
-///
-/// Skips silently if:
-/// - Firefox.app isn't at `/Applications/Firefox.app` (custom-install
-///   users fall back to the existing onboarding flow).
-/// - We don't have write access to the bundle (e.g. non-admin macOS
-///   account).
-#[cfg(target_os = "macos")]
-#[allow(dead_code)] // Linux path only; macOS sets Firefox up manually
-fn install_firefox_policy() -> std::io::Result<()> {
-    let policies_path = firefox_policies_json_path();
-    let Some(distribution_dir) = policies_path.parent() else {
-        return Err(std::io::Error::other("policies.json path has no parent"));
-    };
-    let Some(resources_dir) = distribution_dir.parent() else {
-        return Err(std::io::Error::other("distribution dir has no parent"));
-    };
-
-    log::info!(
-        "tcc-probe: about to exists() (Firefox bundle) {}",
-        resources_dir.display()
-    );
-    if !resources_dir.exists() {
-        log::info!(
-            "extension-install: Firefox skipped — bundle Resources dir missing at {}",
-            resources_dir.display()
-        );
-        return Ok(());
-    }
-
-    // Best-effort `mkdir -p distribution/`. Returns Err if we lack
-    // permission (managed Mac, non-admin user) — log + skip rather
-    // than fail the whole install round.
-    log::info!(
-        "tcc-probe: about to create_dir_all (Firefox bundle) {}",
-        distribution_dir.display()
-    );
-    if let Err(e) = std::fs::create_dir_all(distribution_dir) {
-        log::warn!(
-            "extension-install: Firefox skipped — cannot create {}: {e}",
-            distribution_dir.display()
-        );
-        return Ok(());
-    }
-
-    // Read existing policies.json (if any) and merge in our entry.
-    // Preserves anything else IT / a previous tool put there.
-    log::info!(
-        "tcc-probe: about to exists() (Firefox policies) {}",
-        policies_path.display()
-    );
-    let mut data = if policies_path.exists() {
-        log::info!(
-            "tcc-probe: about to read_to_string (Firefox policies) {}",
-            policies_path.display()
-        );
-        let raw = std::fs::read_to_string(&policies_path)?;
-        serde_json::from_str::<serde_json::Value>(&raw).unwrap_or_else(|e| {
-            log::warn!(
-                "extension-install: existing policies.json at {} is invalid JSON ({e}); rewriting",
-                policies_path.display()
-            );
-            json!({})
-        })
-    } else {
-        json!({})
-    };
-
-    if !data.is_object() {
-        data = json!({});
-    }
-    let root = data.as_object_mut().unwrap();
-    let policies = root
-        .entry("policies".to_string())
-        .or_insert_with(|| json!({}));
-    if !policies.is_object() {
-        *policies = json!({});
-    }
-    let policies = policies.as_object_mut().unwrap();
-    let extension_settings = policies
-        .entry("ExtensionSettings".to_string())
-        .or_insert_with(|| json!({}));
-    if !extension_settings.is_object() {
-        *extension_settings = json!({});
-    }
-    let extension_settings = extension_settings.as_object_mut().unwrap();
-    extension_settings.insert(
-        FIREFOX_EXT_ID.to_string(),
-        json!({
-            "installation_mode": "force_installed",
-            "install_url": FIREFOX_AMO_XPI_URL,
-            // Auto-grant private-browsing access (and lock the toggle).
-            // Without this, the extension installs but users still
-            // have to walk through `about:addons` → ReDD Focus →
-            // Details → Allow in Private Windows. Same trade as the
-            // install itself: more friction up front, but consistent
-            // enforcement across normal + private windows.
-            "private_browsing": true,
-        }),
-    );
-
-    let pretty = serde_json::to_string_pretty(&data)?;
-
-    // Idempotency: skip the write if existing file already matches.
-    // Writing into /Applications/Firefox.app/... requires the macOS
-    // App Management TCC permission; even a no-op write triggers the
-    // prompt. Reading does not.
-    log::info!(
-        "tcc-probe: about to read_to_string (Firefox policies, idempotency check) {}",
-        policies_path.display()
-    );
-    if let Ok(existing) = std::fs::read_to_string(&policies_path) {
-        if existing == pretty {
-            log::info!(
-                "extension-install: Firefox policy already current at {} (skip)",
-                policies_path.display()
-            );
-            return Ok(());
-        }
-    }
-
-    log::info!(
-        "tcc-probe: about to write (Firefox policies) {}",
-        policies_path.display()
-    );
-    std::fs::write(&policies_path, pretty)?;
-    log::info!(
-        "extension-install: Firefox policy written at {}",
-        policies_path.display()
-    );
-    Ok(())
-}
+// ---- Legacy Firefox enterprise-policy cleanup (macOS only) -----------------
 
 /// Strip our `ExtensionSettings` entry from `policies.json`. If
 /// removing our entry leaves the file empty, delete it (and the

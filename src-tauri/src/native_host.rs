@@ -254,7 +254,6 @@ pub struct BlockInfo {
     pub color: Option<String>,
     /// `"blocklist"` (default) or `"allowlist"`. In allowlist mode `domains`
     /// lists sites the user *may* visit; everything else is blocked.
-    #[serde(default = "default_blocklist_mode")]
     pub mode: String,
     pub domains: Vec<String>,
     /// Apps from the blocklist for this active segment (blocked or allowed
@@ -268,9 +267,7 @@ pub struct BlockInfo {
     pub started_at: Option<u64>,
 }
 
-// Referenced by serde as a string in `#[serde(default = "...")]`, which the
-// dead-code pass cannot see.
-#[allow(dead_code)]
+#[cfg(test)]
 fn default_blocklist_mode() -> String {
     "blocklist".to_string()
 }

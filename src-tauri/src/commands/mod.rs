@@ -35,8 +35,8 @@ pub use data::*;
 
 // `register` / `auto_start` exist in both app_blocking and web_automation (and
 // enforcement). Every call site uses the qualified module path, so nothing
-// depends on which glob wins — but do not start relying on the unqualified
-// name without resolving this first.
+// depends on which glob wins. Keep these globs because Tauri's generated
+// `__cmd__*` symbols must be re-exported alongside the command functions.
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 #[allow(ambiguous_glob_reexports)]
 pub use app_blocking::*;

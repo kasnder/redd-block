@@ -1,3 +1,8 @@
+#![allow(deprecated)]
+
+// The macOS FFI in this crate still uses the `cocoa` crate. Keep its
+// deprecation migration separate from this lint gate.
+
 // Hard stop against shipping the e2e automation server. `e2e-webdriver`
 // compiles an HTTP WebDriver endpoint into the binary so the Tier 2 suite can
 // drive a real app on macOS; in a released blocker that endpoint would be a
@@ -33,7 +38,6 @@ use tauri::Manager;
 /// The enforcer keeps running regardless of the policy; this is purely
 /// a UI affordance.
 #[cfg(target_os = "macos")]
-#[allow(deprecated)] // cocoa crate; objc2 migration is separate work
 pub(crate) fn set_macos_activation_policy(regular: bool) {
     use cocoa::appkit::NSApplication;
     use cocoa::appkit::NSApplicationActivationPolicy::{
@@ -158,7 +162,6 @@ pub mod windows_process;
 /// hook it at the AppKit layer ourselves. In-app uninstall exits via
 /// `std::process::exit(0)` and so is not routed through here.
 #[cfg(target_os = "macos")]
-#[allow(deprecated)] // cocoa crate; objc2 migration is separate work
 unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
     use cocoa::base::id;
     use objc::runtime::{class_addMethod, class_getInstanceMethod, method_setImplementation, Sel};
@@ -351,7 +354,6 @@ pub fn run() {
             // survives every "quit" gesture and keeps running in the
             // tray.
             #[cfg(target_os = "macos")]
-            #[allow(deprecated)] // cocoa crate; objc2 migration is separate work
             unsafe {
                 let is_autostart = std::env::args().any(|a| a == "--autostart");
                 set_macos_activation_policy(!is_autostart);
@@ -395,14 +397,10 @@ pub fn run() {
                 commands::ensure_macos_traffic_lights_visible(app.handle());
 
                 // Set background color to match app (white)
-                #[allow(deprecated)] // cocoa crate; objc2 migration is separate work
                 use cocoa::appkit::{NSColor, NSWindow};
-                #[allow(deprecated)]
                 use cocoa::base::{id, nil};
 
-                #[allow(deprecated)] // cocoa crate; objc2 migration is separate work
                 let ns_window = window.ns_window().unwrap() as id;
-                #[allow(deprecated)] // cocoa crate; objc2 migration is separate work
                 unsafe {
                     // Pure white background
                     let bg_color = NSColor::colorWithRed_green_blue_alpha_(
