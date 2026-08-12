@@ -1501,6 +1501,10 @@ mod tests {
     use super::*;
     use std::collections::VecDeque;
 
+    /// One planned tab action: `(window_index, tab_index, url)` — the tuple
+    /// `plan_actions` returns and `apply_actions` consumes.
+    type TabAction = (u32, u32, String);
+
     struct FakeIo {
         blocks: Option<Vec<BlockInfo>>,
         events: bool,
@@ -1511,7 +1515,7 @@ mod tests {
         applies: HashMap<SupportedBrowser, VecDeque<Result<(), AutomationError>>>,
         read_calls: Vec<SupportedBrowser>,
         running_calls: usize,
-        apply_calls: Vec<(SupportedBrowser, Vec<(u32, u32, String)>)>,
+        apply_calls: Vec<(SupportedBrowser, Vec<TabAction>)>,
         permissions: Vec<(SupportedBrowser, PermState)>,
     }
 

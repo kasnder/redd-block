@@ -269,13 +269,15 @@ on lint + Tier 1 and run `cargo test --lib` before macOS signing.
 
 Two blind spots to know about before you trust a green run:
 
-- **Clippy only runs against the Android target**, which compiles a minority of
-  `src-tauri/src`. Everything gated `cfg(not(any(ios, android)))` —
-  `app_watcher`, `enforcer`, `native_host`, `profile_scan`, … — plus the
-  macOS/Windows-only modules compile out. The desktop enforcement engine is
-  *not* linted and is not currently clippy-clean, so a green Android CI says
-  nothing about whether your macOS/Windows change passes clippy. There is no
-  Linux clippy job because the lib does not compile on Linux at all.
+- **Clippy runs on three targets but only ever on default features.** The
+  Android job's run compiles out everything gated `cfg(not(any(ios, android)))`,
+  so `rust-ci.yml` adds a desktop job on macOS *and* Windows — both, because
+  each host sees genuinely different `cfg` branches. All of them are
+  `-D warnings`, so run `cargo clippy --lib --bins --tests -- -D warnings`
+  locally before pushing Rust. What none of them cover is a feature build:
+  `--features system-test` is *not* clippy-clean (its stubs strand a pile of
+  otherwise-live helpers as dead code), and nothing gates that. There is no
+  Linux job at all — the lib does not compile there.
 - **eslint is `js/recommended` only, and `no-unused-vars` is a warning, not an
   error.** There is a standing backlog of dead bindings the gate deliberately
   does not fail on. Clearing them is worthwhile — dead asset imports become
