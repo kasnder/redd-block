@@ -64,10 +64,43 @@ async function waitForHarness() {
     );
 }
 
+// A7 and A9 are the only cases that need the app's 1 s tick (render.js) to
+// expire a paused block/schedule within a few seconds. When they fail and the
+// other 23 pass, there are exactly two candidate causes, and they need opposite
+// fixes — so measure rather than guess:
+//
+//   1. The tick never started: the app is still behind the first-run gate, so
+//      `runPostAcceptanceStartup()` (which calls `startTickInterval`) never ran.
+//      Then `eula.accepted` will not equal `eula.required`.
+//   2. The tick started but WKWebView is throttling timers, which macOS does
+//      for hidden/occluded windows — render.js's `kickClockNow` exists for
+//      exactly that reason, and a headless runner has no real display. Then the
+//      probe delivers far fewer ticks than the ~6 a live webview would.
+async function reportStartupDiagnostics() {
+    const eula = await browser.execute(() => {
+        const i = window.__REDDBLOCK_INTERNALS__;
+        return {
+            accepted: i?.appData?.settings?.eulaAcceptedRevision ?? null,
+            required: i?.CURRENT_EULA_REVISION ?? null,
+        };
+    });
+    console.log(`[tier2] eula: accepted=${eula.accepted} required=${eula.required}`);
+
+    await browser.execute(() => {
+        window.__TIER2_TIMER_PROBE__ = 0;
+        const id = setInterval(() => { window.__TIER2_TIMER_PROBE__ += 1; }, 500);
+        setTimeout(() => clearInterval(id), 3000);
+    });
+    await browser.pause(3300);
+    const ticks = await browser.execute(() => window.__TIER2_TIMER_PROBE__);
+    console.log(`[tier2] webview timer probe: ${ticks} ticks in 3 s (a live webview gives ~6)`);
+}
+
 describe('Tier 2 integration suite', () => {
     it('runs against the real Tauri command layer with zero failures', async () => {
         await waitForHarness();
         await acceptEulaAndRelaunch();
+        await reportStartupDiagnostics();
 
         // runIntegrationTests is async and long-running. Kick it off, stash the
         // result on window, and poll — driving a multi-minute promise straight
