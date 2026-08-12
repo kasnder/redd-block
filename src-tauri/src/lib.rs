@@ -1,3 +1,8 @@
+#![allow(deprecated)]
+
+// The macOS FFI in this crate still uses the `cocoa` crate. Keep its
+// deprecation migration separate from this lint gate.
+
 // Hard stop against shipping the e2e automation server. `e2e-webdriver`
 // compiles an HTTP WebDriver endpoint into the binary so the Tier 2 suite can
 // drive a real app on macOS; in a released blocker that endpoint would be a
@@ -29,6 +34,7 @@ use tauri::Manager;
 /// runtime so the app behaves like Cold Turkey Blocker:
 ///   - window visible  → Regular  (Dock icon, menu bar present)
 ///   - window hidden   → Accessory (tray-only, runs in the background)
+///
 /// The enforcer keeps running regardless of the policy; this is purely
 /// a UI affordance.
 #[cfg(target_os = "macos")]
@@ -184,10 +190,10 @@ unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
     let sel = sel!(applicationShouldTerminate:);
     let method = class_getInstanceMethod(cls, sel) as *mut objc::runtime::Method;
     let imp = should_terminate as extern "C" fn(id, Sel, id) -> u64;
-    let imp_ptr = std::mem::transmute::<_, objc::runtime::Imp>(imp);
+    let imp_ptr = std::mem::transmute::<extern "C" fn(id, Sel, id) -> u64, objc::runtime::Imp>(imp);
     if method.is_null() {
         // Encoding for `NSApplicationTerminateReply (^)(id self, SEL _cmd, id sender)`.
-        let types = b"Q@:@\0".as_ptr() as *const i8;
+        let types = c"Q@:@".as_ptr();
         let added = class_addMethod(cls, sel, imp_ptr, types);
         log::info!("install_terminate_guard: added applicationShouldTerminate: ({added})");
     } else {
