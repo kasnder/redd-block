@@ -16,53 +16,38 @@ const SUITE_TIMEOUT_MS = 540_000;
 
 // A fresh runner has never accepted the EULA, and the gate stops startup before
 // `runPostAcceptanceStartup()` — which is what calls `startTickInterval()`. That
-// 1 s tick is what expires paused blocks and schedules (render.js), so without
-// it A7 and A9 fail while every request/response case still passes. Accept the
-// revision the app itself reports, persist it through the real save path, then
-// relaunch so the app boots the way a returning user's would.
-async function acceptEulaAndRelaunch() {
-    const accepted = await browser.execute(() => {
+// 1 s tick expires paused blocks and schedules (render.js), so without it A7 and
+// A9 fail while every request/response case still passes.
+//
+// Call the app's own `acceptEula()` rather than writing `eulaAcceptedRevision`
+// by hand: it persists the revision AND runs the post-acceptance startup. An
+// earlier version patched settings and relaunched the session instead, which
+// left the app behind the gate while a hand-written in-memory value made the
+// verification pass — the check confirmed only what it had just written.
+async function acceptEulaViaApp() {
+    await browser.execute(() => {
+        window.__TIER2_EULA_DONE__ = false;
+        window.__TIER2_EULA_ERR__ = undefined;
         const internals = window.__REDDBLOCK_INTERNALS__;
-        if (!internals) return { ok: false, why: 'internals missing' };
-        const revision = internals.CURRENT_EULA_REVISION;
-        if (typeof revision !== 'number') {
-            return { ok: false, why: 'CURRENT_EULA_REVISION not exposed on internals' };
+        if (!internals || typeof internals.acceptEula !== 'function') {
+            window.__TIER2_EULA_ERR__ = 'acceptEula not exposed on __REDDBLOCK_INTERNALS__';
+            return;
         }
-        const data = internals.appData;
-        data.settings = data.settings || {};
-        if (data.settings.eulaAcceptedRevision === revision) {
-            return { ok: true, alreadyAccepted: true, revision };
-        }
-        data.settings.eulaAcceptedRevision = revision;
-        return { ok: true, alreadyAccepted: false, revision };
+        Promise.resolve(internals.acceptEula())
+            .then(() => { window.__TIER2_EULA_DONE__ = true; })
+            .catch((e) => { window.__TIER2_EULA_ERR__ = String((e && e.message) || e); });
     });
-    if (!accepted.ok) throw new Error(`Tier 2 setup: could not accept EULA — ${accepted.why}`);
-    if (accepted.alreadyAccepted) return;
 
-    await browser.execute(() => window.__REDDBLOCK_INTERNALS__.saveData());
-    console.log(`[tier2] accepted EULA revision ${accepted.revision}; relaunching`);
-    await browser.reloadSession();
-    await waitForHarness();
+    await browser.waitUntil(
+        async () => browser.execute(
+            () => window.__TIER2_EULA_DONE__ === true || window.__TIER2_EULA_ERR__ !== undefined,
+        ),
+        { timeout: HARNESS_TIMEOUT_MS, timeoutMsg: 'acceptEula() never settled' },
+    );
 
-    // Verify rather than assume: if the relaunched app did not read the
-    // acceptance back, every timer-dependent case fails for a reason that has
-    // nothing to do with the code under test. Fail here, loudly, with the two
-    // values — a silent partial setup is what made the first fix look correct.
-    const after = await browser.execute(() => {
-        const i = window.__REDDBLOCK_INTERNALS__;
-        return {
-            accepted: i?.appData?.settings?.eulaAcceptedRevision ?? null,
-            required: i?.CURRENT_EULA_REVISION ?? null,
-        };
-    });
-    if (after.accepted !== after.required) {
-        throw new Error(
-            `Tier 2 setup: EULA acceptance did not survive the relaunch `
-            + `(accepted=${after.accepted}, required=${after.required}). The app is still `
-            + `behind the first-run gate, so runPostAcceptanceStartup() never runs and the `
-            + `1 s tick that expires paused blocks/schedules never starts.`,
-        );
-    }
+    const err = await browser.execute(() => window.__TIER2_EULA_ERR__);
+    if (err) throw new Error(`Tier 2 setup: acceptEula() failed — ${err}`);
+    console.log('[tier2] accepted the EULA through the app\'s own path');
 }
 
 async function waitForHarness() {
@@ -85,17 +70,12 @@ async function waitForHarness() {
 }
 
 // A7 and A9 are the only cases that need the app's 1 s tick (render.js) to
-// expire a paused block/schedule within a few seconds. When they fail and the
-// other 23 pass, there are exactly two candidate causes, and they need opposite
-// fixes — so measure rather than guess:
-//
-//   1. The tick never started: the app is still behind the first-run gate, so
-//      `runPostAcceptanceStartup()` (which calls `startTickInterval`) never ran.
-//      Then `eula.accepted` will not equal `eula.required`.
-//   2. The tick started but WKWebView is throttling timers, which macOS does
-//      for hidden/occluded windows — render.js's `kickClockNow` exists for
-//      exactly that reason, and a headless runner has no real display. Then the
-//      probe delivers far fewer ticks than the ~6 a live webview would.
+// expire a paused block/schedule within a few seconds. Everything else is a
+// save + derive round-trip. Three causes were ruled out by measurement here —
+// the first-run gate (eula accepted=1 required=1), WKWebView throttling (5
+// ticks in 3 s, and Windows/WebView2 failed identically), and a throwing tick
+// (error capture caught nothing but the suite's own messages). The tick simply
+// was not running, so these checks stay as guards against each returning.
 async function reportStartupDiagnostics() {
     const eula = await browser.execute(() => {
         const i = window.__REDDBLOCK_INTERNALS__;
@@ -187,7 +167,7 @@ async function reportCapturedErrors() {
 describe('Tier 2 integration suite', () => {
     it('runs against the real Tauri command layer with zero failures', async () => {
         await waitForHarness();
-        await acceptEulaAndRelaunch();
+        await acceptEulaViaApp();
         await reportStartupDiagnostics();
         await installErrorCapture();
 
