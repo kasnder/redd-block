@@ -69,22 +69,34 @@ case below).
 `package.json` is the reference for what exists; only the traps are listed here.
 
 - **Version bumps span several files** — always use
-  `./scripts/bump-version.sh <version>` (updates `package.json`,
-  `tauri.*.conf.json`, `Cargo.toml`). Editing one by hand leaves the others
-  behind and the mismatch surfaces at signing time.
+  `./scripts/bump-version.sh <version>`. It updates `package.json`,
+  `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and — via
+  `scripts/sync-ios-version.mjs` — `tauri.ios.conf.json` plus the generated
+  Xcode project and its `Info.plist`s. The iOS side is the one a hand edit
+  always misses.
 - **`npm run build:android` needs `ANDROID_HOME` / `NDK_HOME` / `JAVA_HOME`
   exported** — `npm install` does not set them. See
   [docs/android-build.md](docs/android-build.md).
 - **Use `cargo test --lib`**, not bare `cargo test` — the latter still tries to
   build a stale `test_watcher` example.
+- **`cargo fmt` needs two invocations**, because `tauri-plugin-android-blocker`
+  is a separate crate graph from `src-tauri`. CI runs `cargo fmt --all --check`
+  in both directories, so formatting only one leaves the other red:
+
+  ```bash
+  npm run lint                                    # eslint over src/, scripts/, e2e/, vite.config.js
+  (cd src-tauri && cargo fmt --all)               # --all here also covers tauri-plugin-screentime
+  (cd tauri-plugin-android-blocker && cargo fmt --all)
+  ```
 
 ## Architecture essentials
 
 ### Single source of truth
 Desktop website/app rules derive from one JSON file, `redd-block-data.json`
-(canonical `/var/lib/redd-block/...` on macOS, `%PROGRAMDATA%\Digital Habits
-Blocker\...` on Windows; per-user fallback until the shared dir is writable —
-path logic in `src-tauri/src/commands/data.rs`). The frontend writes it via
+(canonical `/var/lib/redd-block/...` on macOS,
+`%PROGRAMDATA%\Digital Habits Blocker\...` on Windows; per-user fallback until
+the shared dir is writable — path logic in `src-tauri/src/commands/data.rs`).
+The frontend writes it via
 `save_data`; every backend re-reads it. `native_host::derive_payload()` computes
 effective website rules: blocklist domains always block; when any allowlist
 source is active, policy is `allowed-union − blocked-union` (blocklist wins on
@@ -136,8 +148,12 @@ there is no `helper-daemon/` in the repo, so do not go looking for one.
 `__ANDROID_BUILD__` is a Vite `define` constant, and it is the right tool **only
 when it lets Rollup delete code from the Android bundle** — an early
 `if (__ANDROID_BUILD__) return;` in a void function lets Rollup drop the body
-and tree-shake its helpers. For behavioral branching that must stay in the
-bundle for desktop, use the runtime `state.isAndroid` flag instead.
+and tree-shake its helpers. That trick only works on functions nobody reads a
+value from: shared value-returning helpers (`browserIconUrl`,
+`BROWSER_STORE_LINKS`, …) are deliberately left unguarded, because returning
+`undefined` on Android would break callers rather than shrink anything. For
+behavioral branching that must stay in the bundle for desktop, use the runtime
+`state.isAndroid` flag instead.
 
 Gating the *code* that references a static asset does not by itself drop the
 asset: Vite emits a file for every `import url from './x.png'` at transform
@@ -211,9 +227,11 @@ because writing the automated test is awkward.
 ### What CI does and does not cover
 
 All four automated suites run on PRs to `main` and again on the resulting `main`
-commits; each has path filters (Tier 2 is the slowest and only runs for its
-test/harness paths). Releases additionally gate every build job on lint + Tier 1
-and run `cargo test --lib` before macOS signing.
+commits. Lint + Tier 1 (`ci.yml`) run on every PR; the Rust tests
+(`rust-ci.yml`), the Android build and Kotlin tests (`android-ci.yml`) and
+Tier 2 (`e2e-ci.yml`) are path-filtered, so a PR that misses their filters shows
+green without ever having run them. Releases additionally gate every build job
+on lint + Tier 1 and run `cargo test --lib` before macOS signing.
 
 Two blind spots to know about before you trust a green run:
 
