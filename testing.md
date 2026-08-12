@@ -48,7 +48,7 @@ summarized below:
 | `release.yml` | Checks (lint + Tier 1) | `pnpm lint`, `pnpm test:tier1` — gates all four build jobs | every release run |
 | `release.yml` | macOS (.pkg) | `cargo test --lib` before signing | every release run |
 | `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes, on PRs and `main` |
-| `android-ci.yml` | Android debug APK | debug APK build, then `:tauri-plugin-android-blocker:testDebugUnitTest` | `src/**`, `src-tauri/**`, plugin, build config, on PRs and `main` |
+| `android-ci.yml` | Android debug APK | debug APK build, `:tauri-plugin-android-blocker:testDebugUnitTest`, then a release APK build + strip assertion | `src/**`, `src-tauri/**`, plugin, build config, on PRs and `main` |
 | `e2e-ci.yml` | Tier 2 (macOS + Windows) | `runIntegrationTests('full')` against a real built app over WebDriver | Tier 2 sources, `e2e/**`, `vite.config.js`, on PRs and `main` |
 
 Notes on the non-obvious choices:
@@ -81,6 +81,20 @@ Notes on the non-obvious choices:
   applies the generated, gitignored `tauri.settings.gradle`, which is what adds
   `:tauri-android` and `:tauri-plugin-android-blocker` to the build. Gradle
   cannot configure the project until the Tauri CLI has written it.
+- **A debug APK does not cover the release packaging path.** Release merges
+  consumer ProGuard files, runs R8, runs lintVital and strips native libraries;
+  debug does none of those. Two release-only failures reached `main` while this
+  job was green — Tauri's plugin crates declaring a `consumer-rules.pro` they do
+  not ship, and a lint crash in AGP 9.1.1 / Kotlin 2.2.21 — and
+  `scripts/build-android-play.sh` runs those same Gradle tasks, so the Play
+  build was broken too. The job therefore ends with a single-ABI release APK
+  build, plus an assertion that the packaged library carries no `.symtab` /
+  `.strtab`. That last check exists because nothing in the Android toolchain
+  notices if `strip = true` leaves `[profile.release]`: AGP's own strip task
+  removes DWARF sections only, and a Cargo release build emits none, so the
+  symbol table would quietly return (~4 MB per ABI). The job's name still says
+  "debug APK"; renaming it would change the check name that branch protection
+  matches on.
 
 **Tier 2 runs in CI** (`e2e-ci.yml`) against a real built app, because it drives
 the actual Tauri command layer and cannot run on a bare page like Tier 1. See

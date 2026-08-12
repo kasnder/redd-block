@@ -110,3 +110,37 @@ jobs:
           name: kotlin-unit-test-report
           path: tauri-plugin-android-blocker/android/build/reports/tests/
           if-no-files-found: ignore
+      # The debug build above does not reach the release packaging path, and the
+      # two are not interchangeable: release merges consumer ProGuard files, runs
+      # R8, runs lintVital, and strips native libraries. Every one of those has
+      # broken a release build while this job stayed green — a missing
+      # `consumer-rules.pro` in the Tauri plugin crates and a lint crash both shipped
+      # to `main` unnoticed, and `scripts/build-android-play.sh` runs these same
+      # tasks. Single ABI again, for the same reason as the debug build.
+      #
+      # Runs last: it is the slowest step, so a failure in the cheap checks above
+      # surfaces without waiting for it.
+      - name: Build release APK (packaging path)
+        run: pnpm tauri android build --apk --target aarch64
+      # Guards `strip = true` in [profile.release]. AGP's own strip task only
+      # removes DWARF sections, and a Cargo release build emits none — so if the
+      # profile setting is ever dropped, nothing in the Android toolchain notices
+      # and the symbol table silently returns to the APK (~4 MB per ABI).
+      - name: Assert release libraries are stripped
+        run: |
+          set -euo pipefail
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk/universal/release \
+                  -name '*.apk' -print -quit)
+          if [ -z "$apk" ]; then
+            echo "::error::release build produced no APK"
+            exit 1
+          fi
+          ls -l "$apk"
+          unzip -o -q "$apk" 'lib/arm64-v8a/*.so' -d "$RUNNER_TEMP/release-apk"
+          readelf="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          if "$readelf" -S -W "$RUNNER_TEMP/release-apk/lib/arm64-v8a/libredd_block_lib.so" \
+               | grep -qE '\.(symtab|strtab)\b'; then
+            echo "::error::Release library still carries a symbol table. Is strip = true still set in [profile.release] (src-tauri/Cargo.toml)? See docs/android-build.md."
+            exit 1
+          fi
+          echo "release libraries are stripped"
