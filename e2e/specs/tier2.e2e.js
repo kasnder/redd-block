@@ -43,6 +43,26 @@ async function acceptEulaAndRelaunch() {
     console.log(`[tier2] accepted EULA revision ${accepted.revision}; relaunching`);
     await browser.reloadSession();
     await waitForHarness();
+
+    // Verify rather than assume: if the relaunched app did not read the
+    // acceptance back, every timer-dependent case fails for a reason that has
+    // nothing to do with the code under test. Fail here, loudly, with the two
+    // values — a silent partial setup is what made the first fix look correct.
+    const after = await browser.execute(() => {
+        const i = window.__REDDBLOCK_INTERNALS__;
+        return {
+            accepted: i?.appData?.settings?.eulaAcceptedRevision ?? null,
+            required: i?.CURRENT_EULA_REVISION ?? null,
+        };
+    });
+    if (after.accepted !== after.required) {
+        throw new Error(
+            `Tier 2 setup: EULA acceptance did not survive the relaunch `
+            + `(accepted=${after.accepted}, required=${after.required}). The app is still `
+            + `behind the first-run gate, so runPostAcceptanceStartup() never runs and the `
+            + `1 s tick that expires paused blocks/schedules never starts.`,
+        );
+    }
 }
 
 async function waitForHarness() {
