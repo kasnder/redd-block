@@ -1152,6 +1152,57 @@
         });
     }
 
+    async function testI5_editWarningPauseUnlocksModal() {
+        return runIsolatedIntegrationTest('I5', async () => {
+            hideAllIntegrationModals();
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'I5 Modal' });
+            const block = addActiveBlock(bl.id, { durationMs: 5 * 60 * 1000 });
+            await callSaveData();
+            callRender();
+
+            const card = document.querySelector(`.blocklist-card[data-id="${bl.id}"]`);
+            assertOrThrow(card, 'I5: focus-space card missing');
+            let editButton = card.querySelector('.edit-btn');
+            if (!editButton) {
+                card.querySelector('.blocklist-menu-btn')?.click();
+                editButton = card.querySelector('.edit-blocklist-item');
+            }
+            assertOrThrow(editButton, 'I5: edit button missing');
+            editButton.click();
+
+            await waitForIntegrationCondition(() => isVisible('blocklist-modal'), 'I5 edit modal');
+            assertOrThrow(isVisible('active-blocklist-warning'), 'I5: active warning missing');
+            const pauseButton = document.getElementById('active-blocklist-pause-btn');
+            assertOrThrow(pauseButton && !pauseButton.classList.contains('hidden'), 'I5: warning Pause button missing');
+            pauseButton.click();
+            await waitForIntegrationCondition(() => isVisible('pause-modal'), 'I5 pause modal');
+
+            await completeIntegrationChallenge('I5', {
+                modalId: 'pause-modal',
+                textId: 'pause-challenge-text',
+                inputId: 'pause-challenge-input',
+                wordInputId: 'pause-challenge-word-input',
+                currentWordId: 'pause-current-word',
+                confirmId: 'confirm-pause-btn',
+            });
+
+            await waitForIntegrationCondition(
+                () => !isVisible('pause-modal')
+                    && isVisible('blocklist-modal')
+                    && !!getAppData().activeBlocks.find(candidate => candidate.id === block.id)?.isPaused,
+                'I5 pause unlocks edit modal',
+            );
+            assertOrThrow(!isVisible('active-blocklist-warning'), 'I5: warning stayed visible after pause');
+            assertOrThrow(!document.getElementById('override-type')?.disabled, 'I5: override settings stayed locked after pause');
+            assertOrThrow(
+                !document.querySelector('#blocklist-modal .radio-option')?.classList.contains('disabled'),
+                'I5: mode stayed locked after pause',
+            );
+            hideAllIntegrationModals();
+            return { passed: true };
+        });
+    }
+
     function buildProfileTests(profile) {
         const coreTests = [
             { group: 'A', name: 'A1: Enforcement derivation path', fn: testA1_enforcementDerivationPath },
@@ -1166,7 +1217,8 @@
             { group: 'I', name: 'I1: Stop-all cancel restores Settings', fn: testI1_stopAllCancelRestoresSettings },
             { group: 'I', name: 'I2: Stop-all success restores Settings', fn: testI2_stopAllSuccessRestoresSettings },
             { group: 'I', name: 'I3: Stop and pause cancel workflows', fn: testI3_stopAndPauseCancelWorkflows },
-            { group: 'I', name: 'I4: Android back closes topmost modal', fn: testI4_androidBackClosesTopmostModal }
+            { group: 'I', name: 'I4: Android back closes topmost modal', fn: testI4_androidBackClosesTopmostModal },
+            { group: 'I', name: 'I5: Edit warning Pause unlocks modal', fn: testI5_editWarningPauseUnlocksModal }
         ];
 
         if (profile === PROFILE_CORE) return coreTests;

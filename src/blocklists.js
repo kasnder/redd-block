@@ -305,11 +305,9 @@ export function saveQuickStartAsFocusSpace(id) {
  * Must an edit that *loosens* this focus space be confirmed with the exit
  * challenge? Also gates deleting it outright.
  *
- * Paused one-off blocks remain gated. Paused schedules with
- * allowEditsBetweenBlocks are intentionally editable, because that preserves
- * the schedule and its automatic resume instead of making the user stop it and
- * remember to recreate it. Strict schedules remain gated while paused. T159-T166
- * pin down these deliberately different pause semantics.
+ * A live pause unlocks editing for both one-off blocks and schedules. This is
+ * the explicit route for users who need to change an active focus space without
+ * stopping it and losing its automatic resume. Expired pauses gate again.
  *
  * The one exemption is by design: a schedule with allowEditsBetweenBlocks is
  * editable while it is between segments (canEditScheduleBetweenBlocks).
@@ -320,13 +318,17 @@ export function saveQuickStartAsFocusSpace(id) {
 export function isBlocklistEditFrictionRequired(blocklistId, now = Date.now()) {
     if (!blocklistId) return false;
     const hasActiveBlock = state.appData.activeBlocks.some(
-        b => b.blocklistId === blocklistId && b.startTime <= now && b.endTime > now
+        b => b.blocklistId === blocklistId
+            && b.startTime <= now
+            && b.endTime > now
+            && !(b.isPaused && (!b.pauseEndTime || b.pauseEndTime > now))
     );
     if (hasActiveBlock) return true;
     const schedule = state.appData.schedules?.find(
         s => s.blocklistId === blocklistId && s.segments && s.segments.length > 0
     );
     if (!schedule) return false;
+    if (isSchedulePausedNow(schedule, now)) return false;
     return !canEditScheduleBetweenBlocks(schedule, new Date(now));
 }
 

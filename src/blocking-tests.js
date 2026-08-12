@@ -1805,15 +1805,13 @@
     }
 
     // ========================================
-    // CATEGORY 20: EDIT FRICTION GATE (T159-T166)
+    // CATEGORY 20: EDIT FRICTION GATE (T159-T168)
     // ========================================
 
     // Which focus spaces must confirm a loosening edit with the exit challenge.
     //
-    // Pause semantics are deliberately different by type: paused one-off blocks
-    // remain gated, while a paused flexible schedule can be edited so the user
-    // does not have to stop it and remember to recreate it. Strict schedules
-    // remain gated while paused.
+    // A live pause unlocks editing for both one-off blocks and schedules. Once
+    // that pause expires, the edit gate applies again.
     function runEditFrictionGateTests() {
         console.log('\n🔒 Category 20: Edit Friction Gate');
         console.log('----------------------------------');
@@ -1840,13 +1838,13 @@
             (function T160() {
                 const bl = createMockBlocklist({});
                 withData([bl], { activeBlocks: [createMockBlock(bl.id, now - HOUR, now + HOUR, { isPaused: true, pauseEndTime: now + HOUR })] });
-                assert(required(bl.id, now) === true, 'T160: a PAUSED one-off block still gates — pause is not an escape hatch');
+                assert(required(bl.id, now) === false, 'T160: a paused one-off block allows editing');
             })();
 
             (function T161() {
                 const bl = createMockBlocklist({});
                 withData([bl], { activeBlocks: [createMockBlock(bl.id, now - HOUR, now + HOUR, { isPaused: true })] });
-                assert(required(bl.id, now) === true, 'T161: an indefinitely paused block gates too (no pauseEndTime)');
+                assert(required(bl.id, now) === false, 'T161: an indefinitely paused one-off block allows editing');
             })();
 
             (function T162() {
@@ -1864,7 +1862,7 @@
             (function T164() {
                 const bl = createMockBlocklist({});
                 withData([bl], { schedules: [createMockSchedule(bl.id, [allDaySeg], { isPaused: true, pauseEndTime: now + HOUR })] });
-                assert(required(bl.id, now) === true, 'T164: a PAUSED schedule still gates');
+                assert(required(bl.id, now) === false, 'T164: a paused schedule allows editing');
             })();
 
             (function T165() {
@@ -1881,6 +1879,18 @@
                 withData([bl]);
                 assert(required(bl.id, now) === false, 'T166: an idle space with no block and no schedule does not gate');
                 assert(required(null, now) === false, 'T166: a missing id does not gate');
+            })();
+
+            (function T167() {
+                const bl = createMockBlocklist({});
+                withData([bl], { activeBlocks: [createMockBlock(bl.id, now - HOUR, now + HOUR, { isPaused: true, pauseEndTime: now - 1 })] });
+                assert(required(bl.id, now) === true, 'T167: an expired one-off pause gates editing again');
+            })();
+
+            (function T168() {
+                const bl = createMockBlocklist({});
+                withData([bl], { schedules: [createMockSchedule(bl.id, [allDaySeg], { isPaused: true, pauseEndTime: now - 1 })] });
+                assert(required(bl.id, now) === true, 'T168: an expired schedule pause gates editing again');
             })();
         } finally {
             window.__REDDBLOCK_INTERNALS__.appData = saved;

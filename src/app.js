@@ -3147,6 +3147,7 @@ export function applySettingsLanguage() {
         }
     }
     setText('active-blocklist-warning-text', tSettings('activeBlocklistWarning'));
+    setText('active-blocklist-pause-btn', tSettings('pause'));
     setText('blocklist-name-label', tSettings('name'));
     updateBlocklistModalModeLabels(getSelectedBlocklistModalMode());
     setText('override-difficulty-label', tSettings('overrideDifficulty'));
