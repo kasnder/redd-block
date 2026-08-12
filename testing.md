@@ -48,7 +48,7 @@ summarized below:
 | `release.yml` | Checks (lint + Tier 1) | `pnpm lint`, `pnpm test:tier1` — gates all four build jobs | every release run |
 | `release.yml` | macOS (.pkg) | `cargo test --lib` before signing | every release run |
 | `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes, on PRs and `main` |
-| `android-ci.yml` | Android debug APK | debug APK build, `:tauri-plugin-android-blocker:testDebugUnitTest`, then a release APK build + strip assertion | `src/**`, `src-tauri/**`, plugin, build config, on PRs and `main` |
+| `android-ci.yml` | Android debug + release APK | debug APK build, `:tauri-plugin-android-blocker:testDebugUnitTest`, then a release APK build + strip assertion | `src/**`, `src-tauri/**`, plugin, build config, on PRs and `main` |
 | `e2e-ci.yml` | Tier 2 (macOS + Windows) | `runIntegrationTests('full')` against a real built app over WebDriver | Tier 2 sources, `e2e/**`, `vite.config.js`, on PRs and `main` |
 
 Notes on the non-obvious choices:
@@ -92,9 +92,7 @@ Notes on the non-obvious choices:
   `.strtab`. That last check exists because nothing in the Android toolchain
   notices if `strip = true` leaves `[profile.release]`: AGP's own strip task
   removes DWARF sections only, and a Cargo release build emits none, so the
-  symbol table would quietly return (~4 MB per ABI). The job's name still says
-  "debug APK"; renaming it would change the check name that branch protection
-  matches on.
+  symbol table would quietly return (~4 MB per ABI).
 
 **Tier 2 runs in CI** (`e2e-ci.yml`) against a real built app, because it drives
 the actual Tauri command layer and cannot run on a bare page like Tier 1. See

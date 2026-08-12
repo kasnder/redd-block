@@ -40,7 +40,7 @@ permissions:
 
 jobs:
   android:
-    name: Android debug APK
+    name: Android debug + release APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
