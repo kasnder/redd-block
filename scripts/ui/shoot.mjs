@@ -126,11 +126,16 @@ function installTauriStub(context, appData) {
     }, appData);
 }
 
+// Must mirror detectPlatform() in src/blocking-platform.js, including the
+// secondary classes — those are what actually gate layout. `handset-device` in
+// particular hides whole sections (the week calendar among them), so an iPhone
+// stamped as bare `ios` renders screens a phone never shows.
 const PLATFORM_BODY_CLASSES = {
     windows: ['windows'],
-    mac: ['macos'],
-    ios: ['ios'],
-    android: ['android'],
+    mac: ['mac'],
+    ipad: ['ios'],
+    iphone: ['ios', 'ios-phone', 'mobile-phone-home', 'handset-device'],
+    android: ['android', 'mobile-phone-home', 'handset-device'],
 };
 
 /**
@@ -172,6 +177,14 @@ async function openScreen(browser, screen, eulaRevision) {
     await page.goto(`http://localhost:${PORT}/`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => typeof window.__REDDBLOCK_INTERNALS__ === 'object', null, { timeout: BOOT_TIMEOUT_MS });
 
+    const bodyClasses = PLATFORM_BODY_CLASSES[screen.platform];
+    if (!bodyClasses) {
+        throw new Error(
+            `screen "${screen.name}" has platform "${screen.platform}"; expected one of `
+            + Object.keys(PLATFORM_BODY_CLASSES).join(', '),
+        );
+    }
+
     await page.evaluate(async ({ appData, bodyClasses }) => {
         const internals = window.__REDDBLOCK_INTERNALS__;
 
@@ -196,9 +209,11 @@ async function openScreen(browser, screen, eulaRevision) {
         // detectPlatform() has no Linux branch and falls through to Windows, so
         // an unstamped screenshot taken on Linux silently claims to be Windows.
         // Restate the platform explicitly for every shot.
-        document.body.classList.remove('windows', 'macos', 'ios', 'android');
+        document.body.classList.remove(
+            'windows', 'mac', 'ios', 'ios-phone', 'android', 'mobile-phone-home', 'handset-device',
+        );
         bodyClasses.forEach(c => document.body.classList.add(c));
-    }, { appData, bodyClasses: PLATFORM_BODY_CLASSES[screen.platform || 'windows'] });
+    }, { appData, bodyClasses });
 
     if (screen.theme === 'dark') {
         await page.evaluate(() => document.body.classList.add('dark-mode'));
@@ -212,6 +227,26 @@ async function openScreen(browser, screen, eulaRevision) {
 
     if (screen.prepare) await screen.prepare(page);
 
+    // A screen whose subject is display:none on its own platform is not a
+    // screenshot, it is a claim about a screen that does not exist there — and
+    // `body.handset-device` hides whole sections, so this is easy to get wrong
+    // by stamping a platform without the classes the real app pairs with it.
+    // Fail loudly rather than emitting a blank or misleading PNG.
+    if (screen.clip) {
+        const visible = await page.evaluate((selector) => {
+            const el = document.querySelector(selector);
+            if (!el) return 'missing';
+            const box = el.getBoundingClientRect();
+            return box.width > 0 && box.height > 0 ? 'ok' : 'hidden';
+        }, screen.clip);
+        if (visible !== 'ok') {
+            throw new Error(
+                `screen "${screen.name}": ${screen.clip} is ${visible} on platform "${screen.platform}". `
+                + 'That platform does not show this UI — drop the screen or fix its platform.',
+            );
+        }
+    }
+
     return { context, page, problems };
 }
 
@@ -220,14 +255,15 @@ function measureLanes(page) {
     return page.evaluate(() => Array.from(document.querySelectorAll('.day-track')).map(track => ({
         day: track.dataset.dayIndex,
         rowHeight: Math.round(track.closest('.day-row').getBoundingClientRect().height * 10) / 10,
+        overflow: track.querySelector('.calendar-lane-overflow')?.textContent || null,
         blocks: Array.from(track.querySelectorAll('.calendar-block')).map(b => ({
             name: b.title,
-            compact: b.classList.contains('compact'),
+            // Withheld blocks measure 0px because they are display:none. Naming
+            // that explicitly matters — reported as a height it reads like a
+            // layout bug rather than the deliberate cap.
+            kind: b.classList.contains('overflow-hidden') ? 'withheld'
+                : b.classList.contains('compact') ? 'band' : 'label',
             height: Math.round(b.getBoundingClientRect().height * 10) / 10,
-            labelShown: (() => {
-                const label = b.querySelector('.block-label');
-                return label ? getComputedStyle(label).display !== 'none' : null;
-            })(),
         })),
     })));
 }
@@ -266,16 +302,21 @@ async function main() {
 
         for (const screen of selected) {
             const { context, page, problems } = await openScreen(browser, screen, eulaRevision);
-            const target = screen.clip ? page.locator(screen.clip) : page;
             const file = path.join(args.out, `${screen.name}.png`);
-            await target.screenshot({ path: file });
+            await (screen.clip
+                ? page.locator(screen.clip).screenshot({ path: file })
+                // Unclipped means "the whole screen", including anything below
+                // the fold — a viewport-only shot silently crops the app.
+                : page.screenshot({ path: file, fullPage: true }));
             log(`${screen.name} → ${path.relative(REPO_ROOT, file)}`);
 
             if (args.measure) {
                 for (const day of await measureLanes(page)) {
                     if (day.blocks.length === 0) continue;
-                    log(`  day ${day.day} (row ${day.rowHeight}px)` + day.blocks.map(
-                        b => `\n    ${b.compact ? 'band ' : 'label'} ${String(b.height).padStart(5)}px  ${b.name}`).join(''));
+                    log(`  day ${day.day} (row ${day.rowHeight}px${day.overflow ? `, pill ${day.overflow}` : ''})`
+                        + day.blocks.map(b => b.kind === 'withheld'
+                            ? `\n    withheld        ${b.name}`
+                            : `\n    ${b.kind.padEnd(8)} ${String(b.height).padStart(5)}px  ${b.name}`).join(''));
                 }
             }
             if (problems.length) problems.slice(0, 5).forEach(p => log(`  ! ${p}`));

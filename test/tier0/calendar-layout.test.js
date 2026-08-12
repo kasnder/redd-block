@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-    getCalendarLanePresentation,
-    getCalendarRowHeight,
-    MIN_COMPACT_LANE_HEIGHT_PX,
-} from '../../src/calendar-layout.js';
+import { getCalendarLanePresentation, MAX_VISIBLE_LANES } from '../../src/calendar-layout.js';
 
 // These assertions are about *geometry*, not about class names: a band that is
 // technically `compact` but 3px tall is the bug this module exists to prevent,
@@ -12,12 +8,13 @@ import {
 // counterpart is `pnpm ui:shoot --screen=week-crowded --measure`, which reports
 // the same numbers as measured by a real browser against real CSS.
 
-/** The px height a lane actually gets, given the row height the layout picks. */
-function laneHeightPx(totalLanes, defaultRowHeightPx = 38) {
-    const rowHeight = getCalendarRowHeight(totalLanes) ?? defaultRowHeightPx;
-    const { height } = getCalendarLanePresentation(1, totalLanes);
+const DAY_ROW_HEIGHT_PX = 38; // must track `.day-row { height }` in styles.css
+
+/** The px height a lane actually gets in a real row. */
+function laneHeightPx(lane, totalLanes) {
+    const { height } = getCalendarLanePresentation(lane, totalLanes);
     const [, percent, gap] = height.match(/calc\(([\d.]+)% - (\d+)px\)/).map(Number);
-    return (rowHeight * percent) / 100 - gap;
+    return (DAY_ROW_HEIGHT_PX * percent) / 100 - gap;
 }
 
 describe('calendar overlap presentation', () => {
@@ -39,25 +36,32 @@ describe('calendar overlap presentation', () => {
     });
 
     it('positions lane N below lane N-1', () => {
-        expect(getCalendarLanePresentation(1, 4).top).toBe('calc(0% + 0.5px)');
-        expect(getCalendarLanePresentation(2, 4).top).toBe('calc(25% + 0.5px)');
-        expect(getCalendarLanePresentation(4, 4).top).toBe('calc(75% + 0.5px)');
+        expect(getCalendarLanePresentation(1, 3).top).toBe('calc(0% + 0.5px)');
+        expect(getCalendarLanePresentation(2, 3).top).toBe('calc(33.333333333333336% + 0.5px)');
+        expect(getCalendarLanePresentation(3, 3).top).toBe('calc(66.66666666666667% + 0.5px)');
+    });
+
+    it('withholds lanes past the cap instead of drawing slivers', () => {
+        expect(getCalendarLanePresentation(MAX_VISIBLE_LANES, 9).overflow).toBe(false);
+        expect(getCalendarLanePresentation(MAX_VISIBLE_LANES + 1, 9).overflow).toBe(true);
+        // An overflow result has no geometry — callers must not write it to style.
+        expect(getCalendarLanePresentation(MAX_VISIBLE_LANES + 1, 9).height).toBeNull();
+    });
+
+    it('divides the row by the lanes it draws, not the lanes that exist', () => {
+        // The bug this guards: dividing by totalLanes after capping leaves the
+        // bottom of the row empty and the bands no taller than before the cap.
+        const deep = getCalendarLanePresentation(1, 12);
+        const atCap = getCalendarLanePresentation(1, MAX_VISIBLE_LANES);
+        expect(deep.height).toBe(atCap.height);
+        expect(deep.top).toBe(atCap.top);
     });
 
     it('never renders a band below the readable minimum, however deep the stack', () => {
-        for (let lanes = 3; lanes <= 12; lanes++) {
-            expect(laneHeightPx(lanes)).toBeGreaterThanOrEqual(MIN_COMPACT_LANE_HEIGHT_PX);
-        }
-    });
-
-    it('grows the row only when the default height cannot hold the stack', () => {
-        // Shallow stacks keep the calendar's fixed vertical rhythm...
-        expect(getCalendarRowHeight(1)).toBeNull();
-        expect(getCalendarRowHeight(3)).toBeNull();
-        // ...and a grown row is never shorter than an ungrown one, which an
-        // unguarded `lanes * laneHeight` formula gets wrong for small counts.
-        for (let lanes = 4; lanes <= 12; lanes++) {
-            expect(getCalendarRowHeight(lanes)).toBeGreaterThan(38);
+        for (let totalLanes = 3; totalLanes <= 12; totalLanes++) {
+            for (let lane = 1; lane <= MAX_VISIBLE_LANES; lane++) {
+                expect(laneHeightPx(lane, totalLanes)).toBeGreaterThanOrEqual(10);
+            }
         }
     });
 
@@ -65,7 +69,6 @@ describe('calendar overlap presentation', () => {
         // totalLanes reaches this from a DOM measurement, so 0/NaN are reachable.
         expect(getCalendarLanePresentation(1, 0).height).not.toContain('NaN');
         expect(getCalendarLanePresentation(0, 0).top).not.toContain('NaN');
-        expect(getCalendarLanePresentation(9, 3).top).toBe(getCalendarLanePresentation(3, 3).top);
-        expect(getCalendarRowHeight(Number.NaN)).toBeNull();
+        expect(getCalendarLanePresentation(Number.NaN, 3).top).toBe('calc(0% + 0.5px)');
     });
 });

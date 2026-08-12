@@ -1,7 +1,7 @@
 // Main render cycle: week calendar, now-blocking chips, blocklist selector
 // sync, and the 1s tick loop. Extracted verbatim from app.js.
 import { state } from './state.js';
-import { getCalendarLanePresentation, getCalendarRowHeight } from './calendar-layout.js';
+import { getCalendarLanePresentation } from './calendar-layout.js';
 import { escapeHtml, getContrastTextColor } from './utils.js';
 import { tSettings, weekdayAbbrevMon0List } from './i18n.js';
 import { isBlockAlwaysOn, isQuickStartBlocklist, QUICK_START_EMOJI } from './blocklist-utils.js';
@@ -944,16 +944,16 @@ export function layoutOverlappingBlocks() {
     document.querySelectorAll('.day-track').forEach(track => {
         const blocks = Array.from(track.querySelectorAll('.calendar-block'));
         // Reset any previous lane styling so single-block rows render at full height.
-        // The row's own grown height has to be reset here too, before the early
-        // return — otherwise a row that was crowded stays tall after the schedules
-        // causing the crowding are deleted.
+        // The overflow pill has to go here too, before the early return — otherwise
+        // a row that was crowded keeps advertising hidden schedules after the
+        // schedules causing the crowding are deleted.
         blocks.forEach(b => {
             b.style.top = '';
             b.style.bottom = '';
             b.style.height = '';
-            b.classList.remove('compact');
+            b.classList.remove('compact', 'overflow-hidden');
         });
-        track.closest('.day-row')?.style.removeProperty('height');
+        track.querySelector('.calendar-lane-overflow')?.remove();
         if (blocks.length <= 1) return;
 
         // Compute time-extents (in % of day width) from current left/width styles.
@@ -1019,24 +1019,62 @@ export function layoutOverlappingBlocks() {
             current.totalLanes = maxLane;
         }
 
+        const overflowNames = new Set();
+
         blockData.forEach(data => {
-            if (data.totalLanes > 1) {
-                const presentation = getCalendarLanePresentation(data.lane, data.totalLanes);
-                data.element.style.top = presentation.top;
-                data.element.style.height = presentation.height;
-                data.element.style.bottom = 'auto';
-                data.element.classList.toggle('compact', presentation.compact);
+            if (data.totalLanes <= 1) return;
+
+            const presentation = getCalendarLanePresentation(data.lane, data.totalLanes);
+            if (presentation.overflow) {
+                // Withheld rather than drawn as a sliver. Collect the name so the
+                // marker can say what is missing — a bare "+2" tells the user that
+                // something is hidden but not whether it is the thing they were
+                // looking for.
+                data.element.classList.add('overflow-hidden');
+                const name = (data.element.title || '').split(' · ')[0];
+                if (name) overflowNames.add(name);
+                return;
             }
+
+            data.element.classList.remove('overflow-hidden');
+            data.element.style.top = presentation.top;
+            data.element.style.height = presentation.height;
+            data.element.style.bottom = 'auto';
+            data.element.classList.toggle('compact', presentation.compact);
         });
 
-        // Deeply-stacked rows grow instead of slicing the same 38 px thinner. The
-        // depth that matters is the row's worst case, not any one block's, or the
-        // row would size to whichever block happened to be laid out last.
-        const deepestLane = blockData.reduce((max, d) => Math.max(max, d.totalLanes), 1);
-        const rowHeight = getCalendarRowHeight(deepestLane);
-        const row = track.closest('.day-row');
-        if (row) row.style.height = rowHeight === null ? '' : `${rowHeight}px`;
+        // Anchor past the rightmost bar in the row, not the rightmost *withheld*
+        // bar: the withheld ones routinely end mid-cluster, which puts the marker
+        // on top of the lanes that are still drawn.
+        const rowRightPct = blockData.reduce((max, d) => Math.max(max, d.right), 0);
+        renderLaneOverflowMarker(track, overflowNames, rowRightPct);
     });
+}
+
+// Mark a row that is withholding schedules, and say which.
+//
+// Anchored just past the right edge of the row's bars rather than pinned to the
+// row's far end: parked out in the empty small hours it reads as chrome
+// belonging to the row rather than as a statement about the stack of bars
+// several hundred pixels away. Clamped back inside when the bars run late
+// enough that there is no room after them.
+function renderLaneOverflowMarker(track, overflowNames, rightPct) {
+    track.querySelector('.calendar-lane-overflow')?.remove();
+    if (overflowNames.size === 0) return;
+
+    const names = [...overflowNames];
+    const marker = document.createElement('div');
+    marker.className = 'calendar-lane-overflow';
+    marker.textContent = `+${names.length} more`;
+    marker.title = `Also scheduled: ${names.join(', ')}`;
+
+    if (rightPct > 0 && rightPct < 100) {
+        marker.style.left = `calc(${rightPct}% + 6px)`;
+    } else {
+        marker.style.right = '4px';
+    }
+
+    track.appendChild(marker);
 }
 
 // Render saved schedules onto the weekly calendar by weekday. Each segment lays out on

@@ -4600,6 +4600,42 @@ body.dark-mode .day-row.weekend{
     cursor: ew-resize !important;
 }
 
+/* Schedules withheld because the row hit its lane cap. Not drawn at all — a
+   sliver would be worse than an honest omission — but still in the DOM so the
+   layout pass can count them and the overflow pill can name them. */
+.calendar-block.overflow-hidden{
+    display: none;
+}
+
+/* "+N more" marker on a row that is withholding schedules.
+ *
+ * Positioned inline by layoutOverlappingBlocks, immediately after the bars it
+ * describes. It has to compete with a stack of saturated bars a few pixels away,
+ * so it is deliberately not whisper-quiet: at 10px in --text-secondary it read
+ * as a stray artifact rather than as a control. Words rather than a bare count,
+ * because "+2" alone says something is hidden without saying what kind of thing. */
+.calendar-lane-overflow{
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+    padding: 1px 7px;
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    white-space: nowrap;
+    color: var(--text-primary);
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--text-secondary);
+    cursor: help;
+    pointer-events: auto;
+}
+
+body.dark-mode .calendar-lane-overflow{
+    background: var(--element-bg);
+}
+
 /* Border reset for compact bands.
  *
  * Deliberately placed after every `.calendar-block.<variant>` rule above rather
