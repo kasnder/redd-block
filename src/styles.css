@@ -7636,7 +7636,7 @@ body.mobile-phone-home .blocklist-meta-items-btn{
     }
 }
 
-/* Mobile phones: chevron opens enter sheet; edit lives in the overflow menu. */
+/* Mobile phones: the card body is inert; pause/stop/edit live in the overflow menu. */
 body.mobile-phone-home .blocklist-card{
     --blocklist-action-btn-size: 32px;
 }
@@ -7660,13 +7660,11 @@ body.mobile-phone-home .blocklist-actions{
     transform: translateY(-50%);
 }
 
-body.mobile-phone-home .blocklist-menu-btn,
-body.mobile-phone-home .blocklist-enter-btn{
+body.mobile-phone-home .blocklist-menu-btn{
     -webkit-tap-highlight-color: transparent;
 }
 
-body.mobile-phone-home .blocklist-menu-btn svg,
-body.mobile-phone-home .blocklist-enter-btn svg{
+body.mobile-phone-home .blocklist-menu-btn svg{
     width: 22px;
     height: 22px;
 }
@@ -7674,10 +7672,7 @@ body.mobile-phone-home .blocklist-enter-btn svg{
 @media (hover: none), (pointer: coarse) {
     body.mobile-phone-home .blocklist-menu-btn:hover,
     body.mobile-phone-home .blocklist-menu-btn:active,
-    body.mobile-phone-home .blocklist-menu-btn:focus-visible,
-    body.mobile-phone-home .blocklist-enter-btn:hover,
-    body.mobile-phone-home .blocklist-enter-btn:active,
-    body.mobile-phone-home .blocklist-enter-btn:focus-visible{
+    body.mobile-phone-home .blocklist-menu-btn:focus-visible{
         background: var(--element-hover-bg);
         color: var(--text-secondary);
     }
@@ -7761,6 +7756,18 @@ body.android .blocklist-card{
 body.ios .blocklist-actions,
 body.android .blocklist-actions {
     gap: var(--blocklist-actions-gap);
+}
+
+/* Enter-sheet cards carry only the overflow button, so reserve one slot and
+   right-align the menu under it. The card body is no longer a tap target.
+   `body` prefix keeps this above the ios/android two-slot defaults above. */
+body .blocklist-card.blocklist-card-menu-only{
+    --blocklist-actions-slot: var(--blocklist-action-btn-size);
+    --blocklist-menu-anchor-offset: 0px;
+}
+
+body .blocklist-card.blocklist-card-menu-only:hover{
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
 .blocklist-action-btn{
