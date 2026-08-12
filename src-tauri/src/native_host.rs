@@ -359,11 +359,7 @@ pub fn derive_payload(data_path: &std::path::Path) -> (Vec<String>, Vec<BlockInf
     for ab in &active {
         let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        let paused = ab
-            .get("isPaused")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if paused || now_ms < start || now_ms >= end {
+        if one_off_pause_active(ab, now_ms) || now_ms < start || now_ms >= end {
             continue;
         }
         let id = match ab.get("blocklistId").and_then(|v| v.as_str()) {
@@ -491,11 +487,7 @@ pub fn derive_blocked_apps(data_path: &std::path::Path) -> Vec<String> {
     for ab in &active {
         let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        let paused = ab
-            .get("isPaused")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if paused || now_ms < start || now_ms >= end {
+        if one_off_pause_active(ab, now_ms) || now_ms < start || now_ms >= end {
             continue;
         }
         let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) else {
@@ -594,11 +586,7 @@ pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
     for ab in &active {
         let start = ab.get("startTime").and_then(|v| v.as_u64()).unwrap_or(0);
         let end = ab.get("endTime").and_then(|v| v.as_u64()).unwrap_or(0);
-        let paused = ab
-            .get("isPaused")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-        if paused || now_ms < start || now_ms >= end {
+        if one_off_pause_active(ab, now_ms) || now_ms < start || now_ms >= end {
             continue;
         }
         let Some(id) = ab.get("blocklistId").and_then(|v| v.as_str()) else {
@@ -644,6 +632,34 @@ pub fn derive_allowed_apps(data_path: &std::path::Path) -> Vec<String> {
 struct ScheduleMatch {
     started_at: Option<u64>,
     ends_at: Option<u64>,
+}
+
+/// Whether a one-off block's pause still suppresses enforcement at `now_ms`.
+///
+/// Mirrors the schedule rule in `match_schedule_now`: a pause holds only until
+/// `pauseEndTime`. Derivation must not wait for the frontend to clear
+/// `isPaused` — that sweep is a 1 s JS interval in `src/render.js`, and macOS
+/// throttles WKWebView timers while the window is hidden, which is the app's
+/// normal tray state. Keying off the flag alone left a block silently
+/// unenforced past its pause end.
+///
+/// A missing `pauseEndTime` reads as "not paused", matching the schedule rule.
+/// Both pause paths (`confirm-modals.js`, and the Android reconciliation in
+/// `blocking-platform.js`) always write the two fields together, so an
+/// end-time-less pause is not reachable from the app.
+pub(crate) fn one_off_pause_active(active_block: &Value, now_ms: u64) -> bool {
+    let paused = active_block
+        .get("isPaused")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    if !paused {
+        return false;
+    }
+    let pause_end = active_block
+        .get("pauseEndTime")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    pause_end > now_ms
 }
 
 /// If any segment of `schedule` is active at `now_ms`, return the
@@ -1314,6 +1330,154 @@ mod tests {
         assert_eq!(
             blocks[0].apps,
             vec!["Mail".to_string(), "Notes".to_string()]
+        );
+    }
+
+    /// A one-off block whose pause window has already elapsed must enforce
+    /// again on its own, exactly as `match_schedule_now` already does for
+    /// schedules (`paused && pause_end > now_ms`).
+    ///
+    /// Derivation must not depend on the frontend having cleared `isPaused`
+    /// first: the sweep that clears it lives in a 1 s JS interval
+    /// (`src/render.js`), and macOS throttles WKWebView timers while the
+    /// window is hidden — which is the app's normal tray state. A stale flag
+    /// would otherwise leave the block silently unenforced past its pause.
+    #[test]
+    fn expired_one_off_pause_resumes_enforcement() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = temp_json_path("expired-one-off-pause");
+        let data = json!({
+            "blocklists": [{
+                "id": "bl-paused",
+                "name": "Focus",
+                "mode": "blocklist",
+                "websites": ["example.invalid"],
+                "apps": ["Mail"]
+            }],
+            "activeBlocks": [{
+                "blocklistId": "bl-paused",
+                "startTime": now.saturating_sub(60_000),
+                "endTime": now + 60_000,
+                // Paused, but the pause ended a minute ago.
+                "isPaused": true,
+                "pauseEndTime": now.saturating_sub(60_000)
+            }],
+            "schedules": [],
+            "settings": {}
+        });
+
+        fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        let (domains, blocks) = derive_payload(&path);
+        let apps = derive_blocked_apps(&path);
+        let _ = fs::remove_file(&path);
+
+        assert!(
+            domains.contains(&"example.invalid".to_string()),
+            "expired pause should not keep the domain unenforced, got {domains:?}"
+        );
+        assert_eq!(
+            blocks.len(),
+            1,
+            "expired pause should yield an active block"
+        );
+        assert!(
+            apps.contains(&"Mail".to_string()),
+            "expired pause should not keep the app unenforced, got {apps:?}"
+        );
+    }
+
+    /// `isPaused` with no `pauseEndTime` enforces rather than suppressing.
+    ///
+    /// This is a deliberate choice, not a fallback. It matches the schedule
+    /// rule (`match_schedule_now` reads a missing end time as 0, so the pause
+    /// is already over), and it fails in the safe direction for a blocker: a
+    /// pause that cannot expire would disable enforcement forever, and setting
+    /// `isPaused` while deleting `pauseEndTime` would be a trivial bypass of
+    /// the whole app by hand-editing the data file.
+    ///
+    /// Both writers — `confirm-modals.js` and the Android reconciliation in
+    /// `blocking-platform.js` — always write the pair, so this shape is not
+    /// reachable from the app itself.
+    #[test]
+    fn pause_without_end_time_does_not_suppress_enforcement() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = temp_json_path("pause-without-end-time");
+        let data = json!({
+            "blocklists": [{
+                "id": "bl-paused",
+                "name": "Focus",
+                "mode": "blocklist",
+                "websites": ["example.invalid"],
+                "apps": []
+            }],
+            "activeBlocks": [{
+                "blocklistId": "bl-paused",
+                "startTime": now.saturating_sub(60_000),
+                "endTime": now + 60_000,
+                "isPaused": true
+                // no pauseEndTime
+            }],
+            "schedules": [],
+            "settings": {}
+        });
+
+        fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        let (domains, _blocks) = derive_payload(&path);
+        let _ = fs::remove_file(&path);
+
+        assert!(
+            domains.contains(&"example.invalid".to_string()),
+            "a pause with no end time must not disable enforcement indefinitely, got {domains:?}"
+        );
+    }
+
+    /// The other half of the same rule: a pause that has *not* elapsed still
+    /// suppresses enforcement.
+    #[test]
+    fn live_one_off_pause_suppresses_enforcement() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = temp_json_path("live-one-off-pause");
+        let data = json!({
+            "blocklists": [{
+                "id": "bl-paused",
+                "name": "Focus",
+                "mode": "blocklist",
+                "websites": ["example.invalid"],
+                "apps": ["Mail"]
+            }],
+            "activeBlocks": [{
+                "blocklistId": "bl-paused",
+                "startTime": now.saturating_sub(60_000),
+                "endTime": now + 60_000,
+                "isPaused": true,
+                "pauseEndTime": now + 30_000
+            }],
+            "schedules": [],
+            "settings": {}
+        });
+
+        fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        let (domains, blocks) = derive_payload(&path);
+        let apps = derive_blocked_apps(&path);
+        let _ = fs::remove_file(&path);
+
+        assert!(
+            domains.is_empty(),
+            "live pause should suppress domains, got {domains:?}"
+        );
+        assert!(blocks.is_empty(), "live pause should suppress blocks");
+        assert!(
+            apps.is_empty(),
+            "live pause should suppress apps, got {apps:?}"
         );
     }
 }
