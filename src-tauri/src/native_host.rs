@@ -1385,6 +1385,54 @@ mod tests {
         );
     }
 
+    /// `isPaused` with no `pauseEndTime` enforces rather than suppressing.
+    ///
+    /// This is a deliberate choice, not a fallback. It matches the schedule
+    /// rule (`match_schedule_now` reads a missing end time as 0, so the pause
+    /// is already over), and it fails in the safe direction for a blocker: a
+    /// pause that cannot expire would disable enforcement forever, and setting
+    /// `isPaused` while deleting `pauseEndTime` would be a trivial bypass of
+    /// the whole app by hand-editing the data file.
+    ///
+    /// Both writers — `confirm-modals.js` and the Android reconciliation in
+    /// `blocking-platform.js` — always write the pair, so this shape is not
+    /// reachable from the app itself.
+    #[test]
+    fn pause_without_end_time_does_not_suppress_enforcement() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = temp_json_path("pause-without-end-time");
+        let data = json!({
+            "blocklists": [{
+                "id": "bl-paused",
+                "name": "Focus",
+                "mode": "blocklist",
+                "websites": ["example.invalid"],
+                "apps": []
+            }],
+            "activeBlocks": [{
+                "blocklistId": "bl-paused",
+                "startTime": now.saturating_sub(60_000),
+                "endTime": now + 60_000,
+                "isPaused": true
+                // no pauseEndTime
+            }],
+            "schedules": [],
+            "settings": {}
+        });
+
+        fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        let (domains, _blocks) = derive_payload(&path);
+        let _ = fs::remove_file(&path);
+
+        assert!(
+            domains.contains(&"example.invalid".to_string()),
+            "a pause with no end time must not disable enforcement indefinitely, got {domains:?}"
+        );
+    }
+
     /// The other half of the same rule: a pause that has *not* elapsed still
     /// suppresses enforcement.
     #[test]
