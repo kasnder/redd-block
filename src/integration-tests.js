@@ -54,6 +54,36 @@
         if (!condition) throw new Error(message);
     }
 
+    function isVisible(elementId) {
+        const element = document.getElementById(elementId);
+        return !!element && !element.classList.contains('hidden');
+    }
+
+    function hideAllIntegrationModals() {
+        document.querySelectorAll('.modal-overlay').forEach((modal) => modal.classList.add('hidden'));
+    }
+
+    async function waitForIntegrationCondition(predicate, label, timeoutMs = 5000) {
+        const deadline = nowMs() + timeoutMs;
+        while (!predicate()) {
+            if (nowMs() >= deadline) throw new Error(`${label} timed out`);
+            await shortWait(25);
+        }
+    }
+
+    function openSettingsForIntegrationTest(testName) {
+        const trigger = document.getElementById('settings-btn') || document.getElementById('settings-btn-stack');
+        assertOrThrow(trigger, `${testName}: Settings trigger missing`);
+        trigger.click();
+    }
+
+    function selectIntegrationBlocklist(testName, blocklist) {
+        const select = document.getElementById('blocklist-select');
+        assertOrThrow(select, `${testName}: blocklist selector missing`);
+        select.value = blocklist.id;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
     // v3 enforcement read-back: `get_system_diagnostics` → `current_blocking`
     // is the Rust-derived snapshot of what the extension / Automation watcher
     // enforce (flat blocked `domains`, per-block `blocks[]` with mode, and the
@@ -951,6 +981,139 @@
         });
     }
 
+    // ========================================
+    // Testing Group I: Modal workflows and Android back boundary
+    // ========================================
+
+    async function testI1_stopAllCancelRestoresSettings() {
+        return runIsolatedIntegrationTest('I1', async () => {
+            hideAllIntegrationModals();
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'I1 Modal' });
+            addActiveBlock(bl.id, { durationMs: 120000 });
+            await callSaveData();
+            callRender();
+
+            openSettingsForIntegrationTest('I1');
+            await waitForIntegrationCondition(() => isVisible('settings-modal'), 'I1 settings modal');
+            document.getElementById('override-all-btn')?.click();
+            await waitForIntegrationCondition(() => isVisible('override-all-modal'), 'I1 stop-all modal');
+            assertOrThrow(!isVisible('settings-modal'), 'I1: settings modal stayed visible behind stop-all modal');
+
+            document.getElementById('cancel-override-all-btn')?.click();
+            await waitForIntegrationCondition(
+                () => !isVisible('override-all-modal') && isVisible('settings-modal'),
+                'I1 settings restore after cancel',
+            );
+            assertOrThrow(
+                document.getElementById('override-all-challenge-input')?.value === '',
+                'I1: stop-all challenge was not reset on cancel',
+            );
+            hideAllIntegrationModals();
+            return { passed: true };
+        });
+    }
+
+    async function testI2_stopAllSuccessRestoresSettings() {
+        return runIsolatedIntegrationTest('I2', async () => {
+            hideAllIntegrationModals();
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'I2 Modal' });
+            addActiveBlock(bl.id, { durationMs: 120000 });
+            await callSaveData();
+            callRender();
+
+            openSettingsForIntegrationTest('I2');
+            await waitForIntegrationCondition(() => isVisible('settings-modal'), 'I2 settings modal');
+            document.getElementById('override-all-btn')?.click();
+            await waitForIntegrationCondition(() => isVisible('override-all-modal'), 'I2 stop-all modal');
+
+            const challengeText = document.getElementById('override-all-challenge-text')?.textContent || '';
+            const challengeInput = document.getElementById('override-all-challenge-input');
+            assertOrThrow(challengeText.length > 0, 'I2: stop-all challenge text missing');
+            assertOrThrow(challengeInput, 'I2: stop-all challenge input missing');
+            challengeInput.value = challengeText;
+            challengeInput.dispatchEvent(new Event('input', { bubbles: true }));
+            document.getElementById('confirm-override-all-btn')?.click();
+
+            await waitForIntegrationCondition(
+                () => !isVisible('override-all-modal') && isVisible('settings-modal')
+                    && (getAppData().activeBlocks || []).length === 0
+                    && (getAppData().schedules || []).length === 0,
+                'I2 settings restore after stop-all success',
+            );
+            hideAllIntegrationModals();
+            return { passed: true };
+        });
+    }
+
+    async function testI3_stopAndPauseCancelWorkflows() {
+        return runIsolatedIntegrationTest('I3', async () => {
+            hideAllIntegrationModals();
+            const bl = addTestBlocklist({ websites: [TEST_DOMAINS.a], name: 'I3 Modal' });
+            const block = addActiveBlock(bl.id, { durationMs: 120000 });
+            await callSaveData();
+            callRender();
+            document.getElementById('instant-mode-tab')?.click();
+            selectIntegrationBlocklist('I3', bl);
+            await waitForIntegrationCondition(
+                () => document.getElementById('start-block-btn')?.dataset.activeBlockId === block.id,
+                'I3 active block selection',
+            );
+
+            document.getElementById('start-block-btn')?.click();
+            await waitForIntegrationCondition(() => isVisible('override-modal'), 'I3 stop modal');
+            document.getElementById('cancel-override-btn')?.click();
+            await waitForIntegrationCondition(() => !isVisible('override-modal'), 'I3 stop modal cancel');
+            assertOrThrow(
+                (getAppData().activeBlocks || []).some((candidate) => candidate.id === block.id),
+                'I3: cancelling stop removed the active block',
+            );
+
+            await waitForIntegrationCondition(() => !document.getElementById('pause-block-btn')?.classList.contains('hidden'), 'I3 pause button');
+            document.getElementById('pause-block-btn')?.click();
+            await waitForIntegrationCondition(() => isVisible('pause-modal'), 'I3 pause modal');
+            document.getElementById('cancel-pause-btn')?.click();
+            await waitForIntegrationCondition(() => !isVisible('pause-modal'), 'I3 pause modal cancel');
+            assertOrThrow(
+                !(getAppData().activeBlocks || []).find((candidate) => candidate.id === block.id)?.isPaused,
+                'I3: cancelling pause changed the active block state',
+            );
+            hideAllIntegrationModals();
+            return { passed: true };
+        });
+    }
+
+    async function testI4_androidBackClosesTopmostModal() {
+        return runIsolatedIntegrationTest('I4', async () => {
+            hideAllIntegrationModals();
+            const internals = getInternals();
+            assertOrThrow(
+                typeof internals?.setupAndroidBackButtonHandling === 'function',
+                'I4: Android back setup hook unavailable',
+            );
+
+            // The native WryActivity maps hardware/gesture back to webView.goBack(),
+            // which reaches this exact popstate callback. Toggle classes after setup
+            // so MutationObserver arms the trap even when the app started on desktop.
+            internals.setupAndroidBackButtonHandling();
+            const settingsModal = document.getElementById('settings-modal');
+            const overrideAllModal = document.getElementById('override-all-modal');
+            assertOrThrow(settingsModal && overrideAllModal, 'I4: modal fixtures missing');
+            settingsModal.classList.remove('hidden');
+            overrideAllModal.classList.remove('hidden');
+            await shortWait(0);
+
+            window.dispatchEvent(new PopStateEvent('popstate', { state: { androidModalTrap: true } }));
+            await waitForIntegrationCondition(
+                () => !isVisible('override-all-modal') && isVisible('settings-modal'),
+                'I4 first back closes topmost modal',
+            );
+            window.dispatchEvent(new PopStateEvent('popstate', { state: { androidModalTrap: true } }));
+            await waitForIntegrationCondition(() => !isVisible('settings-modal'), 'I4 second back closes settings');
+            hideAllIntegrationModals();
+            return { passed: true };
+        });
+    }
+
     function buildProfileTests(profile) {
         const coreTests = [
             { group: 'A', name: 'A1: Enforcement derivation path', fn: testA1_enforcementDerivationPath },
@@ -961,7 +1124,11 @@
             { group: 'C', name: 'C1: Scoped clear by blocklist ID', fn: testC1_scopedClearByBlocklistId },
             { group: 'E', name: 'E1: Clean hosts command path', fn: testE1_cleanHostsCommandPath },
             { group: 'E', name: 'E2: Helper diagnostics contract', fn: testE2_helperDiagnosticsContract },
-            { group: 'H', name: 'H1: Single allowlist enforcement state', fn: testH1_singleAllowlistEnforcementState }
+            { group: 'H', name: 'H1: Single allowlist enforcement state', fn: testH1_singleAllowlistEnforcementState },
+            { group: 'I', name: 'I1: Stop-all cancel restores Settings', fn: testI1_stopAllCancelRestoresSettings },
+            { group: 'I', name: 'I2: Stop-all success restores Settings', fn: testI2_stopAllSuccessRestoresSettings },
+            { group: 'I', name: 'I3: Stop and pause cancel workflows', fn: testI3_stopAndPauseCancelWorkflows },
+            { group: 'I', name: 'I4: Android back closes topmost modal', fn: testI4_androidBackClosesTopmostModal }
         ];
 
         if (profile === PROFILE_CORE) return coreTests;
@@ -1062,7 +1229,7 @@
 
         if (selectedProfile === PROFILE_FULL && results.failed > 0) {
             console.log('\nGroup failure summary (full profile):');
-            ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(groupKey => {
+            ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'].forEach(groupKey => {
                 const g = groupResults.get(groupKey);
                 if (!g) return;
                 const passedOverTotal = `${g.passed}/${g.total}`;

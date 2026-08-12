@@ -20,7 +20,7 @@ import {
 } from './override-challenge.js';
 import { createChallengeController } from './challenge-controller.js';
 import { saveData, updateHostsFile } from './persistence.js';
-import { acceptEula } from './blocking-platform.js';
+import { acceptEula, setupAndroidBackButtonHandling } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION } from './onboarding.js';
 import { render, isClockTickRunning } from './render.js';
 import { duplicateBlocklist, getNextCopyName, isBlocklistEditFrictionRequired } from './blocklists.js';
@@ -78,6 +78,11 @@ window.__REDDBLOCK_INTERNALS__ = {
     // The e2e harness calls this rather than hand-patching settings, which
     // leaves the app sitting behind the gate with a doctored in-memory value.
     acceptEula,
+    // Tier 2 drives the same popstate path that Android's WryActivity invokes
+    // after hardware/gesture back. The native Activity is not present in the
+    // desktop WebDriver binary, so expose the setup hook for that boundary
+    // test rather than duplicating modal-close logic in the harness.
+    setupAndroidBackButtonHandling,
 };
 
 // ========================================
