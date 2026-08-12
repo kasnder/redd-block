@@ -19,6 +19,13 @@ debug = 1
 
 [profile.release]
 incremental = false
+# Strip the symbol table from release binaries. This is not redundant with the
+# Android build: AGP's `strip<Variant>DebugSymbols` task runs the equivalent of
+# `llvm-strip --strip-debug`, which only removes DWARF sections — and a Cargo
+# release build emits none, so the task is a no-op while `.symtab`/`.strtab`
+# ride along into the APK. Measured on 3.8.9, that was 4.19 MB of the 13.96 MB
+# arm64 library, and 12.9 MB across the four ABIs of the universal APK.
+strip = true
 
 [lib]
 name = "redd_block_lib"

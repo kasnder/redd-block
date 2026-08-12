@@ -156,6 +156,36 @@ writes a treemap to `dist/stats.html`. See the build-time platform gating
 section of [../AGENTS.md](../AGENTS.md) for when `__ANDROID_BUILD__` is the right
 tool and when it is not.
 
+## Artifact sizes
+
+Measured at 3.8.9, so you can tell "big" from "something regressed":
+
+| Artifact | Size |
+| --- | --- |
+| `pnpm build:android` universal APK (4 ABIs) | ~41 MB |
+| `pnpm build:android` universal AAB (the Play upload) | ~19 MB |
+| `pnpm build:android:debug` APK (aarch64 only) | ~84 MB |
+
+Essentially all of it is `libredd_block_lib.so`, and `.so` entries are **stored
+uncompressed** in the APK, so the library's size passes through roughly 1:1. The
+debug APK is far larger than the release one because the debug build type sets
+`isJniDebuggable` and re-adds `keepDebugSymbols`, keeping ~47 MB of DWARF and
+~11 MB of symbol tables that release drops.
+
+Two things that are easy to get wrong here:
+
+- **AGP's strip does not remove the symbol table.** `strip<Variant>DebugSymbols`
+  runs the equivalent of `llvm-strip --strip-debug`, which only drops DWARF
+  sections — and a Cargo release build emits none, so the task is a no-op.
+  `strip = true` in `[profile.release]` is what removes `.symtab`/`.strtab`;
+  it was worth 12.9 MB across the four ABIs.
+- **The APK is not what users download.** Play receives the AAB and splits it
+  per ABI, so a device pulls roughly one architecture's worth. Judge user-facing
+  size from the AAB, not the universal APK.
+
+The frontend is not a plausible cause of size problems — the whole bundle is
+~1.5 MB. Measure it with `ANALYZE=1` as described above before suspecting it.
+
 ## Live development
 
 For an iterate-and-reload loop on a running device/emulator (hot-reload of the
