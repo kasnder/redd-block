@@ -1683,6 +1683,117 @@
     }
 
     // ========================================
+    // CATEGORY 19: iOS SCHEDULE PAYLOAD (T151-T158)
+    // ========================================
+
+    // ScheduleEntryRequest has carried a per-entry `mode` since allow mode
+    // shipped, and IOSPolicyResolver reads it — but the JS producer never set
+    // it, so an allow-mode focus space on a *schedule* was sent as blocked
+    // items and blocked exactly what it was meant to permit. The manual/one-off
+    // path was unaffected (collectActiveIOSManualBlockPayload already sent it).
+    function runIOSSchedulePayloadTests() {
+        console.log('\n🍎 Category 19: iOS Schedule Payload');
+        console.log('-----------------------------------');
+
+        const { buildIOSScheduleEntries: build } = window.__REDDBLOCK_INTERNALS__;
+        const saved = window.__REDDBLOCK_INTERNALS__.appData;
+
+        const seg = { startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, days: [] };
+        const withData = (blocklists, schedules) => {
+            window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists, schedules, activeBlocks: [] });
+        };
+
+        try {
+            (function T151() {
+                const bl = createMockBlocklist({ mode: 'blocklist', websites: ['x.com'] });
+                withData([bl], [createMockSchedule(bl.id, [seg])]);
+                const entries = build();
+                assertEqual(entries.length, 1, 'T151: a block-mode schedule produces an entry');
+                assertEqual(entries[0].mode, null, 'T151: block mode sends mode: null (legacy semantics)');
+            })();
+
+            (function T152() {
+                const bl = createMockBlocklist({ mode: 'allowlist', websites: ['x.com'] });
+                withData([bl], [createMockSchedule(bl.id, [seg])]);
+                const entries = build();
+                assertEqual(entries.length, 1, 'T152: an allow-mode schedule still produces an entry (iOS can enforce it)');
+                assertEqual(entries[0].mode, 'allowlist', 'T152: and is tagged as an allow list');
+            })();
+
+            (function T153() {
+                // The bug: x.com was the one site meant to stay reachable, and it
+                // arrived as a blocked domain with no mode to say otherwise.
+                const bl = createMockBlocklist({ mode: 'allowlist', websites: ['x.com'] });
+                withData([bl], [createMockSchedule(bl.id, [seg])]);
+                const entry = build()[0];
+                assertEqual(entry.domains, ['x.com'], 'T153: the allowed domain is still carried');
+                assert(entry.mode === 'allowlist', 'T153: and mode marks it as allowed, not blocked');
+            })();
+
+            (function T154() {
+                const bl = createMockBlocklist({ mode: 'allowlist', websites: ['x.com'] });
+                withData([bl], [createMockSchedule(bl.id, [seg, { ...seg, startHour: 19, endHour: 20 }])]);
+                const entries = build();
+                assertEqual(entries.length, 2, 'T154: every segment of an allow-mode schedule becomes an entry');
+                assert(entries.every(e => e.mode === 'allowlist'), 'T154: and each one carries the mode');
+            })();
+
+            (function T155() {
+                // One-shot schedules take a different push site; it needs mode too.
+                // Occurrences resolve off segment.days relative to createdAt, so a
+                // one-shot with no days resolves to nothing at all.
+                const bl = createMockBlocklist({ mode: 'allowlist', websites: ['x.com'] });
+                const everyDay = { ...seg, days: [0, 1, 2, 3, 4, 5, 6] };
+                const sched = createMockSchedule(bl.id, [everyDay], { repeatType: 'no' });
+                withData([bl], [sched]);
+                const entries = build();
+                assert(entries.length >= 1, 'T155: a one-shot allow-mode schedule produces at least one entry');
+                assert(entries.every(e => e.mode === 'allowlist'), 'T155: the one-shot push site sets mode too');
+            })();
+
+            (function T156() {
+                const bl = createMockBlocklist({ websites: ['x.com'] });
+                delete bl.mode;
+                withData([bl], [createMockSchedule(bl.id, [seg])]);
+                assertEqual(build()[0].mode, null, 'T156: a blocklist with no mode field stays blocked semantics');
+            })();
+
+            (function T157() {
+                const allowMode = createMockBlocklist({ mode: 'allowlist', websites: ['allowed.com'] });
+                const blockMode = createMockBlocklist({ mode: 'blocklist', websites: ['blocked.com'] });
+                withData([allowMode, blockMode], [
+                    createMockSchedule(allowMode.id, [seg]),
+                    createMockSchedule(blockMode.id, [seg]),
+                ]);
+                const entries = build();
+                assertEqual(entries.length, 2, 'T157: mixed modes both sync (unlike Android, which skips allow mode)');
+                const byMode = Object.fromEntries(entries.map(e => [e.mode ?? 'null', e.domains[0]]));
+                assertEqual(byMode.allowlist, 'allowed.com', 'T157: the allow entry carries the allowed domain');
+                assertEqual(byMode.null, 'blocked.com', 'T157: the block entry carries the blocked domain');
+            })();
+
+            (function T158() {
+                // Category tokens are still sent on allow entries; Swift ignores
+                // them there, and dropping them would lose data on a mode switch.
+                const bl = createMockBlocklist({
+                    mode: 'allowlist',
+                    websites: [],
+                    iosScreenTimeSelection: {
+                        applicationTokens: ['tokA'], categoryTokens: ['catA'],
+                        applicationCount: 1, categoryCount: 1, summaryLabel: '1 app selected (Screen Time)',
+                    },
+                });
+                withData([bl], [createMockSchedule(bl.id, [seg])]);
+                const entry = build()[0];
+                assertEqual(entry.appTokenData, ['tokA'], 'T158: app tokens are carried on an allow entry');
+                assertEqual(entry.categoryTokenData, ['catA'], 'T158: category tokens are preserved, not zeroed');
+            })();
+        } finally {
+            window.__REDDBLOCK_INTERNALS__.appData = saved;
+        }
+    }
+
+    // ========================================
     // MAIN TEST RUNNER
     // ========================================
 
@@ -1709,6 +1820,7 @@
             runProtectedDomainTests();
             runIOSAllowlistPolicyTests();
             runAndroidPayloadTests();
+            runIOSSchedulePayloadTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -1732,7 +1844,8 @@
         runSelfBlockPreventionTests,
         runProtectedDomainTests,
         runIOSAllowlistPolicyTests,
-        runAndroidPayloadTests
+        runAndroidPayloadTests,
+        runIOSSchedulePayloadTests
     };
 
     console.log('🧪 ReddBlock Blocking Tests loaded. Press Cmd+Shift+T to run tests.');

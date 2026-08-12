@@ -2203,7 +2203,8 @@ async function runProceedWithBlock() {
                             blockId: block.id,
                             domains: Array.from(blocklist?.websites || []),
                             appTokenData: iosPayload.appTokenData,
-                            categoryTokenData: iosPayload.categoryTokenData
+                            categoryTokenData: iosPayload.categoryTokenData,
+                            mode: isAllowlistBlocklist(blocklist) ? 'allowlist' : null
                         });
                         const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-end-' + block.id, block.endTime);
                         if (res && res.success === false) {
@@ -3516,7 +3517,10 @@ export async function proceedWithPause() {
                         blockId: state.pauseBlockId,
                         domains: blocklist?.websites || [],
                         appTokenData: iosPayload.appTokenData,
-                        categoryTokenData: iosPayload.categoryTokenData
+                        categoryTokenData: iosPayload.categoryTokenData,
+                        // Without this the re-applied state treats an allow-mode
+                        // block's allowed items as blocked ones.
+                        mode: isAllowlistBlocklist(blocklist) ? 'allowlist' : null
                     });
                     const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + state.pauseBlockId, block.pauseEndTime);
                     if (res && res.success === false) {
