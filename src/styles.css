@@ -3861,8 +3861,42 @@ body.android #allow-only-blocklist-btn{
     display: none;
 }
 
+/* Android: the create action floats bottom-right as a FAB.
+ *
+ * Only one button survives the rule above on Android, which is what makes this
+ * possible — a two-button row cannot be a floating action button. The button
+ * keeps its own styling (dark fill, boxed "+", "Block" label); only the shape
+ * and elevation change, so this is an extended FAB rather than the icon-only
+ * kind. Dropping the label would cost the one thing that says what the button
+ * creates, and this is the primary action on the screen. */
 body.android .blocklists-create-actions{
     grid-template-columns: 1fr;
+    position: fixed;
+    right: 16px;
+    left: auto;
+    /* Gesture-navigation bar overlaps the viewport bottom on modern Android. */
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    max-width: calc(100vw - 32px);
+    padding: 0;
+    /* Above page content (≤110), below .modal-overlay (200). A FAB floating over
+       a modal is a live tap target for a screen the user is not looking at. */
+    z-index: 150;
+}
+
+body.android .blocklists-create-btn--primary{
+    /* Pill rather than the 12px card radius the inline row uses. */
+    border-radius: 26px;
+    padding: 8px 20px 8px 8px;
+    /* Detached from the page, so it needs more elevation than a card. */
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+
+/* Leave room to scroll the last focus space clear of the button. Without this
+   the FAB permanently covers part of the final card, which is the one a user
+   just created and is most likely to want. */
+body.android #blocklists-container{
+    padding-bottom: 76px;
 }
 
 body.android #quick-start-mode-group{
@@ -4464,6 +4498,23 @@ body.dark-mode .day-row.weekend{
     flex-shrink: 0;
 }
 
+/* Three or more overlapping schedules leave less than one text line per lane.
+   Render them as clean colour bands; the matching header swatches identify the
+   focus space and the native title tooltip retains the full name and time. */
+.calendar-block.compact{
+    padding: 0 2px;
+    border-radius: 2px;
+    box-shadow: none;
+}
+
+/* Labels, times and emoji, which have no room left at this height. Resize
+   handles are exempt: a preview block being dragged into a crowded row still has
+   to be resizable, and hiding its handles removes the only way to adjust the
+   segment at exactly the moment the user is creating it. */
+.calendar-block.compact > *:not(.resize-handle){
+    display: none;
+}
+
 .calendar-block.expired{
     opacity: 0.4;
     filter: grayscale(30%);
@@ -4581,6 +4632,59 @@ body.dark-mode .day-row.weekend{
 
 .calendar-block.preview.interactive.resize-hover{
     cursor: ew-resize !important;
+}
+
+/* Schedules withheld because the row hit its lane cap. Not drawn at all — a
+   sliver would be worse than an honest omission — but still in the DOM so the
+   layout pass can count them and the overflow pill can name them. */
+.calendar-block.overflow-hidden{
+    display: none;
+}
+
+/* "+N more" marker on a row that is withholding schedules.
+ *
+ * Positioned inline by layoutOverlappingBlocks, immediately after the bars it
+ * describes. It has to compete with a stack of saturated bars a few pixels away,
+ * so it is deliberately not whisper-quiet: at 10px in --text-secondary it read
+ * as a stray artifact rather than as a control. Words rather than a bare count,
+ * because "+2" alone says something is hidden without saying what kind of thing. */
+.calendar-lane-overflow{
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 3;
+    padding: 1px 7px;
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    white-space: nowrap;
+    color: var(--text-primary);
+    background: var(--card-bg, #fff);
+    border: 1px solid var(--text-secondary);
+    cursor: help;
+    pointer-events: auto;
+}
+
+body.dark-mode .calendar-lane-overflow{
+    background: var(--element-bg);
+}
+
+/* Border reset for compact bands.
+ *
+ * Deliberately placed after every `.calendar-block.<variant>` rule above rather
+ * than beside the other `.compact` declarations. `.scheduled` and `.preview`
+ * both set a dashed light border at the same specificity as `.compact`, so
+ * whichever comes last in the file wins — and next to `.compact` it loses. On a
+ * full-height bar that border reads as a subtle inset; on a 9px band it is two
+ * of those nine pixels, broken into dashes, so the band reads as a dotted rule
+ * rather than as a colour. Bands identify a focus space by hue alone, so the hue
+ * gets the whole box.
+ *
+ * If you add another `.calendar-block.<variant>` rule with a border, it belongs
+ * above this one. */
+.calendar-block.compact{
+    border: none;
 }
 
 .calendar-block.preview.hidden{

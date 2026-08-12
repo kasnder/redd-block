@@ -19,9 +19,9 @@
  * rejections don't affect it. (Tier 2 integration tests are intentionally not
  * run headlessly; they require the native command layer.)
  */
-import { spawn } from 'node:child_process';
-import { setTimeout as sleep } from 'node:timers/promises';
 import { chromium } from 'playwright';
+
+import { startDevServer } from './lib/dev-server.mjs';
 
 const PORT = process.env.TIER1_PORT || '5199';
 const URL = `http://localhost:${PORT}/`;
@@ -30,45 +30,22 @@ const TEST_TIMEOUT_MS = 120_000;
 
 function log(...a) { console.log('[tier1]', ...a); }
 
-async function waitForServer(url, timeoutMs) {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-        try {
-            const res = await fetch(url, { method: 'GET' });
-            if (res.ok) return true;
-        } catch { /* not up yet */ }
-        await sleep(500);
-    }
-    return false;
-}
-
 async function main() {
-    log('starting Vite dev server on port', PORT);
-    // detached:true puts vite in its own process group so we can kill the
-    // whole tree — `pnpm dlx vite` forks a child that survives a SIGTERM sent only
-    // to the wrapper, otherwise leaking a dev server after the run.
-    const vite = spawn(
-        'npx',
-        ['vite', '--port', PORT, '--strictPort', '--host', '127.0.0.1'],
-        { stdio: ['ignore', 'inherit', 'inherit'], env: { ...process.env }, detached: true },
-    );
-
-    const killViteGroup = (signal) => {
-        try { process.kill(-vite.pid, signal); } catch { /* already gone */ }
-    };
-
+    let stopServer = () => {};
     let browser;
     const cleanup = async () => {
         try { if (browser) await browser.close(); } catch { /* ignore */ }
-        killViteGroup('SIGTERM');
+        stopServer('SIGTERM');
     };
-    process.on('exit', () => killViteGroup('SIGKILL'));
+    process.on('exit', () => stopServer('SIGKILL'));
 
     try {
-        if (!(await waitForServer(URL, BOOT_TIMEOUT_MS))) {
-            throw new Error(`Vite dev server did not come up at ${URL} within ${BOOT_TIMEOUT_MS}ms`);
-        }
-        log('dev server up; launching headless Chromium');
+        ({ stop: stopServer } = await startDevServer({
+            port: PORT,
+            bootTimeoutMs: BOOT_TIMEOUT_MS,
+            log,
+        }));
+        log('launching headless Chromium');
         browser = await chromium.launch();
         const page = await browser.newPage();
 

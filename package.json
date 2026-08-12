@@ -37,6 +37,7 @@
     "lint:fix": "eslint . --fix",
     "vite:preview": "vite preview",
     "test:tier1": "node scripts/ci/run-tier1-headless.mjs",
+    "ui:shoot": "node scripts/ui/shoot.mjs",
     "clean:build-cache": "node ./scripts/clean-build-cache.js"
   },
   "keywords": [

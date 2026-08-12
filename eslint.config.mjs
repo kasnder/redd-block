@@ -97,6 +97,18 @@ export default [
     },
 
     {
+        // Fixtures and the screen list for the UI screenshot harness. Plain data
+        // and declarations — they are imported by a Node driver, but the
+        // `prepare(page)` hooks they may carry run in the browser via Playwright.
+        files: ['test/ui/**/*.js'],
+        languageOptions: {
+            ecmaVersion: 2024,
+            sourceType: 'module',
+            globals: globals.browser,
+        },
+    },
+
+    {
         // Build/CI/release tooling.
         files: ['scripts/**/*.{js,mjs,cjs}', 'vite.config.js', 'vitest.config.mjs'],
         languageOptions: {
@@ -109,7 +121,7 @@ export default [
     {
         // Playwright/WebDriver runners evaluate callbacks inside the page, so
         // browser globals are legitimately in scope alongside the Node ones.
-        files: ['scripts/ci/**/*.mjs', 'e2e/**/*.js'],
+        files: ['scripts/ci/**/*.mjs', 'scripts/ui/**/*.mjs', 'e2e/**/*.js'],
         languageOptions: {
             ecmaVersion: 2024,
             sourceType: 'module',
