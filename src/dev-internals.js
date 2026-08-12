@@ -17,6 +17,7 @@ import {
     sanitizeChallengeTypedInput,
     shouldBlockChallengeSpaceKey,
 } from './override-challenge.js';
+import { createChallengeController } from './challenge-controller.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
 import { duplicateBlocklist, getNextCopyName } from './blocklists.js';
@@ -52,6 +53,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     buildWordChallengeState,
     getCurrentChallengeWord,
     getCompletedChallengeText,
+    createChallengeController,
     compareBlocklistStrictness,
     BLOCKLIST_LOOSEN_REASONS,
     iosScreenTimeSelectionKey,
