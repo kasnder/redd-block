@@ -1648,7 +1648,7 @@ function setupModalListeners() {
     });
 
     // Save / Quick-start primary button
-    document.getElementById('save-blocklist-btn').addEventListener('click', () => {
+    document.getElementById('save-blocklist-btn').addEventListener('click', async () => {
         const isQuickCreate = !state.editingBlocklistId && getBlocklistCreateKind() === 'quick-start';
         const nameInput = document.getElementById('blocklist-name');
         const name = isQuickCreate
@@ -1792,7 +1792,7 @@ function setupModalListeners() {
             state.appData.blocklists.unshift(blocklist);
         }
 
-        saveData();
+        await saveData();
 
         // If this blocklist is active (block or schedule), update blocking rules immediately
         const now = Date.now();
@@ -1804,14 +1804,13 @@ function setupModalListeners() {
         );
 
         if (hasActiveBlock || hasActiveSchedule) {
-            // Update website blocking
-            updateHostsFile();
-
-            // Sync schedules to helper (blocklist domains/apps may have changed)
-            syncSchedulesToHelper();
-
-            // Update app blocking - this handles both active blocks and schedules
-            updateBlockedApps();
+            // Awaited, not fired and forgotten. On Android syncSchedulesToHelper
+            // is the only path that pushes edited apps/websites to Kotlin
+            // (updateBlockedApps is a no-op there), so racing it leaves a
+            // just-removed app still enforced until the next sync.
+            await updateHostsFile();
+            await syncSchedulesToHelper();
+            await updateBlockedApps();
         }
 
         // Keep live preview while editing, but don't revert after a confirmed save.

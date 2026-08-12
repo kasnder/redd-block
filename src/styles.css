@@ -3851,6 +3851,23 @@ body:not(.ios) #settings-toolbar-scheduler{
     padding: 0 4px 8px;
 }
 
+/* Android has no allow-mode enforcement: the schedule payload carries no `mode`
+   field, so Kotlin treats every list as a denylist and an allow-mode space would
+   block exactly the apps it is meant to permit. Hide the two entry points that
+   can create one until Schedule.kt/Schedules.kt learn about mode; existing
+   allow-mode spaces are left alone. */
+body.android #allow-only-blocklist-btn{
+    display: none;
+}
+
+body.android .blocklists-create-actions{
+    grid-template-columns: 1fr;
+}
+
+body.android #quick-start-mode-group{
+    display: none;
+}
+
 .blocklists-create-btn{
     display: inline-flex;
     align-items: center;
