@@ -301,6 +301,42 @@ export function saveQuickStartAsFocusSpace(id) {
     render();
 }
 
+/** Is this one-off block's pause live right now (open-ended pauses never expire)? */
+export function isOneOffPauseActive(block, now = Date.now()) {
+    return !!(block?.isPaused && (!block.pauseEndTime || block.pauseEndTime > now));
+}
+
+/**
+ * Which one-off block or schedule is *running* this focus space right now, if
+ * any — running meaning enforcing or due to resume on its own, i.e. not paused.
+ *
+ * Deliberately NOT the same question as isBlocklistEditFrictionRequired. A
+ * flexible schedule sitting between segments is not edit-gated but is still
+ * running, and the blocklist/allowlist mode radios stay locked for it: swapping
+ * a live focus space between blocking and allowing changes what the next
+ * segment enforces. Pausing is the one action that clears both.
+ *
+ * Doubles as "what would the edit modal's Pause action act on", which is why it
+ * returns the row rather than a boolean.
+ */
+export function getRunningEnforcementTarget(blocklistId, now = Date.now()) {
+    if (!blocklistId) return null;
+    const block = state.appData.activeBlocks.find(
+        b => b.blocklistId === blocklistId
+            && b.startTime <= now
+            && b.endTime > now
+            && !isOneOffPauseActive(b, now)
+    );
+    if (block) return { type: 'block', block };
+
+    const schedule = state.appData.schedules?.find(
+        s => s.blocklistId === blocklistId
+            && s.segments?.length > 0
+            && !isSchedulePausedNow(s, now)
+    );
+    return schedule ? { type: 'schedule', schedule } : null;
+}
+
 /**
  * Must an edit that *loosens* this focus space be confirmed with the exit
  * challenge? Also gates deleting it outright.
@@ -321,7 +357,7 @@ export function isBlocklistEditFrictionRequired(blocklistId, now = Date.now()) {
         b => b.blocklistId === blocklistId
             && b.startTime <= now
             && b.endTime > now
-            && !(b.isPaused && (!b.pauseEndTime || b.pauseEndTime > now))
+            && !isOneOffPauseActive(b, now)
     );
     if (hasActiveBlock) return true;
     const schedule = state.appData.schedules?.find(

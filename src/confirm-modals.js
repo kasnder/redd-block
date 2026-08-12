@@ -10,7 +10,7 @@ import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxO
 import { isAndroidAllowlistUnsupported, isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
-import { clearPendingScheduleDraft, isBlocklistEditFrictionRequired, renderBlocklists, truncateBlocklistName } from './blocklists.js';
+import { clearPendingScheduleDraft, getRunningEnforcementTarget, isBlocklistEditFrictionRequired, renderBlocklists, truncateBlocklistName } from './blocklists.js';
 import { getCommittedScheduleSegmentCount, getInitialExpandedScheduleSegmentIndex, isScheduleSegmentActiveNow, rebuildScheduleSegments, setAlwaysOnMode, setScheduleMode, updateScheduleButtonState, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { getEffectiveScheduleStartOverlayId, rememberLastScheduleStartOverlayId, syncScheduleConfirmOverlaySummary } from './schedule-overlay.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, initializeTimeInputs, pad, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
@@ -2464,29 +2464,8 @@ export function applyModalBlocklistTint(hexColor) {
     }
 }
 
-function isOneOffPauseActive(block, now = Date.now()) {
-    return !!(block?.isPaused && (!block.pauseEndTime || block.pauseEndTime > now));
-}
-
-function getBlocklistEditPauseTarget(blocklistId, now = Date.now()) {
-    const block = state.appData.activeBlocks.find(b =>
-        b.blocklistId === blocklistId
-        && b.startTime <= now
-        && b.endTime > now
-        && !isOneOffPauseActive(b, now)
-    );
-    if (block) return { type: 'block', block };
-
-    const schedule = state.appData.schedules?.find(s =>
-        s.blocklistId === blocklistId
-        && s.segments?.length > 0
-        && !isSchedulePausedNow(s, now)
-    );
-    return schedule ? { type: 'schedule', schedule } : null;
-}
-
 export function openBlocklistEditPauseModal(blocklistId = state.editingBlocklistId) {
-    const target = getBlocklistEditPauseTarget(blocklistId);
+    const target = getRunningEnforcementTarget(blocklistId);
     if (!target) return;
 
     if (target.type === 'block') {
@@ -2503,7 +2482,25 @@ export function openBlocklistEditPauseModal(blocklistId = state.editingBlocklist
     openPauseModal(null);
 }
 
-function syncBlocklistEditFrictionUi(blocklist, now = Date.now()) {
+/**
+ * Swap the modal's locked-item sets without touching what the user has typed
+ * into it. setModalData rebuilds the working lists from saved data, which is
+ * right when the modal opens and wrong when we re-sync an already-open modal:
+ * an item added before hitting Pause would vanish with no message.
+ */
+function applyModalLockedItems(lockedWebsitesList, lockedAppsList) {
+    window.lockedWebsites = lockedWebsitesList;
+    window.lockedApps = lockedAppsList;
+    window.renderModalTags?.();
+}
+
+/**
+ * @param {object|null} blocklist
+ * @param {number} now
+ * @param {{ preserveModalItems?: boolean }} options - set when re-syncing a
+ *   modal that is already open, so in-progress edits survive the refresh.
+ */
+function syncBlocklistEditFrictionUi(blocklist, now = Date.now(), { preserveModalItems = false } = {}) {
     const isActive = isBlocklistEditFrictionRequired(blocklist?.id, now);
     const warningEl = document.getElementById('active-blocklist-warning');
     const pauseBtn = document.getElementById('active-blocklist-pause-btn');
@@ -2522,12 +2519,16 @@ function syncBlocklistEditFrictionUi(blocklist, now = Date.now()) {
     const overridePreviewBlockEl = document.getElementById('override-preview-block');
     const overrideTimeEstimateEl = document.getElementById('override-count-time-estimate');
 
-    modeInputs.forEach(el => el.classList.toggle('disabled', isActive));
+    // Mode stays locked for anything still running, including a flexible
+    // schedule between segments that is otherwise freely editable — see
+    // getRunningEnforcementTarget. Only a live pause unlocks it.
+    const runningTarget = getRunningEnforcementTarget(blocklist?.id, now);
+    modeInputs.forEach(el => el.classList.toggle('disabled', !!runningTarget));
 
-    const pauseTarget = isActive ? getBlocklistEditPauseTarget(blocklist?.id, now) : null;
-    pauseBtn?.classList.toggle('hidden', !pauseTarget);
+    const canPauseToEdit = isActive && !!runningTarget;
+    pauseBtn?.classList.toggle('hidden', !canPauseToEdit);
     if (pauseBtn) {
-        pauseBtn.onclick = pauseTarget
+        pauseBtn.onclick = canPauseToEdit
             ? () => openBlocklistEditPauseModal(blocklist.id)
             : null;
     }
@@ -2545,13 +2546,17 @@ function syncBlocklistEditFrictionUi(blocklist, now = Date.now()) {
         document.getElementById('override-count-minus')?.setAttribute('disabled', '');
         document.getElementById('override-count-plus')?.setAttribute('disabled', '');
 
-        window.setModalData(
-            blocklist.websites || [],
-            getBlocklistRegularApps(blocklist),
-            getBlocklistIOSScreenTimeSelection(blocklist),
-            blocklist.websites || [],
-            getBlocklistModalLockedApps(blocklist)
-        );
+        if (preserveModalItems) {
+            applyModalLockedItems(blocklist.websites || [], getBlocklistModalLockedApps(blocklist));
+        } else {
+            window.setModalData(
+                blocklist.websites || [],
+                getBlocklistRegularApps(blocklist),
+                getBlocklistIOSScreenTimeSelection(blocklist),
+                blocklist.websites || [],
+                getBlocklistModalLockedApps(blocklist)
+            );
+        }
         return;
     }
 
@@ -2568,13 +2573,17 @@ function syncBlocklistEditFrictionUi(blocklist, now = Date.now()) {
     document.getElementById('override-count-minus')?.toggleAttribute('disabled', !!maxDifficultyOn);
     document.getElementById('override-count-plus')?.toggleAttribute('disabled', !!maxDifficultyOn);
 
-    window.setModalData(
-        blocklist?.websites || [],
-        getBlocklistRegularApps(blocklist),
-        getBlocklistIOSScreenTimeSelection(blocklist),
-        [],
-        []
-    );
+    if (preserveModalItems) {
+        applyModalLockedItems([], []);
+    } else {
+        window.setModalData(
+            blocklist?.websites || [],
+            getBlocklistRegularApps(blocklist),
+            getBlocklistIOSScreenTimeSelection(blocklist),
+            [],
+            []
+        );
+    }
 
     if (maxDifficultyOn) setOverrideCountMaxMode(true);
 }
@@ -3468,7 +3477,7 @@ export async function proceedWithPause() {
     if (editingBlocklist
         && editingBlocklist.id === pausedBlocklistId
         && !document.getElementById('blocklist-modal')?.classList.contains('hidden')) {
-        syncBlocklistEditFrictionUi(editingBlocklist);
+        syncBlocklistEditFrictionUi(editingBlocklist, Date.now(), { preserveModalItems: true });
     }
     closePauseModal();
 }

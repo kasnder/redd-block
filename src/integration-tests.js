@@ -1174,6 +1174,17 @@
             assertOrThrow(isVisible('active-blocklist-warning'), 'I5: active warning missing');
             const pauseButton = document.getElementById('active-blocklist-pause-btn');
             assertOrThrow(pauseButton && !pauseButton.classList.contains('hidden'), 'I5: warning Pause button missing');
+
+            // Type an unsaved addition before pausing: the post-pause refresh
+            // must swap the locked sets without rebuilding the working list
+            // from saved data, or this silently disappears.
+            const websiteInput = document.getElementById('modal-website-input');
+            assertOrThrow(websiteInput, 'I5: modal website input missing');
+            websiteInput.value = TEST_DOMAINS.b;
+            websiteInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+            const tagText = () => document.getElementById('modal-websites-tags')?.textContent || '';
+            assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: pending website was not added before pausing');
+
             pauseButton.click();
             await waitForIntegrationCondition(() => isVisible('pause-modal'), 'I5 pause modal');
 
@@ -1197,6 +1208,11 @@
             assertOrThrow(
                 !document.querySelector('#blocklist-modal .radio-option')?.classList.contains('disabled'),
                 'I5: mode stayed locked after pause',
+            );
+            assertOrThrow(tagText().includes(TEST_DOMAINS.b), 'I5: unsaved website edit was discarded by the pause refresh');
+            assertOrThrow(
+                !document.querySelector('#modal-websites-tags .tag.locked'),
+                'I5: website tags stayed locked after pause',
             );
             hideAllIntegrationModals();
             return { passed: true };
