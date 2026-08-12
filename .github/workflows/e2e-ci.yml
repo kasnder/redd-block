@@ -16,7 +16,11 @@ name: E2E CI
 on:
   workflow_dispatch:
   pull_request:
-    branches: [main]
+    # `claude/**` is here only so this stacked spike PR gets CI at all: every
+    # workflow in this repo triggers on main-targeted PRs, so a PR based on
+    # another branch runs nothing. Drop it back to `[main]` once the stack
+    # lands and this PR retargets main.
+    branches: [main, 'claude/**']
     paths:
       - 'src/integration-tests.js'
       - 'src/test-utils.js'
@@ -67,5 +71,37 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: tier2-wdio-logs
+          path: logs/
+          if-no-files-found: ignore
+
+  tier2-macos:
+    name: Tier 2 (macOS, embedded WebDriver)
+    runs-on: macos-latest
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/src-tauri/target
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm ci
+      # No tauri-driver here: macOS has no WKWebView driver, so the app itself
+      # serves WebDriver via the `e2e-webdriver` feature. That feature is
+      # debug-only by construction — lib.rs fails to compile if it is ever
+      # combined with a release profile.
+      - name: Build app under test (embedded WebDriver)
+        run: npm run build:e2e-app:mac
+      - name: Run Tier 2
+        run: npm run test:tier2
+      - name: Upload WDIO logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: tier2-wdio-logs-macos
           path: logs/
           if-no-files-found: ignore
