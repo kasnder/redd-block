@@ -398,11 +398,105 @@ fn tick(
     needs_restore: &mut bool,
     last_full_pass: &mut Option<Instant>,
 ) {
-    let path = match crate::commands::canonical_data_path(app) {
-        Some(p) => p,
-        None => return,
+    let mut io = ProductionAutomationIo { app };
+    tick_with_io(
+        &mut io,
+        shared,
+        block_page_url,
+        needs_restore,
+        last_full_pass,
+        Instant::now(),
+    );
+}
+
+/// I/O required by the stateful Automation orchestration. Keeping this seam
+/// below `plan_actions` lets unit tests exercise the real latch, cadence, and
+/// retry behavior without starting browsers or touching the data file.
+trait AutomationIo {
+    fn active_blocks(&mut self) -> Option<Vec<BlockInfo>>;
+    fn events_active(&self) -> bool;
+    fn frontmost_bundle_id(&self) -> Option<String>;
+    fn running_browsers(&mut self) -> Vec<SupportedBrowser>;
+    fn uses_automation(&mut self, browser: SupportedBrowser) -> bool;
+    fn read_tabs(&mut self, browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError>;
+    fn apply_actions(
+        &mut self,
+        browser: SupportedBrowser,
+        actions: &[(u32, u32, String)],
+    ) -> Result<(), AutomationError>;
+    fn set_permission(
+        &mut self,
+        shared: &Arc<Mutex<Shared>>,
+        browser: SupportedBrowser,
+        state: PermState,
+        denied_retry: Duration,
+        now: Instant,
+    );
+}
+
+struct ProductionAutomationIo<'a> {
+    app: &'a AppHandle,
+}
+
+impl AutomationIo for ProductionAutomationIo<'_> {
+    fn active_blocks(&mut self) -> Option<Vec<BlockInfo>> {
+        let path = crate::commands::canonical_data_path(self.app)?;
+        let (_domains, blocks) = native_host::derive_payload(&path);
+        Some(blocks)
+    }
+
+    fn events_active(&self) -> bool {
+        crate::workspace_events::events_active()
+    }
+
+    fn frontmost_bundle_id(&self) -> Option<String> {
+        crate::workspace_events::frontmost_bundle_id()
+    }
+
+    fn running_browsers(&mut self) -> Vec<SupportedBrowser> {
+        running_supported_browsers()
+    }
+
+    fn uses_automation(&mut self, browser: SupportedBrowser) -> bool {
+        let key = browser.settings_key();
+        crate::blocking_method::uses_automation(self.app, key)
+    }
+
+    fn read_tabs(&mut self, browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
+        read_tabs(browser)
+    }
+
+    fn apply_actions(
+        &mut self,
+        browser: SupportedBrowser,
+        actions: &[(u32, u32, String)],
+    ) -> Result<(), AutomationError> {
+        apply_actions(browser, actions)
+    }
+
+    fn set_permission(
+        &mut self,
+        shared: &Arc<Mutex<Shared>>,
+        browser: SupportedBrowser,
+        state: PermState,
+        denied_retry: Duration,
+        now: Instant,
+    ) {
+        set_perm_inner_at(self.app, shared, browser, state, denied_retry, now);
+    }
+}
+
+fn tick_with_io<I: AutomationIo>(
+    io: &mut I,
+    shared: &Arc<Mutex<Shared>>,
+    block_page_url: &str,
+    needs_restore: &mut bool,
+    last_full_pass: &mut Option<Instant>,
+    now: Instant,
+) {
+    let Some(blocks) = io.active_blocks() else {
+        return;
     };
-    let (_domains, blocks) = native_host::derive_payload(&path);
     let blocking_active = web_enforcement_active(&blocks);
 
     // While enforcement is on, keep the idle-restore latch armed so a
@@ -420,9 +514,9 @@ fn tick(
     // scripted every tick; the rest ride BACKGROUND_BROWSER_TICK. When
     // events aren't installed (or the frontmost app is unknown) every
     // tick is a full pass — the pre-events behavior.
-    let events = crate::workspace_events::events_active();
+    let events = io.events_active();
     let frontmost_bid = if events {
-        crate::workspace_events::frontmost_bundle_id()
+        io.frontmost_bundle_id()
     } else {
         None
     };
@@ -435,7 +529,7 @@ fn tick(
         || !events
         || frontmost_bid.is_none()
         || last_full_pass
-            .map(|t| t.elapsed() >= BACKGROUND_BROWSER_TICK)
+            .map(|t| now.saturating_duration_since(t) >= BACKGROUND_BROWSER_TICK)
             .unwrap_or(true);
 
     // Nothing due this tick: the frontmost app isn't an automation
@@ -448,34 +542,32 @@ fn tick(
     // Frontmost-only ticks skip the sysinfo process scan entirely — a
     // frontmost browser is by definition running.
     let candidates = if full_pass {
-        running_supported_browsers()
+        io.running_browsers()
     } else {
         frontmost_browser.into_iter().collect()
     };
     if full_pass {
-        *last_full_pass = Some(Instant::now());
+        *last_full_pass = Some(now);
     }
 
     let running = candidates
         .into_iter()
-        .filter(|browser| {
-            let key = match browser {
-                SupportedBrowser::Safari => "safari",
-                SupportedBrowser::Chrome => "chrome",
-                SupportedBrowser::Brave => "brave",
-                SupportedBrowser::Edge => "edge",
-            };
-            crate::blocking_method::uses_automation(app, key)
-        })
+        .filter(|browser| io.uses_automation(*browser))
         .collect::<Vec<_>>();
     let no_automation_browsers = running.is_empty();
+    // Count every action a restore pass *planned*, not just the ones that
+    // reported an error. `apply_actions` wraps each `set URL` in its own
+    // AppleScript `try`, so a stale window/tab index is swallowed and the
+    // batch still returns Ok while the tab stays parked on the block page.
+    // Clearing the latch on Ok would strand that tab until the next block
+    // re-arms it; keeping it armed costs one extra tick and re-plans from a
+    // fresh read.
     let mut restore_actions = 0usize;
     let mut scanned = 0usize;
     for browser in running {
         // Respect the denial backoff so we don't spawn osascript every
         // second only to get -1743 back. While a block is active, retry
         // sooner so a fresh Automation grant is picked up quickly.
-        let now = Instant::now();
         let skip = shared
             .lock()
             .ok()
@@ -486,10 +578,10 @@ fn tick(
             continue;
         }
 
-        match read_tabs(browser) {
+        match io.read_tabs(browser) {
             Ok(tabs) => {
                 scanned += 1;
-                set_perm(app, shared, browser, PermState::Granted);
+                io.set_permission(shared, browser, PermState::Granted, Duration::ZERO, now);
                 let actions = plan_actions(&tabs, &blocks, block_page_url);
                 if restore_pass {
                     restore_actions += actions.len();
@@ -502,7 +594,7 @@ fn tick(
                         blocks.len()
                     );
                 } else {
-                    match apply_actions(browser, &actions) {
+                    match io.apply_actions(browser, &actions) {
                         Ok(()) => log::info!(
                             "web_automation: applied {} tab action(s) to {} (redirect to / restore from block page)",
                             actions.len(),
@@ -520,7 +612,13 @@ fn tick(
                                 } else {
                                     DENIED_RETRY
                                 };
-                                set_perm_denied(app, shared, browser, retry);
+                                io.set_permission(
+                                    shared,
+                                    browser,
+                                    PermState::Denied,
+                                    retry,
+                                    now,
+                                );
                             }
                         }
                     }
@@ -532,7 +630,7 @@ fn tick(
                 } else {
                     DENIED_RETRY
                 };
-                set_perm_denied(app, shared, browser, retry);
+                io.set_permission(shared, browser, PermState::Denied, retry, now);
             }
             Err(AutomationError::Other(msg)) => {
                 // Transient (browser quitting mid-tick, AppleScript
@@ -580,6 +678,15 @@ fn plan_actions(
     let mut actions = Vec::new();
     for tab in tabs {
         if is_block_page_url(&tab.url, block_page_url) {
+            #[cfg(feature = "system-test")]
+            if std::env::var_os("SYSTEM_TEST_RUNNER").is_some()
+                && !block_page_owned_by_system_test(&tab.url)
+            {
+                // Shared-browser runs may coexist with the production app.
+                // Never restore a parked tab that this test process did not
+                // create; its active block belongs to another process/store.
+                continue;
+            }
             if let Some(original) = original_url_from_block_page(&tab.url) {
                 if is_http_url(&original) && !url_is_blocked(&original, blocks) {
                     actions.push((tab.window_index, tab.tab_index, original));
@@ -598,35 +705,13 @@ fn plan_actions(
     actions
 }
 
-fn set_perm(
-    app: &AppHandle,
-    shared: &Arc<Mutex<Shared>>,
-    browser: SupportedBrowser,
-    new_state: PermState,
-) {
-    let retry = if new_state == PermState::Denied {
-        DENIED_RETRY
-    } else {
-        Duration::ZERO
-    };
-    set_perm_inner(app, shared, browser, new_state, retry);
-}
-
-fn set_perm_denied(
-    app: &AppHandle,
-    shared: &Arc<Mutex<Shared>>,
-    browser: SupportedBrowser,
-    retry: Duration,
-) {
-    set_perm_inner(app, shared, browser, PermState::Denied, retry);
-}
-
-fn set_perm_inner(
+fn set_perm_inner_at(
     app: &AppHandle,
     shared: &Arc<Mutex<Shared>>,
     browser: SupportedBrowser,
     new_state: PermState,
     denied_retry: Duration,
+    now: Instant,
 ) {
     let mut transitioned_to = None;
     if let Ok(mut s) = shared.lock() {
@@ -636,7 +721,7 @@ fn set_perm_inner(
             transitioned_to = Some(new_state);
         }
         if new_state == PermState::Denied {
-            rt.next_attempt = Instant::now() + denied_retry;
+            rt.next_attempt = now + denied_retry;
         }
     }
     match transitioned_to {
@@ -1120,6 +1205,21 @@ fn original_url_from_block_page(url: &str) -> Option<String> {
     None
 }
 
+#[cfg(feature = "system-test")]
+fn block_page_owned_by_system_test(url: &str) -> bool {
+    let Some(query) = url.split('?').nth(1) else {
+        return false;
+    };
+    query.split('&').any(|pair| {
+        let mut kv = pair.splitn(2, '=');
+        kv.next() == Some("id")
+            && kv
+                .next()
+                .map(pct_decode)
+                .is_some_and(|id| id.starts_with("system-test-"))
+    })
+}
+
 /// Build the block-page URL with as much block metadata as we have, so
 /// the page shows the same pill / countdown / source the extension does.
 /// Mirrors `buildBlockedUrl` in background.js.
@@ -1399,6 +1499,127 @@ fn pct_encode_path_segment(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
+
+    /// One planned tab action: `(window_index, tab_index, url)` — the tuple
+    /// `plan_actions` returns and `apply_actions` consumes.
+    type TabAction = (u32, u32, String);
+
+    struct FakeIo {
+        blocks: Option<Vec<BlockInfo>>,
+        events: bool,
+        frontmost: Option<String>,
+        running: Vec<SupportedBrowser>,
+        methods: HashMap<SupportedBrowser, bool>,
+        reads: HashMap<SupportedBrowser, VecDeque<Result<Vec<Tab>, AutomationError>>>,
+        applies: HashMap<SupportedBrowser, VecDeque<Result<(), AutomationError>>>,
+        read_calls: Vec<SupportedBrowser>,
+        running_calls: usize,
+        apply_calls: Vec<(SupportedBrowser, Vec<TabAction>)>,
+        permissions: Vec<(SupportedBrowser, PermState)>,
+    }
+
+    impl FakeIo {
+        fn new(blocks: Vec<BlockInfo>, running: &[SupportedBrowser]) -> Self {
+            Self {
+                blocks: Some(blocks),
+                events: false,
+                frontmost: None,
+                running: running.to_vec(),
+                methods: HashMap::new(),
+                reads: HashMap::new(),
+                applies: HashMap::new(),
+                read_calls: Vec::new(),
+                running_calls: 0,
+                apply_calls: Vec::new(),
+                permissions: Vec::new(),
+            }
+        }
+
+        fn queue_read(
+            &mut self,
+            browser: SupportedBrowser,
+            result: Result<Vec<Tab>, AutomationError>,
+        ) {
+            self.reads.entry(browser).or_default().push_back(result);
+        }
+
+        fn queue_apply(&mut self, browser: SupportedBrowser, result: Result<(), AutomationError>) {
+            self.applies.entry(browser).or_default().push_back(result);
+        }
+    }
+
+    impl AutomationIo for FakeIo {
+        fn active_blocks(&mut self) -> Option<Vec<BlockInfo>> {
+            self.blocks.clone()
+        }
+
+        fn events_active(&self) -> bool {
+            self.events
+        }
+
+        fn frontmost_bundle_id(&self) -> Option<String> {
+            self.frontmost.clone()
+        }
+
+        fn running_browsers(&mut self) -> Vec<SupportedBrowser> {
+            self.running_calls += 1;
+            self.running.clone()
+        }
+
+        fn uses_automation(&mut self, browser: SupportedBrowser) -> bool {
+            self.methods.get(&browser).copied().unwrap_or(true)
+        }
+
+        fn read_tabs(&mut self, browser: SupportedBrowser) -> Result<Vec<Tab>, AutomationError> {
+            self.read_calls.push(browser);
+            self.reads
+                .get_mut(&browser)
+                .and_then(VecDeque::pop_front)
+                .unwrap_or_else(|| Ok(Vec::new()))
+        }
+
+        fn apply_actions(
+            &mut self,
+            browser: SupportedBrowser,
+            actions: &[(u32, u32, String)],
+        ) -> Result<(), AutomationError> {
+            self.apply_calls.push((browser, actions.to_vec()));
+            self.applies
+                .get_mut(&browser)
+                .and_then(VecDeque::pop_front)
+                .unwrap_or(Ok(()))
+        }
+
+        fn set_permission(
+            &mut self,
+            shared: &Arc<Mutex<Shared>>,
+            browser: SupportedBrowser,
+            state: PermState,
+            denied_retry: Duration,
+            now: Instant,
+        ) {
+            self.permissions.push((browser, state));
+            let mut state_guard = shared.lock().expect("fake shared state");
+            let runtime = state_guard.runtimes.entry(browser).or_default();
+            runtime.state = state;
+            if state == PermState::Denied {
+                runtime.next_attempt = now + denied_retry;
+            }
+        }
+    }
+
+    fn tick_shared() -> Arc<Mutex<Shared>> {
+        Arc::new(Mutex::new(Shared::default()))
+    }
+
+    fn parked_tab(base: &str, original: &str) -> Tab {
+        Tab {
+            window_index: 1,
+            tab_index: 1,
+            url: build_blocked_url(base, original, &[]),
+        }
+    }
 
     fn block(id: &str, mode: &str, domains: &[&str], started_at: u64, ends_at: u64) -> BlockInfo {
         BlockInfo {
@@ -1413,6 +1634,387 @@ mod tests {
             ends_at: Some(ends_at),
             started_at: Some(started_at),
         }
+    }
+
+    #[test]
+    fn tick_arms_restore_latch_while_enforcement_is_active() {
+        let shared = tick_shared();
+        let mut io = FakeIo::new(
+            vec![block("reddit", "blocklist", &["reddit.com"], 0, 999)],
+            &[],
+        );
+        let mut needs_restore = false;
+        let mut last_full_pass = None;
+        tick_with_io(
+            &mut io,
+            &shared,
+            "file:///blocked.html",
+            &mut needs_restore,
+            &mut last_full_pass,
+            Instant::now(),
+        );
+        assert!(needs_restore);
+    }
+
+    #[test]
+    fn pause_restore_retries_until_a_pass_finds_nothing_left_parked() {
+        let shared = tick_shared();
+        let browser = SupportedBrowser::Brave;
+        let base = "file:///blocked.html";
+        let original = "https://reddit.com/r/test";
+        let mut io = FakeIo::new(
+            vec![block("reddit", "blocklist", &["reddit.com"], 0, 999)],
+            &[browser],
+        );
+        io.queue_read(
+            browser,
+            Ok(vec![Tab {
+                window_index: 1,
+                tab_index: 1,
+                url: original.to_string(),
+            }]),
+        );
+        io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
+        io.queue_apply(browser, Ok(()));
+        io.queue_apply(browser, Ok(()));
+        let mut needs_restore = false;
+        let mut last_full_pass = None;
+        let start = Instant::now();
+
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start,
+        );
+        assert!(needs_restore);
+
+        io.blocks = Some(Vec::new());
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(1),
+        );
+
+        // The restore was applied, but `apply_actions` cannot tell us that the
+        // tab actually navigated — it wraps every `set URL` in its own `try`,
+        // so a stale index is swallowed and still reports Ok. The latch stays
+        // armed until a later pass observes that nothing is parked any more.
+        assert!(needs_restore);
+        assert_eq!(io.apply_calls.len(), 2);
+        assert_eq!(io.apply_calls[1].1[0].2, original);
+
+        // Third tick: the queue is empty, so the browser reports no parked
+        // tabs. Only now may the latch clear.
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(2),
+        );
+        assert!(!needs_restore);
+        assert_eq!(io.apply_calls.len(), 2, "nothing left to restore");
+        assert_eq!(io.running_calls, 3, "restore must scan background browsers");
+    }
+
+    #[test]
+    fn silently_dropped_restore_is_retried_on_the_next_pass() {
+        let shared = tick_shared();
+        let browser = SupportedBrowser::Brave;
+        let base = "file:///blocked.html";
+        let original = "https://example.com/";
+        // No active blocks: this is the post-pause restore pass.
+        let mut io = FakeIo::new(Vec::new(), &[browser]);
+        // Both reads still show the tab parked on the block page even though
+        // the apply reported success — the real failure mode when a window or
+        // tab index goes stale mid-tick, because `apply_actions` swallows it
+        // in a per-action `try` block.
+        io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
+        io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
+        io.queue_apply(browser, Ok(()));
+        io.queue_apply(browser, Ok(()));
+        let mut needs_restore = true;
+        let mut last_full_pass = None;
+        let start = Instant::now();
+
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start,
+        );
+        assert!(needs_restore, "tab is still parked; latch must stay armed");
+
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(1),
+        );
+        assert_eq!(io.apply_calls.len(), 2, "restore must be retried");
+        assert_eq!(io.apply_calls[1].1[0].2, original);
+    }
+
+    #[test]
+    fn failed_restore_action_keeps_latch_for_a_later_retry() {
+        let shared = tick_shared();
+        let browser = SupportedBrowser::Chrome;
+        let base = "file:///blocked.html";
+        let original = "https://example.com/";
+        let mut io = FakeIo::new(Vec::new(), &[browser]);
+        io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
+        io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
+        io.queue_apply(browser, Err(AutomationError::Other("temporary".into())));
+        io.queue_apply(browser, Ok(()));
+        let mut needs_restore = true;
+        let mut last_full_pass = None;
+        let start = Instant::now();
+
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start,
+        );
+        assert!(needs_restore);
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(1),
+        );
+        assert_eq!(io.apply_calls.len(), 2, "the failure must be retried");
+        assert!(needs_restore, "not yet verified clean");
+
+        // Queue exhausted: the browser now reports no parked tabs, which is
+        // the only evidence that the retry landed.
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(2),
+        );
+        assert!(!needs_restore);
+    }
+
+    #[test]
+    fn permission_denial_is_backed_off_but_retried_while_blocking() {
+        let shared = tick_shared();
+        let browser = SupportedBrowser::Safari;
+        let mut io = FakeIo::new(
+            vec![block("reddit", "blocklist", &["reddit.com"], 0, 999)],
+            &[browser],
+        );
+        io.queue_read(browser, Err(AutomationError::NotAuthorized));
+        io.queue_read(browser, Ok(Vec::new()));
+        let mut needs_restore = false;
+        let mut last_full_pass = None;
+        let start = Instant::now();
+
+        tick_with_io(
+            &mut io,
+            &shared,
+            "file:///blocked.html",
+            &mut needs_restore,
+            &mut last_full_pass,
+            start,
+        );
+        assert_eq!(io.read_calls, vec![browser]);
+        assert_eq!(
+            shared
+                .lock()
+                .expect("shared state")
+                .runtimes
+                .get(&browser)
+                .map(|r| r.state),
+            Some(PermState::Denied)
+        );
+
+        tick_with_io(
+            &mut io,
+            &shared,
+            "file:///blocked.html",
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(1),
+        );
+        assert_eq!(
+            io.read_calls,
+            vec![browser],
+            "denial should be rate-limited"
+        );
+
+        tick_with_io(
+            &mut io,
+            &shared,
+            "file:///blocked.html",
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + DENIED_RETRY_WHILE_BLOCKING + Duration::from_millis(1),
+        );
+        assert_eq!(io.read_calls, vec![browser, browser]);
+    }
+
+    #[test]
+    fn transient_tab_query_failure_does_not_clear_restore_latch() {
+        let shared = tick_shared();
+        let browser = SupportedBrowser::Brave;
+        let mut io = FakeIo::new(Vec::new(), &[browser]);
+        io.queue_read(
+            browser,
+            Err(AutomationError::Other("browser quitting".into())),
+        );
+        io.queue_read(browser, Ok(Vec::new()));
+        let mut needs_restore = true;
+        let mut last_full_pass = None;
+        let start = Instant::now();
+
+        tick_with_io(
+            &mut io,
+            &shared,
+            "file:///blocked.html",
+            &mut needs_restore,
+            &mut last_full_pass,
+            start,
+        );
+        assert!(needs_restore);
+        tick_with_io(
+            &mut io,
+            &shared,
+            "file:///blocked.html",
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(1),
+        );
+        assert!(!needs_restore);
+    }
+
+    #[test]
+    fn frontmost_browser_runs_each_tick_background_runs_on_full_cadence() {
+        let shared = tick_shared();
+        let frontmost = SupportedBrowser::Chrome;
+        let background = SupportedBrowser::Brave;
+        let mut io = FakeIo::new(
+            vec![block("reddit", "blocklist", &["reddit.com"], 0, 999)],
+            &[frontmost, background],
+        );
+        io.events = true;
+        io.frontmost = Some(frontmost.bundle_id().to_string());
+        let mut needs_restore = false;
+        let mut last_full_pass = None;
+        let start = Instant::now();
+
+        tick_with_io(
+            &mut io,
+            &shared,
+            "file:///blocked.html",
+            &mut needs_restore,
+            &mut last_full_pass,
+            start,
+        );
+        assert_eq!(io.read_calls, vec![frontmost, background]);
+        tick_with_io(
+            &mut io,
+            &shared,
+            "file:///blocked.html",
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(1),
+        );
+        assert_eq!(io.read_calls, vec![frontmost, background, frontmost]);
+        tick_with_io(
+            &mut io,
+            &shared,
+            "file:///blocked.html",
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + BACKGROUND_BROWSER_TICK,
+        );
+        assert_eq!(
+            io.read_calls,
+            vec![frontmost, background, frontmost, frontmost, background]
+        );
+        assert_eq!(io.running_calls, 2);
+    }
+
+    #[test]
+    fn extension_method_browser_is_excluded_from_automation() {
+        let shared = tick_shared();
+        let extension = SupportedBrowser::Chrome;
+        let automation = SupportedBrowser::Brave;
+        let mut io = FakeIo::new(
+            vec![block("reddit", "blocklist", &["reddit.com"], 0, 999)],
+            &[extension, automation],
+        );
+        io.methods.insert(extension, false);
+        io.methods.insert(automation, true);
+        let mut needs_restore = false;
+        let mut last_full_pass = None;
+        tick_with_io(
+            &mut io,
+            &shared,
+            "file:///blocked.html",
+            &mut needs_restore,
+            &mut last_full_pass,
+            Instant::now(),
+        );
+        assert_eq!(io.read_calls, vec![automation]);
+    }
+
+    #[test]
+    fn restore_pass_scans_background_browser_even_when_frontmost_is_another_app() {
+        let shared = tick_shared();
+        let browser = SupportedBrowser::Brave;
+        let base = "file:///blocked.html";
+        let original = "https://example.com/";
+        let mut io = FakeIo::new(Vec::new(), &[browser]);
+        io.events = true;
+        io.frontmost = Some("com.apple.TextEdit".to_string());
+        io.queue_read(browser, Ok(vec![parked_tab(base, original)]));
+        io.queue_apply(browser, Ok(()));
+        let mut needs_restore = true;
+        let mut last_full_pass = None;
+        let start = Instant::now();
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start,
+        );
+        assert_eq!(io.read_calls, vec![browser]);
+        assert_eq!(io.apply_calls.len(), 1, "background browser was restored");
+
+        // The verification pass is also frontmost-independent, so the latch
+        // still clears while TextEdit is in front.
+        tick_with_io(
+            &mut io,
+            &shared,
+            base,
+            &mut needs_restore,
+            &mut last_full_pass,
+            start + Duration::from_secs(1),
+        );
+        assert_eq!(io.read_calls, vec![browser, browser]);
+        assert!(!needs_restore);
     }
 
     #[test]
@@ -1554,6 +2156,37 @@ mod tests {
             original_url_from_block_page(&built).as_deref(),
             Some(original)
         );
+    }
+
+    #[cfg(feature = "system-test")]
+    #[test]
+    fn system_test_restore_ownership_requires_fixture_blocklist_id() {
+        let base = "file:///Applications/Digital%20Habits%20Blocker%20Test.app/Contents/Resources/blocked/blocked.html";
+        let original = "https://example.com/";
+        let owned = build_blocked_url(
+            base,
+            original,
+            &[block(
+                "system-test-owned",
+                "blocklist",
+                &["example.com"],
+                10,
+                500,
+            )],
+        );
+        let production = build_blocked_url(
+            base,
+            original,
+            &[block(
+                "production-block",
+                "blocklist",
+                &["example.com"],
+                10,
+                500,
+            )],
+        );
+        assert!(block_page_owned_by_system_test(&owned));
+        assert!(!block_page_owned_by_system_test(&production));
     }
 
     #[test]

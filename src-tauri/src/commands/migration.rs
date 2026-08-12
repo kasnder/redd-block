@@ -48,6 +48,12 @@ use serde::Serialize;
 static MIGRATION_WAS_PENDING_AT_LAUNCH: AtomicI8 = AtomicI8::new(-1);
 static SNAPSHOT_INIT: AtomicBool = AtomicBool::new(false);
 
+#[cfg(feature = "system-test")]
+fn snapshot_initial_state() -> bool {
+    false
+}
+
+#[cfg(not(feature = "system-test"))]
 fn snapshot_initial_state() -> bool {
     if SNAPSHOT_INIT.load(Ordering::Acquire) {
         return MIGRATION_WAS_PENDING_AT_LAUNCH.load(Ordering::Acquire) == 1;
@@ -142,6 +148,12 @@ pub fn migration_pending_sync() -> bool {
     migration_pending_uncached()
 }
 
+#[cfg(feature = "system-test")]
+fn migration_pending_uncached() -> bool {
+    false
+}
+
+#[cfg(not(feature = "system-test"))]
 fn migration_pending_uncached() -> bool {
     let raw = std::fs::read_to_string(hosts_path()).unwrap_or_default();
     if hosts_has_markers(&raw) {
@@ -172,6 +184,13 @@ pub fn migration_was_pending_at_launch() -> bool {
 /// it to decide whether to surface a persistent "behaviour has
 /// changed" banner for upgraders, separate from the one-time
 /// welcome overlay.
+#[cfg(feature = "system-test")]
+#[tauri::command]
+pub fn user_came_from_v1x() -> bool {
+    false
+}
+
+#[cfg(not(feature = "system-test"))]
 #[tauri::command]
 pub fn user_came_from_v1x() -> bool {
     legacy_hosts_backup_path().exists()
@@ -298,6 +317,17 @@ pub struct ElevatedOutcome {
     pub user_cancelled: bool,
 }
 
+// A system-test app must never inspect or mutate the host's legacy
+// hosts/daemon installation. Its data path is isolated, but the legacy
+// migration operates on global system files, so make this command a
+// deliberate no-op for that build.
+#[cfg(feature = "system-test")]
+#[tauri::command]
+pub async fn run_upgrade_migration(_app: tauri::AppHandle) -> Result<bool, String> {
+    Ok(true)
+}
+
+#[cfg(not(feature = "system-test"))]
 #[tauri::command]
 pub async fn run_upgrade_migration(app: tauri::AppHandle) -> Result<bool, String> {
     let current = env!("CARGO_PKG_VERSION").to_string();

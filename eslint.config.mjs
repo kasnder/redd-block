@@ -66,6 +66,7 @@ export default [
                 ...globals.browser,
                 // Compile-time constant injected by vite.config.js `define`.
                 __ANDROID_BUILD__: 'readonly',
+                __SYSTEM_TEST_BUILD__: 'readonly',
             },
         },
     },

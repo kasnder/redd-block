@@ -44,7 +44,12 @@ fn has_accepted_eula_in_data() -> bool {
 
 /// True when we can read Firefox's profile metadata (optional signal for
 /// diagnostics; not a consent gate).
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "system-test"))]
+pub fn firefox_profile_data_accessible() -> bool {
+    false
+}
+
+#[cfg(all(target_os = "macos", not(feature = "system-test")))]
 pub fn firefox_profile_data_accessible() -> bool {
     let Some(home) = dirs::home_dir() else {
         return false;
@@ -107,7 +112,12 @@ pub fn should_run_web_automation() -> bool {
 }
 
 /// Whether profile scans may run for the setup banner and onboarding UI.
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "system-test"))]
+pub fn should_run_profile_scans() -> bool {
+    false
+}
+
+#[cfg(all(target_os = "macos", not(feature = "system-test")))]
 pub fn should_run_profile_scans() -> bool {
     has_accepted_eula_in_data()
 }
@@ -119,7 +129,12 @@ pub fn should_run_profile_scans() -> bool {
 
 // ---- Safari extension mode: Full Disk Access --------------------------------
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "system-test"))]
+fn safari_fda_marker_path() -> Option<PathBuf> {
+    None
+}
+
+#[cfg(all(target_os = "macos", not(feature = "system-test")))]
 fn safari_fda_marker_path() -> Option<PathBuf> {
     let base = dirs::data_local_dir()?;
     Some(base.join("com.reddblock").join("safari-fda-onboarded.v1"))
@@ -151,7 +166,12 @@ impl SafariFdaChoice {
 }
 
 /// Live probe: can we read Safari's Web Extensions plist right now?
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "system-test"))]
+pub fn safari_extensions_plist_readable() -> bool {
+    false
+}
+
+#[cfg(all(target_os = "macos", not(feature = "system-test")))]
 pub fn safari_extensions_plist_readable() -> bool {
     let Some(path) = crate::profile_scan::safari_extensions_plist_path() else {
         return false;

@@ -47,6 +47,19 @@ Several parts of the codebase look like bugs until you apply this:
   nonetheless **opt-in and default off** (`settings.enforcementEnabled`).
   Escalation is a choice the user makes, not one we make for them.
 
+**The adversary is a distracted user, not a technical one.** Our users are
+non-technical: the bypass we design against is the one reachable in a weak
+moment through the app's own UI, not one that requires a devtools console, a
+debugger, or a rebuild. That is why `window.__REDDBLOCK_INTERNALS__`
+(`src/dev-internals.js`) ships unguarded in production even though it exposes
+`saveData`, `acceptEula` and friends — a deliberate accepted cost, not an
+oversight. Keep the bar there: adding to that object is fine, but anything that
+lowers friction in a path a user can reach *without* opening a console is a
+product regression. The `e2e-webdriver` / `system-test` hard stop in `lib.rs` is
+the separate, stricter case — a network-reachable automation endpoint is a
+bypass anyone could be walked through remotely, so it must never compile into a
+release.
+
 **Decide which way failures fall.** When enforcement cannot determine state — a
 URL will not parse, a browser will not answer, a query fails — the code must
 pick between blocking something it should not and allowing something it should
@@ -256,13 +269,15 @@ on lint + Tier 1 and run `cargo test --lib` before macOS signing.
 
 Two blind spots to know about before you trust a green run:
 
-- **Clippy only runs against the Android target**, which compiles a minority of
-  `src-tauri/src`. Everything gated `cfg(not(any(ios, android)))` —
-  `app_watcher`, `enforcer`, `native_host`, `profile_scan`, … — plus the
-  macOS/Windows-only modules compile out. The desktop enforcement engine is
-  *not* linted and is not currently clippy-clean, so a green Android CI says
-  nothing about whether your macOS/Windows change passes clippy. There is no
-  Linux clippy job because the lib does not compile on Linux at all.
+- **Clippy runs on three targets but only ever on default features.** The
+  Android job's run compiles out everything gated `cfg(not(any(ios, android)))`,
+  so `rust-ci.yml` adds a desktop job on macOS *and* Windows — both, because
+  each host sees genuinely different `cfg` branches. All of them are
+  `-D warnings`, so run `cargo clippy --lib --bins --tests -- -D warnings`
+  locally before pushing Rust. What none of them cover is a feature build:
+  `--features system-test` is *not* clippy-clean (its stubs strand a pile of
+  otherwise-live helpers as dead code), and nothing gates that. There is no
+  Linux job at all — the lib does not compile there.
 - **eslint is `js/recommended` only, and `no-unused-vars` is a warning, not an
   error.** There is a standing backlog of dead bindings the gate deliberately
   does not fail on. Clearing them is worthwhile — dead asset imports become

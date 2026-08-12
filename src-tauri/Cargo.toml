@@ -50,6 +50,10 @@ desktop = ["tauri/tray-icon"]
 # which would open the port on every `pnpm dev` session. `lib.rs` also
 # hard-fails the build if this is ever combined with a release profile.
 e2e-webdriver = ["dep:tauri-plugin-wdio-webdriver"]
+# Bundled, signed local system-test app. This is deliberately an alias for the
+# debug-only WebDriver feature so the system-test build gets the same embedded
+# test endpoint while retaining the release-profile hard stop above.
+system-test = ["e2e-webdriver"]
 
 [dependencies]
 tauri = { version = "2.11", features = ["protocol-asset", "tray-icon"] }

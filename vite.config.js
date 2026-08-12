@@ -325,6 +325,7 @@ export default defineConfig(async ({ mode }) => ({
     // Android bundle entirely.
     define: {
         __ANDROID_BUILD__: JSON.stringify(mode === 'android'),
+        __SYSTEM_TEST_BUILD__: JSON.stringify(process.env.REDD_BLOCK_SYSTEM_TEST_BUILD === '1'),
     },
 
     // Root directory is src/

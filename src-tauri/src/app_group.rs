@@ -28,7 +28,14 @@ static GROUP_DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
 #[cfg(target_os = "macos")]
 static SYNC_LOOP_STARTED: OnceLock<()> = OnceLock::new();
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "system-test"))]
+pub fn path() -> Option<PathBuf> {
+    // The system-test app intentionally has no production App Group
+    // entitlement, so it must never touch group.com.reddblock.shared.
+    None
+}
+
+#[cfg(all(target_os = "macos", not(feature = "system-test")))]
 pub fn path() -> Option<PathBuf> {
     GROUP_DIR.get_or_init(resolve_group_dir).clone()
 }
@@ -38,7 +45,13 @@ pub fn blocklist_path() -> Option<PathBuf> {
     path().map(|dir| dir.join(BLOCKLIST_FILENAME))
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "system-test"))]
+pub fn safari_extension_mirror_active(source: &Path) -> bool {
+    let _ = source;
+    false
+}
+
+#[cfg(all(target_os = "macos", not(feature = "system-test")))]
 pub fn safari_extension_mirror_active(source: &Path) -> bool {
     !crate::blocking_method::uses_automation_at_path(source, "safari")
 }
@@ -88,7 +101,14 @@ pub fn maybe_mirror_after_save(source: &Path, bytes: &[u8]) {
     }
 }
 
-#[cfg(target_os = "macos")]
+#[cfg(all(target_os = "macos", feature = "system-test"))]
+pub fn ensure_sync_loop(source: PathBuf) {
+    // No App Group is provisioned for the isolated app; in particular do not
+    // start a background thread that could mirror into production.
+    let _ = source;
+}
+
+#[cfg(all(target_os = "macos", not(feature = "system-test")))]
 pub fn ensure_sync_loop(source: PathBuf) {
     SYNC_LOOP_STARTED.get_or_init(|| {
         std::thread::spawn(move || {
