@@ -1229,4 +1229,94 @@ mod tests {
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks[0].apps, vec!["Mail".to_string(), "Notes".to_string()]);
     }
+
+    /// A one-off block whose pause window has already elapsed must enforce
+    /// again on its own, exactly as `match_schedule_now` already does for
+    /// schedules (`paused && pause_end > now_ms`).
+    ///
+    /// Derivation must not depend on the frontend having cleared `isPaused`
+    /// first: the sweep that clears it lives in a 1 s JS interval
+    /// (`src/render.js`), and macOS throttles WKWebView timers while the
+    /// window is hidden — which is the app's normal tray state. A stale flag
+    /// would otherwise leave the block silently unenforced past its pause.
+    #[test]
+    fn expired_one_off_pause_resumes_enforcement() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = temp_json_path("expired-one-off-pause");
+        let data = json!({
+            "blocklists": [{
+                "id": "bl-paused",
+                "name": "Focus",
+                "mode": "blocklist",
+                "websites": ["example.invalid"],
+                "apps": ["Mail"]
+            }],
+            "activeBlocks": [{
+                "blocklistId": "bl-paused",
+                "startTime": now.saturating_sub(60_000),
+                "endTime": now + 60_000,
+                // Paused, but the pause ended a minute ago.
+                "isPaused": true,
+                "pauseEndTime": now.saturating_sub(60_000)
+            }],
+            "schedules": [],
+            "settings": {}
+        });
+
+        fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        let (domains, blocks) = derive_payload(&path);
+        let apps = derive_blocked_apps(&path);
+        let _ = fs::remove_file(&path);
+
+        assert!(
+            domains.contains(&"example.invalid".to_string()),
+            "expired pause should not keep the domain unenforced, got {domains:?}"
+        );
+        assert_eq!(blocks.len(), 1, "expired pause should yield an active block");
+        assert!(
+            apps.contains(&"Mail".to_string()),
+            "expired pause should not keep the app unenforced, got {apps:?}"
+        );
+    }
+
+    /// The other half of the same rule: a pause that has *not* elapsed still
+    /// suppresses enforcement.
+    #[test]
+    fn live_one_off_pause_suppresses_enforcement() {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let path = temp_json_path("live-one-off-pause");
+        let data = json!({
+            "blocklists": [{
+                "id": "bl-paused",
+                "name": "Focus",
+                "mode": "blocklist",
+                "websites": ["example.invalid"],
+                "apps": ["Mail"]
+            }],
+            "activeBlocks": [{
+                "blocklistId": "bl-paused",
+                "startTime": now.saturating_sub(60_000),
+                "endTime": now + 60_000,
+                "isPaused": true,
+                "pauseEndTime": now + 30_000
+            }],
+            "schedules": [],
+            "settings": {}
+        });
+
+        fs::write(&path, serde_json::to_vec(&data).unwrap()).unwrap();
+        let (domains, blocks) = derive_payload(&path);
+        let apps = derive_blocked_apps(&path);
+        let _ = fs::remove_file(&path);
+
+        assert!(domains.is_empty(), "live pause should suppress domains, got {domains:?}");
+        assert!(blocks.is_empty(), "live pause should suppress blocks");
+        assert!(apps.is_empty(), "live pause should suppress apps, got {apps:?}");
+    }
 }

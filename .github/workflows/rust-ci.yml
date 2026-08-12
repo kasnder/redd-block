@@ -11,7 +11,10 @@ name: Rust CI
 
 on:
   pull_request:
-    branches: [main]
+    # `claude/**` is temporary, so this stacked PR gets check runs at all:
+    # workflows here trigger on main-targeted PRs, so a PR based on another
+    # branch runs nothing. Drop back to `[main]` when this retargets main.
+    branches: [main, 'claude/**']
     paths:
       - 'src-tauri/**'
       - 'scripts/build-safari-bridge.sh'
