@@ -85,7 +85,12 @@ export const config = {
     specs: [fileURLToPath(new URL('./specs/**/*.e2e.js', import.meta.url))],
     maxInstances: 1,
     capabilities: [{}],
-    logLevel: 'info',
+    // 'info' logs every WebDriver command, which buries the suite's own output
+    // hundreds of lines up in a CI log — the reason the first probe run told us
+    // nothing. Full detail still lands in outputDir, which the workflow uploads
+    // as an artifact on failure.
+    logLevel: 'warn',
+    outputDir: fileURLToPath(new URL('../logs', import.meta.url)),
     // One app launch, one long suite: the full Tier 2 profile walks 24 cases
     // through save + sync round-trips.
     waitforTimeout: 30_000,

@@ -114,6 +114,21 @@ async function reportStartupDiagnostics() {
     await browser.pause(3300);
     const ticks = await browser.execute(() => window.__TIER2_TIMER_PROBE__);
     console.log(`[tier2] webview timer probe: ${ticks} ticks in 3 s (a live webview gives ~6)`);
+
+    // Assert, don't just log. A bare console line gets buried in CI output, and
+    // the whole point is that the next failure names its own cause instead of
+    // costing another round trip. A7/A9 give the app ~2.5 s to sweep a 1.2 s
+    // pause, so fewer than 3 ticks in 3 s means the environment cannot deliver
+    // the timers those two cases need, and the suite result says nothing about
+    // the code.
+    if (ticks < 3) {
+        throw new Error(
+            `Tier 2 setup: the webview delivered only ${ticks} timer ticks in 3 s. `
+            + `WKWebView throttles timers for hidden/occluded windows (see kickClockNow in `
+            + `src/render.js), so A7/A9 cannot pass here regardless of app correctness. `
+            + `Exclude them from the CI profile rather than weakening them.`,
+        );
+    }
 }
 
 describe('Tier 2 integration suite', () => {
