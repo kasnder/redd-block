@@ -23,7 +23,7 @@ fn main() {
 
 fn watch_icon_assets() {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let mut svg = manifest_dir.join("../assets/reddblock-icon.svg");
+    let svg = manifest_dir.join("../assets/reddblock-icon.svg");
     if svg.exists() {
         println!("cargo:rerun-if-changed={}", svg.display());
     }

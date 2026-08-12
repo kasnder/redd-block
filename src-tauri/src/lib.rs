@@ -18,6 +18,11 @@ use tauri::Manager;
 /// last-window-closed signal, etc.) is intercepted and turned into a
 /// hide-window — otherwise the user could accidentally kill the
 /// enforcer/watcher and silently lose all blocking.
+///
+/// Read by the macOS `applicationShouldTerminate:` guard and by the
+/// `ExitRequested` handler under the `desktop` feature; neither exists on
+/// Android, hence the cfg.
+#[cfg(any(target_os = "macos", feature = "desktop"))]
 static ALLOW_EXIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Flip the macOS activation policy between Regular (Dock icon + app

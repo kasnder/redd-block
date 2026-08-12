@@ -31,6 +31,37 @@ npm run build:android       # requires ANDROID_HOME/NDK_HOME/JAVA_HOME exported 
 
 Version bumps span several files — always use `./scripts/bump-version.sh <version>` (updates `package.json`, `tauri.*.conf.json`, `Cargo.toml`).
 
+### Linting
+
+```bash
+npm run lint                # eslint over src/, scripts/, e2e/, vite.config.js
+npm run lint:fix            # same, with autofixes applied
+cd src-tauri && cargo fmt --all               # also formats tauri-plugin-screentime
+cd tauri-plugin-android-blocker && cargo fmt --all
+```
+
+CI gates `npm run lint` and `cargo fmt --all --check` on every PR (the `Lint`
+job in `ci.yml`), plus `cargo clippy --lib --target aarch64-linux-android
+-- -D warnings` inside the Android job.
+
+Two things to know before adding rules or chasing warnings:
+
+- **eslint is `js/recommended` only, and `no-unused-vars` is a warning, not an
+  error.** There is a backlog of ~199 dead bindings (mostly unused imports) that
+  the gate deliberately does not fail on. Fixing them is worthwhile — Vite emits
+  an asset for every `import url from './x.png'` at transform time whether or
+  not the binding is used, so dead asset imports become exactly the orphans
+  `pruneOrphanAndroidAssets` has to sweep back out — but do it as its own change
+  rather than mixed into feature work.
+- **Clippy only runs against the Android target, which sees about 40% of
+  `src-tauri/src`.** Everything gated `cfg(not(any(ios, android)))` — `app_watcher`,
+  `enforcer`, `native_host`, `profile_scan`, … — plus the macOS/Windows-only
+  modules compile out. The desktop enforcement engine is *not* linted, and is
+  not currently clippy-clean; do not assume a green Android CI means your
+  macOS/Windows changes pass clippy. There is no Linux clippy job because the
+  lib does not compile on Linux at all (the `cfg(not(ios|android))` modules pull
+  macOS/Windows-only crates).
+
 ### Testing
 
 There is no CLI test runner. Tests run **inside the app** in dev mode via the dev console (details in [testing.md](testing.md)):

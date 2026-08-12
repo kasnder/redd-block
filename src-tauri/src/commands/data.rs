@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-#[cfg(not(target_os = "ios"))]
+// Only `set_window_size` needs this, and that command is desktop-only.
+#[cfg(not(any(target_os = "ios", target_os = "android")))]
 use tauri::WebviewWindow;
 use tauri::{AppHandle, Manager};
 
 /// App data structure - matches the Electron version exactly
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct AppData {
     pub blocklists: Vec<Blocklist>,
@@ -157,19 +158,6 @@ pub struct Settings {
     pub extra: std::collections::HashMap<String, serde_json::Value>,
 }
 
-impl Default for AppData {
-    fn default() -> Self {
-        Self {
-            blocklists: Vec::new(),
-            active_blocks: Vec::new(),
-            schedules: Vec::new(),
-            settings: Settings::default(),
-            start_overlays: Vec::new(),
-            migration_version: None,
-        }
-    }
-}
-
 fn get_per_user_data_path(app: &AppHandle) -> PathBuf {
     let app_data_dir = app
         .path()
@@ -203,6 +191,7 @@ fn get_windows_legacy_shared_dirs() -> Vec<PathBuf> {
 /// missing. Never overwrites an existing primary file; never deletes
 /// legacy folders. Used by the Windows ProgramData rebrand migration
 /// and covered by unit tests with temp dirs.
+#[cfg(any(target_os = "windows", test))]
 pub(crate) fn copy_shared_storage_forward(primary_dir: &std::path::Path, legacy_dirs: &[PathBuf]) {
     if let Err(e) = fs::create_dir_all(primary_dir) {
         log::warn!(
