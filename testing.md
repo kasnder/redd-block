@@ -38,7 +38,8 @@ No single tier is sufficient on its own. **Website blocking enforcement** (macOS
 
 ## What runs in CI
 
-Every suite is gated on pull requests to `main`:
+Pull requests to `main` gate every suite; commit and release coverage is
+summarized below:
 
 | Workflow | Job | Runs | Trigger |
 | --- | --- | --- | --- |
@@ -48,11 +49,11 @@ Every suite is gated on pull requests to `main`:
 | `release.yml` | macOS (.pkg) | `cargo test --lib` before signing | every release run |
 | `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes, on PRs and `main` |
 | `android-ci.yml` | Android debug APK | debug APK build, then `:tauri-plugin-android-blocker:testDebugUnitTest` | `src/**`, `src-tauri/**`, plugin, build config, on PRs and `main` |
-| `e2e-ci.yml` | Tier 2 (macOS + Windows) | `runIntegrationTests('full')` against a real built app over WebDriver | Tier 2 sources, `e2e/**`, `vite.config.js` |
+| `e2e-ci.yml` | Tier 2 (macOS + Windows) | `runIntegrationTests('full')` against a real built app over WebDriver | Tier 2 sources, `e2e/**`, `vite.config.js`, on PRs and `main` |
 
 Notes on the non-obvious choices:
 
-- **`ci.yml`, `rust-ci.yml` and `android-ci.yml` also run on pushes to `main`.**
+- **`ci.yml`, `rust-ci.yml`, `android-ci.yml` and `e2e-ci.yml` also run on pushes to `main`.**
   PR checks run against the merge preview, not the commit that ends up on
   `main`, and there is no merge queue — two independently-green PRs can land a
   broken `main`. The push trigger is also the only coverage for commits that
