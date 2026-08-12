@@ -13,11 +13,22 @@ compile_error!(
 #[cfg(feature = "desktop")]
 use tauri::Manager;
 
-/// Set by the tray "Quit" handler to authorise actually exiting the
-/// process. Any other `ExitRequested` (Cmd-Q, Tauri's internal
-/// last-window-closed signal, etc.) is intercepted and turned into a
-/// hide-window — otherwise the user could accidentally kill the
-/// enforcer/watcher and silently lose all blocking.
+/// Authorises actually exiting the process. Every `ExitRequested` (Cmd-Q,
+/// Tauri's internal last-window-closed signal, etc.) is intercepted and
+/// turned into a hide-window while this is false — otherwise the user
+/// could kill the enforcer/watcher and silently lose all blocking.
+///
+/// **Nothing sets this to `true` today, and that is deliberate.** The tray
+/// icon has no menu by design (see the tray builder in `setup`), so there is
+/// no authorised-quit gesture: a blocker the user can quit is a blocker the
+/// user can bypass. The flag is kept as the single seam an authorised exit
+/// would go through if one is ever added, so the two guards below do not
+/// have to be rewritten.
+///
+/// The one real exit path — in-app uninstall — deliberately does not use
+/// this. `commands::uninstall` calls `std::process::exit(0)` directly,
+/// bypassing both guards, because by that point tearing down enforcement is
+/// the intent. See the module docs in `commands/uninstall.rs`.
 ///
 /// Read by the macOS `applicationShouldTerminate:` guard and by the
 /// `ExitRequested` handler under the `desktop` feature; neither exists on
@@ -156,8 +167,10 @@ pub mod windows_process;
 /// `ALLOW_EXIT` is false. Cmd-Q routes through the AppKit terminate
 /// path, which Tauri's `RunEvent::ExitRequested` does not intercept
 /// in accessory mode — so we hook it at the AppKit layer ourselves.
-/// The tray "Quit" handler sets `ALLOW_EXIT = true` before calling
-/// `app.exit(0)`, so legitimate quits still go through.
+/// Since nothing sets `ALLOW_EXIT` (see its docs), this currently cancels
+/// every Cmd-Q unconditionally — which is the intended behaviour, not an
+/// oversight. In-app uninstall exits via `std::process::exit(0)` and so is
+/// not routed through here.
 #[cfg(target_os = "macos")]
 unsafe fn install_terminate_guard(ns_app: cocoa::base::id) {
     use cocoa::base::id;
