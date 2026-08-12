@@ -166,6 +166,48 @@ fn get_per_user_data_path(app: &AppHandle) -> PathBuf {
     app_data_dir.join("redd-block-data.json")
 }
 
+/// Return the data file explicitly assigned to a local system-test process.
+///
+/// This override is intentionally feature-gated: a normal development or
+/// production build must never be redirected by an ambient environment
+/// variable. The runner supplies a path to an isolated temporary directory;
+/// all data readers and writers use the same early-return hook below.
+#[cfg(feature = "system-test")]
+fn system_test_data_path() -> Option<PathBuf> {
+    Some(
+        std::env::var_os("REDD_BLOCK_SYSTEM_TEST_DATA_PATH")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            // Fail closed when somebody launches the test bundle outside the
+            // runner: never fall through to production shared/per-user storage.
+            .unwrap_or_else(|| {
+                std::env::temp_dir()
+                    .join(format!(
+                        "redd-block-system-test-unconfigured-{}",
+                        std::process::id()
+                    ))
+                    .join("redd-block-data.json")
+            }),
+    )
+}
+
+#[cfg(feature = "system-test")]
+fn should_import_legacy_data() -> bool {
+    system_test_data_path().is_none()
+}
+
+/// Apply the system-test override to a normal resolver fallback. Keeping this
+/// as one helper is important: handle-based and static callers must not drift
+/// into separate environment-variable/path-selection behavior.
+fn apply_system_test_override(fallback: impl FnOnce() -> PathBuf) -> PathBuf {
+    #[cfg(feature = "system-test")]
+    if let Some(path) = system_test_data_path() {
+        return path;
+    }
+
+    fallback()
+}
+
 #[cfg(not(target_os = "ios"))]
 fn get_shared_data_path() -> PathBuf {
     get_shared_dir().join("redd-block-data.json")
@@ -278,11 +320,13 @@ pub fn canonical_data_path(app: &AppHandle) -> Option<PathBuf> {
 /// paths, only the canonical shared or per-user location.
 #[cfg(not(target_os = "ios"))]
 pub fn canonical_data_path_static() -> PathBuf {
-    if should_use_shared_data_path() {
-        get_shared_data_path()
-    } else {
-        per_user_data_path_static()
-    }
+    apply_system_test_override(|| {
+        if should_use_shared_data_path() {
+            get_shared_data_path()
+        } else {
+            per_user_data_path_static()
+        }
+    })
 }
 
 #[cfg(not(target_os = "ios"))]
@@ -304,11 +348,13 @@ pub(crate) fn get_data_path(app: &AppHandle) -> PathBuf {
 
     #[cfg(not(target_os = "ios"))]
     {
-        if should_use_shared_data_path() {
-            get_shared_data_path()
-        } else {
-            get_per_user_data_path(app)
-        }
+        apply_system_test_override(|| {
+            if should_use_shared_data_path() {
+                get_shared_data_path()
+            } else {
+                get_per_user_data_path(app)
+            }
+        })
     }
 }
 
@@ -545,6 +591,15 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
         // the first-render critical path.
         Ok(data)
     } else {
+        // A system-test process starts from a deliberately empty isolated
+        // store. Never import production or legacy per-user data into it:
+        // doing so would both leak user state into tests and make a test
+        // result depend on what happens to be installed on the host.
+        #[cfg(feature = "system-test")]
+        if !should_import_legacy_data() {
+            return Ok(AppData::default());
+        }
+
         // Migrate from per-user location or legacy paths
         if let Some(source_path) = find_per_user_data(&app) {
             if source_path == data_path {
@@ -669,6 +724,16 @@ pub fn set_window_size(_width: f64, _height: f64) -> Result<(), String> {
 /// not writable. Logs are intentionally preserved.
 #[cfg(not(target_os = "ios"))]
 pub fn wipe_user_data(app: &AppHandle) {
+    // The normal implementation below deliberately enumerates shared,
+    // current per-user, and legacy locations. In system-test mode that list
+    // would be an unsafe production cleanup operation, so remove only the
+    // exact isolated data file selected by the runner.
+    #[cfg(feature = "system-test")]
+    if system_test_data_path().is_some() {
+        wipe_path(&get_data_path(app));
+        return;
+    }
+
     use std::collections::HashSet;
 
     #[cfg(target_os = "macos")]
@@ -842,6 +907,110 @@ mod shared_storage_migration_tests {
         assert_eq!(
             fs::read_to_string(primary.join("helper-state.json")).unwrap(),
             "{\"helper\":true}"
+        );
+        let _ = fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(all(test, feature = "system-test"))]
+mod system_test_isolation_tests {
+    use super::{
+        apply_system_test_override, canonical_data_path_static, should_import_legacy_data,
+        system_test_data_path, wipe_path,
+    };
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::{Mutex, OnceLock};
+
+    const ENV_NAME: &str = "REDD_BLOCK_SYSTEM_TEST_DATA_PATH";
+    static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn with_override<T>(path: &PathBuf, f: impl FnOnce() -> T) -> T {
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        // Rust 2024 treats process-environment mutation as unsafe because it
+        // races with foreign threads. The lock makes this test's mutation
+        // deterministic; production code only reads the variable.
+        unsafe { std::env::set_var(ENV_NAME, path) };
+        let result = f();
+        unsafe { std::env::remove_var(ENV_NAME) };
+        result
+    }
+
+    #[test]
+    fn missing_override_fails_closed_to_process_temp_storage() {
+        let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+        unsafe { std::env::remove_var(ENV_NAME) };
+        let path = system_test_data_path().expect("system-test path");
+        assert!(path.starts_with(std::env::temp_dir()));
+        assert!(path
+            .to_string_lossy()
+            .contains(&std::process::id().to_string()));
+        assert!(path.ends_with("redd-block-data.json"));
+    }
+
+    #[test]
+    fn override_precedes_both_resolver_fallbacks() {
+        let path = std::env::temp_dir().join("redd-block-system-test-data.json");
+        with_override(&path, || {
+            // The handle-based and handle-free production resolvers both feed
+            // their fallback through apply_system_test_override. Distinct
+            // fallbacks here model their otherwise different path sources;
+            // the actual AppHandle is intentionally not needed to exercise
+            // this pure path-selection contract.
+            assert_eq!(system_test_data_path(), Some(path.clone()));
+            assert_eq!(canonical_data_path_static(), path);
+            assert_eq!(
+                apply_system_test_override(|| PathBuf::from("handle-fallback")),
+                path
+            );
+        });
+    }
+
+    #[test]
+    fn missing_system_test_data_cannot_import_legacy_files() {
+        let root = std::env::temp_dir().join(format!(
+            "redd-block-system-test-isolation-{}",
+            std::process::id()
+        ));
+        let isolated = root.join("isolated").join("redd-block-data.json");
+        let legacy = root.join("legacy").join("redd-block-data.json");
+        fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        fs::write(&legacy, b"{\"legacy\":true}").unwrap();
+
+        with_override(&isolated, || {
+            // The missing-file branch in load_data returns defaults whenever
+            // this predicate is false, so it cannot copy the legacy fixture.
+            assert!(!isolated.exists());
+            assert!(system_test_data_path().is_some());
+            assert!(!should_import_legacy_data());
+            assert!(!isolated.exists());
+            assert_eq!(fs::read_to_string(&legacy).unwrap(), "{\"legacy\":true}");
+        });
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn cleanup_fixture_removes_only_the_isolated_file() {
+        let root = std::env::temp_dir().join(format!(
+            "redd-block-system-test-cleanup-{}",
+            std::process::id()
+        ));
+        let isolated = root.join("isolated").join("redd-block-data.json");
+        let production_sentinel = root.join("production").join("redd-block-data.json");
+        fs::create_dir_all(isolated.parent().unwrap()).unwrap();
+        fs::create_dir_all(production_sentinel.parent().unwrap()).unwrap();
+        fs::write(&isolated, b"isolated").unwrap();
+        fs::write(&production_sentinel, b"production").unwrap();
+
+        // This is the exact operation used by wipe_user_data's system-test
+        // early return; no shared/legacy path enumeration is involved.
+        with_override(&isolated, || wipe_path(&isolated));
+
+        assert!(!isolated.exists());
+        assert_eq!(
+            fs::read_to_string(&production_sentinel).unwrap(),
+            "production"
         );
         let _ = fs::remove_dir_all(root);
     }

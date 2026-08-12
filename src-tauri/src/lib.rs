@@ -227,7 +227,10 @@ pub fn run() {
     // Windows, this also means clicking the app icon while it's
     // already running focuses the existing window instead of
     // spawning a duplicate.
-    #[cfg(not(any(target_os = "ios", target_os = "android")))]
+    #[cfg(all(
+        not(any(target_os = "ios", target_os = "android")),
+        not(feature = "system-test")
+    ))]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
         use tauri::Manager;
         if let Some(w) = app.get_webview_window("main") {
@@ -717,6 +720,7 @@ pub fn run() {
                     // not affect the first webview frame. Keep them out of
                     // Tauri's setup callback so the event loop can begin
                     // painting as soon as the window has been created.
+                    #[cfg(not(feature = "system-test"))]
                     std::thread::spawn(move || {
                         if let Err(e) =
                             native_host_install::sync_extension_mode_native_hosts(&path, false)
@@ -737,7 +741,10 @@ pub fn run() {
             // notifications silently no-op. macOS prompts via
             // NSUserNotificationCenter; Windows toasts don't need a
             // runtime prompt and the call returns Granted immediately.
-            #[cfg(any(target_os = "macos", target_os = "windows"))]
+            #[cfg(all(
+                any(target_os = "macos", target_os = "windows"),
+                not(feature = "system-test")
+            ))]
             {
                 use tauri_plugin_notification::NotificationExt;
                 let n = app.notification();
@@ -760,7 +767,8 @@ pub fn run() {
             // runs above (EULA-gated) and during onboarding scans.
             #[cfg(all(
                 not(any(target_os = "ios", target_os = "android")),
-                not(target_os = "macos")
+                not(target_os = "macos"),
+                not(feature = "system-test")
             ))]
             if let Err(e) = native_host_install::install() {
                 log::warn!("native-host install on startup failed: {e}");
@@ -768,7 +776,8 @@ pub fn run() {
 
             #[cfg(all(
                 not(any(target_os = "ios", target_os = "android")),
-                not(target_os = "macos")
+                not(target_os = "macos"),
+                not(feature = "system-test")
             ))]
             if !extension_install::startup_install_already_done() {
                 if let Err(e) = extension_install::install() {
@@ -788,7 +797,11 @@ pub fn run() {
             // Gated on release builds only — in `tauri dev` the
             // watchdog would respawn the debug binary, lock the build
             // artifact, and interfere with `cargo` rebuilds.
-            #[cfg(all(target_os = "windows", not(debug_assertions)))]
+            #[cfg(all(
+                target_os = "windows",
+                not(debug_assertions),
+                not(feature = "system-test")
+            ))]
             watchdog::register();
 
             // Self-heal launch-at-login on every startup. For ReDD
@@ -823,7 +836,8 @@ pub fn run() {
             // path users actually install — keep self-healing.
             #[cfg(all(
                 not(any(target_os = "ios", target_os = "android")),
-                not(debug_assertions)
+                not(debug_assertions),
+                not(feature = "system-test")
             ))]
             {
                 use tauri_plugin_autostart::ManagerExt;

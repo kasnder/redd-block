@@ -1,0 +1,57 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Digital Habits Blocker Test",
+  "version": "3.8.9",
+  "identifier": "com.reddblock.systemtest",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "pnpm vite:build:e2e"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: https://asset.localhost blob: data:; media-src 'self' asset: https://asset.localhost blob:; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://ipc.localhost https://cdn.jsdelivr.net https://ulyngs.github.io",
+      "assetProtocol": {
+        "enable": true,
+        "scope": {
+          "requireLiteralLeadingDot": false,
+          "allow": [
+            "$APPDATA/**",
+            "$APPLOCALDATA/**",
+            "$HOME/Library/Application Support/Digital Habits Blocker System Test/**",
+            "/var/folders/**/Digital Habits Blocker System Test/**"
+          ]
+        }
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "resources": {
+      "blocked/blocked.html": "blocked/blocked.html",
+      "blocked/blocked.js": "blocked/blocked.js",
+      "blocked/reddblock-icon.svg": "blocked/reddblock-icon.svg"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns"
+    ],
+    "category": "Productivity",
+    "copyright": "Copyright © 2026 Centre for Digital Habits CIC",
+    "shortDescription": "Digital Habits: Blocker system-test app",
+    "longDescription": "Isolated local system-test build of Digital Habits: Blocker.",
+    "macOS": {
+      "entitlements": "entitlements.system-test.macos.plist",
+      "infoPlist": "Info.system-test.plist",
+      "hardenedRuntime": true,
+      "minimumSystemVersion": "11.0",
+      "frameworks": [
+        "target/safari-bridge/libsafari_bridge.dylib"
+      ]
+    }
+  }
+}

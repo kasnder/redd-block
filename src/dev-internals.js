@@ -24,6 +24,7 @@ import {
     acceptEula,
     appBlockingWarningRows,
     setupAndroidBackButtonHandling,
+    updateBlockedApps,
 } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION } from './onboarding.js';
 import { render, isClockTickRunning } from './render.js';
@@ -95,6 +96,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     // test rather than duplicating modal-close logic in the harness.
     setupAndroidBackButtonHandling,
     appBlockingWarningRows,
+    updateBlockedApps,
     getDefaultPauseMinutes,
     clampDefaultPauseMinutes,
     FALLBACK_DEFAULT_PAUSE_MINUTES,

@@ -119,6 +119,10 @@ export async function persistWelcomeOnboardingShown() {
 }
 
 export async function runInitialOnboardingSequence() {
+    if (__SYSTEM_TEST_BUILD__) {
+        updateOnboardingVisibility();
+        return;
+    }
     if (!state.isIOS && !state.isAndroid) {
         if (shouldShowRebrandNotice()) {
             await presentRebrandNotice();
@@ -410,6 +414,7 @@ function wireMigrationFinishDelegation() {
 }
 
 export async function runDesktopOnboarding() {
+    if (__SYSTEM_TEST_BUILD__) return;
     if (state.isIOS || state.isAndroid) return;
     try {
         const pendingAtLaunch = await invoke('migration_pending');
