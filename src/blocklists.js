@@ -175,7 +175,15 @@ const BLOCKLIST_STATUS_ICON_HOURGLASS = blocklistStatusIcon(
 const BLOCKLIST_STATUS_ICON_CALENDAR = blocklistStatusIcon(
     '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>',
 );
-const BLOCKLIST_STATUS_ICON_SNOOZE = blocklistStatusIcon(APP_BLOCKING_SNOOZE_ICON_IMG_12);
+// Deliberately a function, unlike its four literal siblings above: the snooze
+// icon is the only one whose markup comes from another module, and reading that
+// binding at module-evaluation time makes this file's correctness depend on
+// blocking-platform.js being evaluated first. It isn't, once anything adds an
+// import edge that reorders the graph — the module top level holds declarations
+// only, and this was the one call that broke the rule (see AGENTS.md).
+function blocklistStatusIconSnooze() {
+    return blocklistStatusIcon(APP_BLOCKING_SNOOZE_ICON_IMG_12);
+}
 
 function buildBlocklistStatusSegment(text, { showDot = false, iconHtml = '', textClass = 'blocklist-status-text' } = {}) {
     const trimmed = String(text ?? '').trim();
@@ -1023,7 +1031,7 @@ export function renderBlocklists() {
             const schedulePaused = !!(schedule && isSchedulePausedNow(schedule, now));
             if (isSnoozedCard) {
                 scheduleBadge = buildBlocklistStatusSegment(scheduleTimeText, {
-                    iconHtml: BLOCKLIST_STATUS_ICON_SNOOZE,
+                    iconHtml: blocklistStatusIconSnooze(),
                     textClass: 'blocklist-status-text schedule-badge schedule-badge-snoozed',
                 });
             } else if (schedulePaused) {
