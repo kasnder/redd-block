@@ -4,7 +4,7 @@ import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { message } from '@tauri-apps/plugin-dialog';
 import { tSettings } from './i18n.js';
-import { getBlocklistIOSPayload } from './blocklist-utils.js';
+import { getBlocklistIOSPayload, isAllowlistBlocklist } from './blocklist-utils.js';
 import { formatDateForDisplay, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import { formatTime } from './app.js';
 import { getDefaultPauseMinutes } from './pause-default.js';
@@ -22,6 +22,11 @@ export function isNonRepeatingSchedule(schedule) {
 export const ANDROID_DAY_NAMES_MON0 = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
 
 export const ANDROID_DEFAULT_FRICTION_WORD_COUNT = 15;
+
+/** Android cannot enforce allow-mode focus spaces yet. */
+export function isAndroidAllowlistUnsupported(blocklist, isAndroid = state.isAndroid) {
+    return isAndroid === true && isAllowlistBlocklist(blocklist);
+}
 
 /**
  * Friction-gate challenge fields for the Android plugin payload.
@@ -205,62 +210,238 @@ export function getSingleOccurrenceSegmentDates(schedule, segment) {
     };
 }
 
+/**
+ * Flatten schedules and running one-off blocks into the Android plugin payload.
+ *
+ * Extracted from syncSchedulesToHelper so the allow-mode skip below can be
+ * tested — the sync itself is async and talks to Tauri, this is just data.
+ *
+ * IMPORTANT: allow-mode focus spaces are deliberately omitted. The Kotlin side
+ * has no notion of mode at any layer (no `mode` in ScheduleEntry, Schedule.kt,
+ * or the matchers in Schedules.kt), so `blockedApps` is always treated as a
+ * denylist. Sending an allow-mode space would therefore block precisely the
+ * apps it is meant to permit. Omitting it means such a space enforces nothing
+ * on Android, which is inert rather than actively wrong. The start flows reject
+ * new activations with a user-visible message; this omission remains a safety
+ * net for legacy data that was already persisted before the guard existed.
+ *
+ * Real allow-mode enforcement is a separate, much larger change: with
+ * everything-but-the-list blocked, the launcher, Settings and the dialer would
+ * all be blocked by default, and cancelling the friction gate sends the user
+ * home — straight back into a blocked launcher, with no route to Settings to
+ * turn the service off. The app picker cannot even list those packages
+ * (getInstalledApps only enumerates CATEGORY_LAUNCHER resolvers), so a user
+ * could not allowlist their way out. It needs a Kotlin-side always-allowed set
+ * before it is safe to ship.
+ */
+export function buildAndroidScheduleEntries(now = Date.now()) {
+    const flatEntries = [];
+    const skippedAllowlistNames = [];
+    for (const schedule of state.appData.schedules || []) {
+        if (!schedule.segments || schedule.segments.length === 0) continue;
+        const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        // This builder is Android-specific even when Tier 1 invokes it outside
+        // the platform branch, so keep the capability check explicit here.
+        if (isAndroidAllowlistUnsupported(blocklist, true)) {
+            skippedAllowlistNames.push(blocklist.name || schedule.blocklistId);
+            continue;
+        }
+        const blockedApps = blocklist?.apps || [];
+        const blockedWebsites = blocklist?.websites || [];
+        const difficulty = blocklist?.overrideDifficulty;
+        const { frictionWordCount, frictionCustomText } = androidFrictionChallengeFields(difficulty);
+        // Paused entries stay in the payload: Kotlin stores them
+        // disabled and arms a WorkManager re-enable at the expiry,
+        // so blocking resumes on time even if this app process is
+        // dead by then (mirrors iOS's one-off DeviceActivity).
+        // No pauseEndTime (legacy-disabled schedules imported by
+        // migrateAndroidNativeSchedules) = paused indefinitely.
+        const isPaused = !!(schedule.isPaused && (!schedule.pauseEndTime || schedule.pauseEndTime > now));
+
+        // One-shot (non-repeating) schedules become entries with an
+        // absolute [activeFrom, activeUntil) window, same as iOS.
+        // Kotlin checks the window instead of time-of-day + days;
+        // runExpiryOnce removes them from state.appData once past, and the
+        // next sync deletes the Kotlin entity.
+        if (isNonRepeatingSchedule(schedule)) {
+            const occurrences = resolveOneShotOccurrences(schedule);
+            occurrences.forEach((occurrence, occurrenceIdx) => {
+                if (occurrence.end.getTime() <= now) return;
+                flatEntries.push({
+                    id: `${schedule.id}-${occurrence.segmentIndex}-${occurrenceIdx}`,
+                    name: blocklist?.name || 'Schedule',
+                    enabled: true,
+                    type: 'DAILY',
+                    startHour: occurrence.start.getHours(),
+                    startMinute: occurrence.start.getMinutes(),
+                    endHour: occurrence.end.getHours(),
+                    endMinute: occurrence.end.getMinutes(),
+                    days: [],
+                    blockedApps,
+                    blockedWebsites,
+                    frictionWordCount,
+                    frictionCustomText,
+                    emoji: blocklist?.emoji || null,
+                    color: blocklist?.color || null,
+                    isPaused,
+                    pauseEndTimestampMs: (isPaused && schedule.pauseEndTime) ? schedule.pauseEndTime : null,
+                    activeFromTimestampMs: occurrence.start.getTime(),
+                    activeUntilTimestampMs: occurrence.end.getTime(),
+                });
+            });
+            continue;
+        }
+
+        for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
+            const seg = schedule.segments[segIdx];
+            flatEntries.push({
+                id: `${schedule.id}-${segIdx}`,
+                name: blocklist?.name || 'Schedule',
+                enabled: true,
+                type: (seg.days && seg.days.length > 0) ? 'WEEKLY' : 'DAILY',
+                startHour: seg.startHour,
+                startMinute: seg.startMinute,
+                endHour: seg.endHour,
+                endMinute: seg.endMinute,
+                days: androidDayNamesFromMon0(seg.days),
+                blockedApps,
+                blockedWebsites,
+                frictionWordCount,
+                frictionCustomText,
+                emoji: blocklist?.emoji || null,
+                color: blocklist?.color || null,
+                isPaused,
+                pauseEndTimestampMs: (isPaused && schedule.pauseEndTime) ? schedule.pauseEndTime : null,
+            });
+        }
+    }
+
+    // Instant ("start block now") blocks map to MANUAL Kotlin
+    // schedules — set_schedules only creates/updates the Schedule
+    // entity; proceedWithBlock() separately calls
+    // androidStartManualBlock to actually start the session (and
+    // arm the auto-stop timer for non-always-on blocks).
+    for (const block of state.appData.activeBlocks || []) {
+        if (block.endTime <= now) continue;
+        const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
+        if (!blocklist) continue;
+        if (isAllowlistBlocklist(blocklist)) {
+            skippedAllowlistNames.push(blocklist.name || block.blocklistId);
+            continue;
+        }
+        const difficulty = blocklist.overrideDifficulty;
+        const { frictionWordCount, frictionCustomText } = androidFrictionChallengeFields(difficulty);
+        const isPaused = !!(block.isPaused && (!block.pauseEndTime || block.pauseEndTime > now));
+        flatEntries.push({
+            id: block.id,
+            name: blocklist.name || 'Block',
+            enabled: true,
+            type: 'MANUAL',
+            days: [],
+            blockedApps: blocklist.apps || [],
+            blockedWebsites: blocklist.websites || [],
+            frictionWordCount,
+            frictionCustomText,
+            emoji: blocklist.emoji || null,
+            color: blocklist.color || null,
+            isPaused,
+            pauseEndTimestampMs: (isPaused && block.pauseEndTime) ? block.pauseEndTime : null,
+        });
+    }
+
+    if (skippedAllowlistNames.length > 0) {
+        console.warn(
+            '[android] Allow-mode focus spaces are not enforced on Android and were omitted from the payload:',
+            skippedAllowlistNames.join(', '),
+        );
+    }
+    return flatEntries;
+}
+
+/**
+ * Flatten schedules into the iOS Screen Time plugin payload.
+ *
+ * Extracted from syncSchedulesToHelper so the per-entry `mode` below can be
+ * tested; the sync itself is async and talks to Tauri.
+ *
+ * Each entry carries `mode` so Swift knows whether its domains/tokens are
+ * ALLOWED or BLOCKED items — IOSPolicyResolver unions the allow-mode entries
+ * and subtracts the blocked ones. Without it every entry defaulted to blocked
+ * semantics, so an allow-mode focus space on a *schedule* blocked exactly the
+ * sites and apps it was meant to permit. (The manual/one-off path already sent
+ * mode via collectActiveIOSManualBlockPayload, so only schedules were affected.)
+ *
+ * Category tokens are deliberately still sent on allow-mode entries: Swift
+ * ignores them there (it collects categories only from non-allowlist entries),
+ * and keeping the data means nothing is lost if the space switches back.
+ */
+export function buildIOSScheduleEntries() {
+    const flatEntries = [];
+    for (const schedule of state.appData.schedules || []) {
+        if (!schedule.segments || schedule.segments.length === 0) continue;
+        const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        const domains = blocklist?.websites || [];
+        const iosPayload = getBlocklistIOSPayload(blocklist);
+        const blocklistEmoji = blocklist?.emoji ?? null;
+        const blocklistName = blocklist?.name ?? null;
+        const bc = blocklist?.color;
+        const blocklistColorHex = typeof bc === 'string' && bc.length > 0 ? bc : null;
+        // Tells Swift whether these domains/tokens are ALLOWED or BLOCKED items.
+        // Same convention as the manual payload: 'allowlist' or null.
+        const mode = isAllowlistBlocklist(blocklist) ? 'allowlist' : null;
+        if (isNonRepeatingSchedule(schedule)) {
+            const occurrences = resolveOneShotOccurrences(schedule);
+            occurrences.forEach((occurrence, occurrenceIdx) => {
+                flatEntries.push({
+                    id: `${schedule.id}-${occurrence.segmentIndex}-${occurrenceIdx}`,
+                    ...buildResolvedOneShotSegment(occurrence),
+                    domains,
+                    appTokenData: iosPayload.appTokenData,
+                    categoryTokenData: iosPayload.categoryTokenData,
+                    repeats: false,
+                    isPaused: !!schedule.isPaused,
+                    pauseEndTimestampMs: schedule.pauseEndTime || null,
+                    blocklistEmoji,
+                    blocklistName,
+                    blocklistColorHex,
+                    mode
+                });
+            });
+            continue;
+        }
+        for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
+            const seg = schedule.segments[segIdx];
+            const window = getIOSScheduleEntryWindow(schedule, seg);
+            flatEntries.push({
+                id: `${schedule.id}-${segIdx}`,
+                startHour: seg.startHour,
+                startMinute: seg.startMinute,
+                endHour: seg.endHour,
+                endMinute: seg.endMinute,
+                days: seg.days ? [...seg.days] : [],
+                domains,
+                appTokenData: iosPayload.appTokenData,
+                categoryTokenData: iosPayload.categoryTokenData,
+                repeats: window.repeats,
+                activeFromTimestampMs: window.activeFromTimestampMs,
+                activeUntilTimestampMs: window.activeUntilTimestampMs,
+                isPaused: !!schedule.isPaused,
+                pauseEndTimestampMs: schedule.pauseEndTime || null,
+                blocklistEmoji,
+                blocklistName,
+                blocklistColorHex,
+                mode
+            });
+        }
+    }
+
+    return flatEntries;
+}
+
 export async function syncSchedulesToHelper() {
     if (state.isIOS) {
         try {
-            const flatEntries = [];
-            for (const schedule of state.appData.schedules || []) {
-                if (!schedule.segments || schedule.segments.length === 0) continue;
-                const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-                const domains = blocklist?.websites || [];
-                const iosPayload = getBlocklistIOSPayload(blocklist);
-                const blocklistEmoji = blocklist?.emoji ?? null;
-                const blocklistName = blocklist?.name ?? null;
-                const bc = blocklist?.color;
-                const blocklistColorHex = typeof bc === 'string' && bc.length > 0 ? bc : null;
-                if (isNonRepeatingSchedule(schedule)) {
-                    const occurrences = resolveOneShotOccurrences(schedule);
-                    occurrences.forEach((occurrence, occurrenceIdx) => {
-                        flatEntries.push({
-                            id: `${schedule.id}-${occurrence.segmentIndex}-${occurrenceIdx}`,
-                            ...buildResolvedOneShotSegment(occurrence),
-                            domains,
-                            appTokenData: iosPayload.appTokenData,
-                            categoryTokenData: iosPayload.categoryTokenData,
-                            repeats: false,
-                            isPaused: !!schedule.isPaused,
-                            pauseEndTimestampMs: schedule.pauseEndTime || null,
-                            blocklistEmoji,
-                            blocklistName,
-                            blocklistColorHex
-                        });
-                    });
-                    continue;
-                }
-                for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
-                    const seg = schedule.segments[segIdx];
-                    const window = getIOSScheduleEntryWindow(schedule, seg);
-                    flatEntries.push({
-                        id: `${schedule.id}-${segIdx}`,
-                        startHour: seg.startHour,
-                        startMinute: seg.startMinute,
-                        endHour: seg.endHour,
-                        endMinute: seg.endMinute,
-                        days: seg.days ? [...seg.days] : [],
-                        domains,
-                        appTokenData: iosPayload.appTokenData,
-                        categoryTokenData: iosPayload.categoryTokenData,
-                        repeats: window.repeats,
-                        activeFromTimestampMs: window.activeFromTimestampMs,
-                        activeUntilTimestampMs: window.activeUntilTimestampMs,
-                        isPaused: !!schedule.isPaused,
-                        pauseEndTimestampMs: schedule.pauseEndTime || null,
-                        blocklistEmoji,
-                        blocklistName,
-                        blocklistColorHex
-                    });
-                }
-            }
+            const flatEntries = buildIOSScheduleEntries();
             console.log('[syncSchedulesToHelper] iOS: Sending', flatEntries.length, 'segment entries to plugin');
             const result = await tauriAPI.setSchedulesPlugin(flatEntries);
             if (!result.success) {
@@ -288,110 +469,7 @@ export async function syncSchedulesToHelper() {
     }
     if (state.isAndroid) {
         try {
-            const flatEntries = [];
-            const now = Date.now();
-            for (const schedule of state.appData.schedules || []) {
-                if (!schedule.segments || schedule.segments.length === 0) continue;
-                const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-                const blockedApps = blocklist?.apps || [];
-                const blockedWebsites = blocklist?.websites || [];
-                const difficulty = blocklist?.overrideDifficulty;
-                const { frictionWordCount, frictionCustomText } = androidFrictionChallengeFields(difficulty);
-                // Paused entries stay in the payload: Kotlin stores them
-                // disabled and arms a WorkManager re-enable at the expiry,
-                // so blocking resumes on time even if this app process is
-                // dead by then (mirrors iOS's one-off DeviceActivity).
-                // No pauseEndTime (legacy-disabled schedules imported by
-                // migrateAndroidNativeSchedules) = paused indefinitely.
-                const isPaused = !!(schedule.isPaused && (!schedule.pauseEndTime || schedule.pauseEndTime > now));
-
-                // One-shot (non-repeating) schedules become entries with an
-                // absolute [activeFrom, activeUntil) window, same as iOS.
-                // Kotlin checks the window instead of time-of-day + days;
-                // runExpiryOnce removes them from state.appData once past, and the
-                // next sync deletes the Kotlin entity.
-                if (isNonRepeatingSchedule(schedule)) {
-                    const occurrences = resolveOneShotOccurrences(schedule);
-                    occurrences.forEach((occurrence, occurrenceIdx) => {
-                        if (occurrence.end.getTime() <= now) return;
-                        flatEntries.push({
-                            id: `${schedule.id}-${occurrence.segmentIndex}-${occurrenceIdx}`,
-                            name: blocklist?.name || 'Schedule',
-                            enabled: true,
-                            type: 'DAILY',
-                            startHour: occurrence.start.getHours(),
-                            startMinute: occurrence.start.getMinutes(),
-                            endHour: occurrence.end.getHours(),
-                            endMinute: occurrence.end.getMinutes(),
-                            days: [],
-                            blockedApps,
-                            blockedWebsites,
-                            frictionWordCount,
-                            frictionCustomText,
-                            emoji: blocklist?.emoji || null,
-                            color: blocklist?.color || null,
-                            isPaused,
-                            pauseEndTimestampMs: (isPaused && schedule.pauseEndTime) ? schedule.pauseEndTime : null,
-                            activeFromTimestampMs: occurrence.start.getTime(),
-                            activeUntilTimestampMs: occurrence.end.getTime(),
-                        });
-                    });
-                    continue;
-                }
-
-                for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
-                    const seg = schedule.segments[segIdx];
-                    flatEntries.push({
-                        id: `${schedule.id}-${segIdx}`,
-                        name: blocklist?.name || 'Schedule',
-                        enabled: true,
-                        type: (seg.days && seg.days.length > 0) ? 'WEEKLY' : 'DAILY',
-                        startHour: seg.startHour,
-                        startMinute: seg.startMinute,
-                        endHour: seg.endHour,
-                        endMinute: seg.endMinute,
-                        days: androidDayNamesFromMon0(seg.days),
-                        blockedApps,
-                        blockedWebsites,
-                        frictionWordCount,
-                        frictionCustomText,
-                        emoji: blocklist?.emoji || null,
-                        color: blocklist?.color || null,
-                        isPaused,
-                        pauseEndTimestampMs: (isPaused && schedule.pauseEndTime) ? schedule.pauseEndTime : null,
-                    });
-                }
-            }
-
-            // Instant ("start block now") blocks map to MANUAL Kotlin
-            // schedules — set_schedules only creates/updates the Schedule
-            // entity; proceedWithBlock() separately calls
-            // androidStartManualBlock to actually start the session (and
-            // arm the auto-stop timer for non-always-on blocks).
-            for (const block of state.appData.activeBlocks || []) {
-                if (block.endTime <= now) continue;
-                const blocklist = state.appData.blocklists.find(bl => bl.id === block.blocklistId);
-                if (!blocklist) continue;
-                const difficulty = blocklist.overrideDifficulty;
-                const { frictionWordCount, frictionCustomText } = androidFrictionChallengeFields(difficulty);
-                const isPaused = !!(block.isPaused && (!block.pauseEndTime || block.pauseEndTime > now));
-                flatEntries.push({
-                    id: block.id,
-                    name: blocklist.name || 'Block',
-                    enabled: true,
-                    type: 'MANUAL',
-                    days: [],
-                    blockedApps: blocklist.apps || [],
-                    blockedWebsites: blocklist.websites || [],
-                    frictionWordCount,
-                    frictionCustomText,
-                    emoji: blocklist.emoji || null,
-                    color: blocklist.color || null,
-                    isPaused,
-                    pauseEndTimestampMs: (isPaused && block.pauseEndTime) ? block.pauseEndTime : null,
-                });
-            }
-
+            const flatEntries = buildAndroidScheduleEntries();
             console.log('[syncSchedulesToHelper] Android: Sending', flatEntries.length, 'segment entries to plugin');
             // Mirrored into Kotlin prefs on every sync so the native friction
             // gate prefills the user's configured pause length.

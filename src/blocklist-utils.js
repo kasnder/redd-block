@@ -52,6 +52,11 @@ export function isBlockAlwaysOn(block) {
     return block.isAlwaysOn === true || block.endTime >= ALWAYS_ON_END_TIME;
 }
 
+/** Canonical mode test. Anything that is not explicitly 'allowlist' is a blocklist. */
+export function isAllowlistBlocklist(blocklist) {
+    return blocklist?.mode === 'allowlist';
+}
+
 export function isScreenTimeSummaryEntry(appName) {
     return typeof appName === 'string' && appName.includes('selected (Screen Time)');
 }
@@ -286,7 +291,7 @@ export function collectActiveIOSManualBlockPayload(now = Date.now()) {
         }
 
         if (
-            blocklist?.mode === 'allowlist'
+            isAllowlistBlocklist(blocklist)
             && (
                 allowlistDisplayWinner == null
                 || block.startTime < allowlistDisplayWinner.block.startTime
@@ -297,7 +302,7 @@ export function collectActiveIOSManualBlockPayload(now = Date.now()) {
             allowlistDisplayWinner = { block, blocklist };
         }
 
-        if (blocklist?.mode === 'allowlist') {
+        if (isAllowlistBlocklist(blocklist)) {
             // Allow-mode focus space: websites and app tokens are ALLOWED items.
             // Category tokens cannot be allowlist exceptions on iOS and are ignored.
             for (const domain of blocklist.websites || []) {
@@ -337,7 +342,7 @@ export function collectActiveIOSManualBlockPayload(now = Date.now()) {
         out.blocklistColorHex = typeof c === 'string' && c.length > 0 ? c : null;
         out.blockStartMs = block.startTime;
         out.blockEndMs = block.endTime;
-        out.mode = blocklist?.mode === 'allowlist' ? 'allowlist' : null;
+        out.mode = isAllowlistBlocklist(blocklist) ? 'allowlist' : null;
     }
     if (allowlistDisplayWinner) {
         // Shield attribution for "blocked because not allowed" targets: the

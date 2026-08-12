@@ -10,7 +10,7 @@ import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlo
 import { isOneOffBlockEnforced, isSchedulePausedNow } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { handleNowBlockingPause, handleNowBlockingStop, render, renderNowBlockingRow, renderScheduleVisibilityChips } from './render.js';
-import { isScheduleSegmentActiveNow } from './schedule-editor.js';
+import { canEditScheduleBetweenBlocks, isScheduleSegmentActiveNow } from './schedule-editor.js';
 import {
     BLOCKLIST_CARD_COMPACT_SCHEDULE_UPCOMING_CHARS,
     BLOCKLIST_NAME_MAX_LENGTH,
@@ -175,7 +175,15 @@ const BLOCKLIST_STATUS_ICON_HOURGLASS = blocklistStatusIcon(
 const BLOCKLIST_STATUS_ICON_CALENDAR = blocklistStatusIcon(
     '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>',
 );
-const BLOCKLIST_STATUS_ICON_SNOOZE = blocklistStatusIcon(APP_BLOCKING_SNOOZE_ICON_IMG_12);
+// Deliberately a function, unlike its four literal siblings above: the snooze
+// icon is the only one whose markup comes from another module, and reading that
+// binding at module-evaluation time makes this file's correctness depend on
+// blocking-platform.js being evaluated first. It isn't, once anything adds an
+// import edge that reorders the graph — the module top level holds declarations
+// only, and this was the one call that broke the rule (see AGENTS.md).
+function blocklistStatusIconSnooze() {
+    return blocklistStatusIcon(APP_BLOCKING_SNOOZE_ICON_IMG_12);
+}
 
 function buildBlocklistStatusSegment(text, { showDot = false, iconHtml = '', textClass = 'blocklist-status-text' } = {}) {
     const trimmed = String(text ?? '').trim();
@@ -293,16 +301,33 @@ export function saveQuickStartAsFocusSpace(id) {
     render();
 }
 
-/** True if the blocklist has an active one-off block or a schedule currently in an active segment (and not paused). */
-export function isBlocklistCurrentlyActive(blocklistId) {
-    const now = Date.now();
+/**
+ * Must an edit that *loosens* this focus space be confirmed with the exit
+ * challenge? Also gates deleting it outright.
+ *
+ * Paused one-off blocks remain gated. Paused schedules with
+ * allowEditsBetweenBlocks are intentionally editable, because that preserves
+ * the schedule and its automatic resume instead of making the user stop it and
+ * remember to recreate it. Strict schedules remain gated while paused. T159-T166
+ * pin down these deliberately different pause semantics.
+ *
+ * The one exemption is by design: a schedule with allowEditsBetweenBlocks is
+ * editable while it is between segments (canEditScheduleBetweenBlocks).
+ *
+ * Recompute at the moment of use — a block can end, or a segment begin, while
+ * the edit modal sits open.
+ */
+export function isBlocklistEditFrictionRequired(blocklistId, now = Date.now()) {
+    if (!blocklistId) return false;
     const hasActiveBlock = state.appData.activeBlocks.some(
-        b => b.blocklistId === blocklistId && isOneOffBlockEnforced(b, now)
+        b => b.blocklistId === blocklistId && b.startTime <= now && b.endTime > now
     );
     if (hasActiveBlock) return true;
-    const schedule = state.appData.schedules?.find(s => s.blocklistId === blocklistId);
-    if (!schedule?.segments?.length) return false;
-    return isScheduleSegmentActiveNow(schedule, new Date(now));
+    const schedule = state.appData.schedules?.find(
+        s => s.blocklistId === blocklistId && s.segments && s.segments.length > 0
+    );
+    if (!schedule) return false;
+    return !canEditScheduleBetweenBlocks(schedule, new Date(now));
 }
 
 export function clearPendingScheduleDraft(blocklistId) {
@@ -732,6 +757,10 @@ export async function deleteBlocklist(id) {
     const hasActiveBlock = state.appData.activeBlocks.some(
         block => block.blocklistId === id && block.startTime <= now && block.endTime > now
     );
+    // Deliberately NOT isBlocklistEditFrictionRequired: deleting is refused for
+    // any schedule with segments, with no allowEditsBetweenBlocks exemption.
+    // Routing it through the edit gate would make a between-segments flexible
+    // schedule deletable, which is a loosening no one asked for.
     const hasActiveSchedule = state.appData.schedules?.some(
         s => s.blocklistId === id && s.segments && s.segments.length > 0
     );
@@ -1023,7 +1052,7 @@ export function renderBlocklists() {
             const schedulePaused = !!(schedule && isSchedulePausedNow(schedule, now));
             if (isSnoozedCard) {
                 scheduleBadge = buildBlocklistStatusSegment(scheduleTimeText, {
-                    iconHtml: BLOCKLIST_STATUS_ICON_SNOOZE,
+                    iconHtml: blocklistStatusIconSnooze(),
                     textClass: 'blocklist-status-text schedule-badge schedule-badge-snoozed',
                 });
             } else if (schedulePaused) {

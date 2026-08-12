@@ -1587,6 +1587,306 @@
     }
 
     // ========================================
+    // CATEGORY 18: ANDROID PAYLOAD (T143-T152)
+    // ========================================
+
+    // Android's Kotlin side has no notion of allow mode at any layer, so
+    // blockedApps is always treated as a denylist. Sending an allow-mode focus
+    // space would block precisely the apps it is meant to permit, so the payload
+    // builder omits those spaces entirely.
+    function runAndroidPayloadTests() {
+        console.log('\n🤖 Category 18: Android Payload');
+        console.log('-------------------------------');
+
+        const {
+            buildAndroidScheduleEntries: build,
+            isAndroidAllowlistUnsupported: unsupported,
+        } = window.__REDDBLOCK_INTERNALS__;
+        const saved = window.__REDDBLOCK_INTERNALS__.appData;
+
+        const seg = { startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, days: [] };
+        const withData = (blocklists, { schedules = [], activeBlocks = [] } = {}) => {
+            window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists, schedules, activeBlocks });
+        };
+
+        try {
+            (function T142() {
+                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
+                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
+                assert(unsupported(allowMode, true), 'T142: Android rejects allow-mode starts');
+                assert(!unsupported(blockMode, true), 'T142: Android still permits block-mode starts');
+                assert(!unsupported(allowMode, false), 'T142: allow mode remains supported on non-Android platforms');
+            })();
+
+            (function T143() {
+                const bl = createMockBlocklist({ mode: 'blocklist', apps: ['com.x'], websites: ['x.com'] });
+                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
+                const entries = build();
+                assertEqual(entries.length, 1, 'T143: a block-mode schedule produces an entry');
+                assertEqual(entries[0].blockedApps, ['com.x'], 'T143: and carries its apps');
+            })();
+
+            (function T144() {
+                const bl = createMockBlocklist({ mode: 'allowlist', apps: ['com.x'], websites: ['x.com'] });
+                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
+                assertEqual(build().length, 0, 'T144: an allow-mode schedule is omitted entirely');
+            })();
+
+            (function T145() {
+                // The dangerous case: without the skip, com.keepme would be sent as
+                // blockedApps and Kotlin would block the one app meant to stay open.
+                const bl = createMockBlocklist({ mode: 'allowlist', apps: ['com.keepme'], websites: [] });
+                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
+                const allApps = build().flatMap(e => e.blockedApps || []);
+                assert(!allApps.includes('com.keepme'), 'T145: an allowed app never reaches the payload as a blocked app');
+            })();
+
+            (function T146() {
+                const bl = createMockBlocklist({ mode: 'allowlist', apps: ['com.x'] });
+                withData([bl], { activeBlocks: [createMockBlock(bl.id, Date.now() - 1000, Date.now() + 60000)] });
+                assertEqual(build().length, 0, 'T146: an allow-mode one-off block is omitted too');
+            })();
+
+            (function T147() {
+                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
+                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
+                withData([blockMode, allowMode], {
+                    schedules: [createMockSchedule(blockMode.id, [seg]), createMockSchedule(allowMode.id, [seg])],
+                });
+                const entries = build();
+                assertEqual(entries.length, 1, 'T147: only the block-mode space survives a mixed set');
+                assertEqual(entries[0].blockedApps, ['com.blocked'], 'T147: and it is the right one');
+            })();
+
+            (function T148() {
+                // Absent mode must behave as a blocklist — most saved data predates
+                // the field entirely.
+                const bl = createMockBlocklist({ apps: ['com.x'] });
+                delete bl.mode;
+                withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
+                assertEqual(build().length, 1, 'T148: a blocklist with no mode field is still enforced');
+            })();
+
+            (function T149() {
+                const bl = createMockBlocklist({ mode: 'blocklist', apps: ['com.x'] });
+                withData([bl], {
+                    schedules: [createMockSchedule(bl.id, [seg, { ...seg, startHour: 19, endHour: 20 }])],
+                });
+                assertEqual(build().length, 2, 'T149: each segment still becomes its own entry');
+            })();
+
+            (function T150() {
+                // An allow-mode space must not suppress an unrelated block-mode one
+                // that happens to share a segment shape.
+                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
+                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
+                withData([allowMode, blockMode], {
+                    schedules: [createMockSchedule(allowMode.id, [seg])],
+                    activeBlocks: [createMockBlock(blockMode.id, Date.now() - 1000, Date.now() + 60000)],
+                });
+                const entries = build();
+                assertEqual(entries.length, 1, 'T150: the block-mode one-off still syncs alongside a skipped allow space');
+                assertEqual(entries[0].type, 'MANUAL', 'T150: and keeps its MANUAL type');
+            })();
+        } finally {
+            window.__REDDBLOCK_INTERNALS__.appData = saved;
+        }
+    }
+
+    // ========================================
+    // CATEGORY 19: iOS SCHEDULE PAYLOAD (T151-T158)
+    // ========================================
+
+    // ScheduleEntryRequest has carried a per-entry `mode` since allow mode
+    // shipped, and IOSPolicyResolver reads it — but the JS producer never set
+    // it, so an allow-mode focus space on a *schedule* was sent as blocked
+    // items and blocked exactly what it was meant to permit. The manual/one-off
+    // path was unaffected (collectActiveIOSManualBlockPayload already sent it).
+    function runIOSSchedulePayloadTests() {
+        console.log('\n🍎 Category 19: iOS Schedule Payload');
+        console.log('-----------------------------------');
+
+        const { buildIOSScheduleEntries: build } = window.__REDDBLOCK_INTERNALS__;
+        const saved = window.__REDDBLOCK_INTERNALS__.appData;
+
+        const seg = { startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, days: [] };
+        const withData = (blocklists, schedules) => {
+            window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists, schedules, activeBlocks: [] });
+        };
+
+        try {
+            (function T151() {
+                const bl = createMockBlocklist({ mode: 'blocklist', websites: ['x.com'] });
+                withData([bl], [createMockSchedule(bl.id, [seg])]);
+                const entries = build();
+                assertEqual(entries.length, 1, 'T151: a block-mode schedule produces an entry');
+                assertEqual(entries[0].mode, null, 'T151: block mode sends mode: null (legacy semantics)');
+            })();
+
+            (function T152() {
+                const bl = createMockBlocklist({ mode: 'allowlist', websites: ['x.com'] });
+                withData([bl], [createMockSchedule(bl.id, [seg])]);
+                const entries = build();
+                assertEqual(entries.length, 1, 'T152: an allow-mode schedule still produces an entry (iOS can enforce it)');
+                assertEqual(entries[0].mode, 'allowlist', 'T152: and is tagged as an allow list');
+            })();
+
+            (function T153() {
+                // The bug: x.com was the one site meant to stay reachable, and it
+                // arrived as a blocked domain with no mode to say otherwise.
+                const bl = createMockBlocklist({ mode: 'allowlist', websites: ['x.com'] });
+                withData([bl], [createMockSchedule(bl.id, [seg])]);
+                const entry = build()[0];
+                assertEqual(entry.domains, ['x.com'], 'T153: the allowed domain is still carried');
+                assert(entry.mode === 'allowlist', 'T153: and mode marks it as allowed, not blocked');
+            })();
+
+            (function T154() {
+                const bl = createMockBlocklist({ mode: 'allowlist', websites: ['x.com'] });
+                withData([bl], [createMockSchedule(bl.id, [seg, { ...seg, startHour: 19, endHour: 20 }])]);
+                const entries = build();
+                assertEqual(entries.length, 2, 'T154: every segment of an allow-mode schedule becomes an entry');
+                assert(entries.every(e => e.mode === 'allowlist'), 'T154: and each one carries the mode');
+            })();
+
+            (function T155() {
+                // One-shot schedules take a different push site; it needs mode too.
+                // Occurrences resolve off segment.days relative to createdAt, so a
+                // one-shot with no days resolves to nothing at all.
+                const bl = createMockBlocklist({ mode: 'allowlist', websites: ['x.com'] });
+                const everyDay = { ...seg, days: [0, 1, 2, 3, 4, 5, 6] };
+                const sched = createMockSchedule(bl.id, [everyDay], { repeatType: 'no' });
+                withData([bl], [sched]);
+                const entries = build();
+                assert(entries.length >= 1, 'T155: a one-shot allow-mode schedule produces at least one entry');
+                assert(entries.every(e => e.mode === 'allowlist'), 'T155: the one-shot push site sets mode too');
+            })();
+
+            (function T156() {
+                const bl = createMockBlocklist({ websites: ['x.com'] });
+                delete bl.mode;
+                withData([bl], [createMockSchedule(bl.id, [seg])]);
+                assertEqual(build()[0].mode, null, 'T156: a blocklist with no mode field stays blocked semantics');
+            })();
+
+            (function T157() {
+                const allowMode = createMockBlocklist({ mode: 'allowlist', websites: ['allowed.com'] });
+                const blockMode = createMockBlocklist({ mode: 'blocklist', websites: ['blocked.com'] });
+                withData([allowMode, blockMode], [
+                    createMockSchedule(allowMode.id, [seg]),
+                    createMockSchedule(blockMode.id, [seg]),
+                ]);
+                const entries = build();
+                assertEqual(entries.length, 2, 'T157: mixed modes both sync (unlike Android, which skips allow mode)');
+                const byMode = Object.fromEntries(entries.map(e => [e.mode ?? 'null', e.domains[0]]));
+                assertEqual(byMode.allowlist, 'allowed.com', 'T157: the allow entry carries the allowed domain');
+                assertEqual(byMode.null, 'blocked.com', 'T157: the block entry carries the blocked domain');
+            })();
+
+            (function T158() {
+                // Category tokens are still sent on allow entries; Swift ignores
+                // them there, and dropping them would lose data on a mode switch.
+                const bl = createMockBlocklist({
+                    mode: 'allowlist',
+                    websites: [],
+                    iosScreenTimeSelection: {
+                        applicationTokens: ['tokA'], categoryTokens: ['catA'],
+                        applicationCount: 1, categoryCount: 1, summaryLabel: '1 app selected (Screen Time)',
+                    },
+                });
+                withData([bl], [createMockSchedule(bl.id, [seg])]);
+                const entry = build()[0];
+                assertEqual(entry.appTokenData, ['tokA'], 'T158: app tokens are carried on an allow entry');
+                assertEqual(entry.categoryTokenData, ['catA'], 'T158: category tokens are preserved, not zeroed');
+            })();
+        } finally {
+            window.__REDDBLOCK_INTERNALS__.appData = saved;
+        }
+    }
+
+    // ========================================
+    // CATEGORY 20: EDIT FRICTION GATE (T159-T166)
+    // ========================================
+
+    // Which focus spaces must confirm a loosening edit with the exit challenge.
+    //
+    // Pause semantics are deliberately different by type: paused one-off blocks
+    // remain gated, while a paused flexible schedule can be edited so the user
+    // does not have to stop it and remember to recreate it. Strict schedules
+    // remain gated while paused.
+    function runEditFrictionGateTests() {
+        console.log('\n🔒 Category 20: Edit Friction Gate');
+        console.log('----------------------------------');
+
+        const { isBlocklistEditFrictionRequired: required } = window.__REDDBLOCK_INTERNALS__;
+        const saved = window.__REDDBLOCK_INTERNALS__.appData;
+
+        const now = Date.now();
+        const HOUR = 60 * 60 * 1000;
+        // Covers the whole day in both directions so the segment is active
+        // whenever the suite happens to run.
+        const allDaySeg = { startHour: 0, startMinute: 0, endHour: 23, endMinute: 59, days: [0, 1, 2, 3, 4, 5, 6] };
+        const withData = (blocklists, { schedules = [], activeBlocks = [] } = {}) => {
+            window.__REDDBLOCK_INTERNALS__.appData = createMockAppData({ blocklists, schedules, activeBlocks });
+        };
+
+        try {
+            (function T159() {
+                const bl = createMockBlocklist({});
+                withData([bl], { activeBlocks: [createMockBlock(bl.id, now - HOUR, now + HOUR)] });
+                assert(required(bl.id, now) === true, 'T159: a running one-off block gates its edits');
+            })();
+
+            (function T160() {
+                const bl = createMockBlocklist({});
+                withData([bl], { activeBlocks: [createMockBlock(bl.id, now - HOUR, now + HOUR, { isPaused: true, pauseEndTime: now + HOUR })] });
+                assert(required(bl.id, now) === true, 'T160: a PAUSED one-off block still gates — pause is not an escape hatch');
+            })();
+
+            (function T161() {
+                const bl = createMockBlocklist({});
+                withData([bl], { activeBlocks: [createMockBlock(bl.id, now - HOUR, now + HOUR, { isPaused: true })] });
+                assert(required(bl.id, now) === true, 'T161: an indefinitely paused block gates too (no pauseEndTime)');
+            })();
+
+            (function T162() {
+                const bl = createMockBlocklist({});
+                withData([bl], { activeBlocks: [createMockBlock(bl.id, now - 2 * HOUR, now - HOUR)] });
+                assert(required(bl.id, now) === false, 'T162: an expired block does not gate');
+            })();
+
+            (function T163() {
+                const bl = createMockBlocklist({});
+                withData([bl], { schedules: [createMockSchedule(bl.id, [allDaySeg])] });
+                assert(required(bl.id, now) === true, 'T163: a scheduled space gates its edits');
+            })();
+
+            (function T164() {
+                const bl = createMockBlocklist({});
+                withData([bl], { schedules: [createMockSchedule(bl.id, [allDaySeg], { isPaused: true, pauseEndTime: now + HOUR })] });
+                assert(required(bl.id, now) === true, 'T164: a PAUSED schedule still gates');
+            })();
+
+            (function T165() {
+                const bl = createMockBlocklist({});
+                withData([bl], { schedules: [createMockSchedule(bl.id, [allDaySeg], { allowEditsBetweenBlocks: true, isPaused: true, pauseEndTime: now + HOUR })] });
+                assert(
+                    required(bl.id, now) === false,
+                    'T165: allowEditsBetweenBlocks is exempt by design, paused or not',
+                );
+            })();
+
+            (function T166() {
+                const bl = createMockBlocklist({});
+                withData([bl]);
+                assert(required(bl.id, now) === false, 'T166: an idle space with no block and no schedule does not gate');
+                assert(required(null, now) === false, 'T166: a missing id does not gate');
+            })();
+        } finally {
+            window.__REDDBLOCK_INTERNALS__.appData = saved;
+        }
+    }
+
     // CATEGORY 15: DEFAULT PAUSE LENGTH (T63-T65)
     // ========================================
 
@@ -1673,6 +1973,9 @@
             runSelfBlockPreventionTests();
             runProtectedDomainTests();
             runIOSAllowlistPolicyTests();
+            runAndroidPayloadTests();
+            runIOSSchedulePayloadTests();
+            runEditFrictionGateTests();
             runDefaultPauseLengthTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
@@ -1696,7 +1999,11 @@
         runBlocklistDuplicationTests,
         runSelfBlockPreventionTests,
         runProtectedDomainTests,
-        runIOSAllowlistPolicyTests
+        runIOSAllowlistPolicyTests,
+        runAndroidPayloadTests,
+        runIOSSchedulePayloadTests,
+        runEditFrictionGateTests,
+        runDefaultPauseLengthTests
     };
 
     console.log('🧪 ReddBlock Blocking Tests loaded. Press Cmd+Shift+T to run tests.');

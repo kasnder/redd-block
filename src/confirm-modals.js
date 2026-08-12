@@ -4,12 +4,12 @@ import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
-import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isBlockAlwaysOn } from './blocklist-utils.js';
+import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn } from './blocklist-utils.js';
 import { formatOverrideMaxDifficultyHint, generateOverrideChallengeText, getMaxOverrideCharsForType, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, sanitizeChallengeTargetText, usesMobileWordCountForOverrideType } from './override-challenge.js';
-import { isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
+import { isAndroidAllowlistUnsupported, isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { getCalendarSegmentLayout, layoutOverlappingBlocks, render, renderScheduleAlwaysOnRow, renderWeekBlocks, updateWeekCalendar } from './render.js';
-import { clearPendingScheduleDraft, renderBlocklists, truncateBlocklistName } from './blocklists.js';
+import { clearPendingScheduleDraft, isBlocklistEditFrictionRequired, renderBlocklists, truncateBlocklistName } from './blocklists.js';
 import { getCommittedScheduleSegmentCount, getInitialExpandedScheduleSegmentIndex, isScheduleSegmentActiveNow, rebuildScheduleSegments, setAlwaysOnMode, setScheduleMode, updateScheduleButtonState, canEditScheduleBetweenBlocks } from './schedule-editor.js';
 import { getEffectiveScheduleStartOverlayId, rememberLastScheduleStartOverlayId, syncScheduleConfirmOverlaySummary } from './schedule-overlay.js';
 import { closeAllPopovers, disableScheduleControls, disableTimeControls, getEndTimeAsDate, getStartTimeAsDate, initializeTimeInputs, pad, updateDurationQuickBtns, updateTimeDisplay } from './time-inputs.js';
@@ -641,12 +641,17 @@ export async function proceedWithScheduleEdit() {
 
 // Actually create the schedule (called after confirmation)
 export async function proceedWithSchedule() {
+    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
+    if (!blocklist) return;
+    if (isAndroidAllowlistUnsupported(blocklist)) {
+        alert(tSettings('androidAllowlistUnsupported'));
+        return;
+    }
+
     const startOverlayId = getEffectiveScheduleStartOverlayId();
     rememberLastScheduleStartOverlayId(startOverlayId);
     closeScheduleConfirmModal();
 
-    const blocklist = state.appData.blocklists.find(bl => bl.id === state.selectedBlocklistId);
-    if (!blocklist) return;
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this schedule')) return;
     if (!await ensureIOSAllowlistStartable(blocklist)) return;
 
@@ -2139,6 +2144,12 @@ async function runProceedWithBlock() {
         startBtn.innerHTML = getStartBlockButtonHTML();
         return;
     }
+    if (isAndroidAllowlistUnsupported(blocklist)) {
+        startBtn.disabled = false;
+        startBtn.innerHTML = getStartBlockButtonHTML();
+        alert(tSettings('androidAllowlistUnsupported'));
+        return;
+    }
     if (!ensureIOSBlocklistSelectionReady(blocklist, 'starting this block')) {
         startBtn.disabled = false;
         startBtn.innerHTML = getStartBlockButtonHTML();
@@ -2204,7 +2215,8 @@ async function runProceedWithBlock() {
                             blockId: block.id,
                             domains: Array.from(blocklist?.websites || []),
                             appTokenData: iosPayload.appTokenData,
-                            categoryTokenData: iosPayload.categoryTokenData
+                            categoryTokenData: iosPayload.categoryTokenData,
+                            mode: isAllowlistBlocklist(blocklist) ? 'allowlist' : null
                         });
                         const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-end-' + block.id, block.endTime);
                         if (res && res.success === false) {
@@ -2610,9 +2622,10 @@ export function openBlocklistModal(blocklist = null, options = {}) {
         ? state.appData.schedules.find(s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0)
         : null;
     const hasActiveSchedule = !!scheduleForBlocklist;
-    const betweenBlocksEditable = canEditScheduleBetweenBlocks(scheduleForBlocklist);
-    // Hard lock when a one-off is running, or a schedule is running without between-blocks editing.
-    const isActive = hasActiveBlock || (hasActiveSchedule && !betweenBlocksEditable);
+    // Hard lock when a one-off is running, or a schedule is running without
+    // between-blocks editing. One definition, in blocklists.js, so the rule
+    // cannot drift from whatever else comes to depend on it.
+    const isActive = isBlocklistEditFrictionRequired(blocklist?.id, now);
 
     const warningEl = document.getElementById('active-blocklist-warning');
     const modeInputs = document.getElementById('blocklist-modal').querySelectorAll('.radio-option');
@@ -2781,7 +2794,7 @@ export function formatBlocklistModalSummary(blocklist) {
     const displayApps = getBlocklistDisplayApps(blocklist);
     const appCount = displayApps.length;
     const mode = tSettings(
-        blocklist.mode === 'allowlist'
+        isAllowlistBlocklist(blocklist)
             ? 'blocklistModalSummaryAllows'
             : 'blocklistModalSummaryBlocks'
     );
@@ -3522,7 +3535,10 @@ export async function proceedWithPause() {
                         blockId: state.pauseBlockId,
                         domains: blocklist?.websites || [],
                         appTokenData: iosPayload.appTokenData,
-                        categoryTokenData: iosPayload.categoryTokenData
+                        categoryTokenData: iosPayload.categoryTokenData,
+                        // Without this the re-applied state treats an allow-mode
+                        // block's allowed items as blocked ones.
+                        mode: isAllowlistBlocklist(blocklist) ? 'allowlist' : null
                     });
                     const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + state.pauseBlockId, block.pauseEndTime);
                     if (res && res.success === false) {
