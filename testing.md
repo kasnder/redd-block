@@ -46,17 +46,21 @@ Every suite is gated on pull requests to `main`:
 | `ci.yml` | Tier 1 logic tests | `npm run test:tier1` — `runBlockingTests()` in headless Chromium | every PR, every push to `main` |
 | `release.yml` | Checks (lint + Tier 1) | `npm run lint`, `npm run test:tier1` — gates all four build jobs | every release run |
 | `release.yml` | macOS (.pkg) | `cargo test --lib` before signing | every release run |
-| `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes |
-| `android-ci.yml` | Android debug APK | debug APK build, then `:tauri-plugin-android-blocker:testDebugUnitTest` | `src/**`, `src-tauri/**`, plugin, build config |
+| `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes, on PRs and `main` |
+| `android-ci.yml` | Android debug APK | debug APK build, then `:tauri-plugin-android-blocker:testDebugUnitTest` | `src/**`, `src-tauri/**`, plugin, build config, on PRs and `main` |
 | `e2e-ci.yml` | Tier 2 (macOS + Windows) | `runIntegrationTests('full')` against a real built app over WebDriver | Tier 2 sources, `e2e/**`, `vite.config.js` |
 
 Notes on the non-obvious choices:
 
-- **`ci.yml` also runs on pushes to `main`.** PR checks run against the merge
-  preview, not the commit that ends up on `main`, and there is no merge queue —
-  two independently-green PRs can land a broken `main`. The push trigger is also
-  the only coverage for commits that never went through a PR (direct pushes,
-  admin merges, `release.yml`'s own `latest-versions.json` commit).
+- **`ci.yml`, `rust-ci.yml` and `android-ci.yml` also run on pushes to `main`.**
+  PR checks run against the merge preview, not the commit that ends up on
+  `main`, and there is no merge queue — two independently-green PRs can land a
+  broken `main`. The push trigger is also the only coverage for commits that
+  never went through a PR (direct pushes, admin merges, `release.yml`'s own
+  `latest-versions.json` commit). The path filters are duplicated between the
+  `pull_request:` and `push:` blocks because GitHub Actions does not support
+  YAML anchors; keep each pair in sync. `cancel-in-progress` is scoped to PR
+  runs so each `main` commit keeps its own verdict.
 - **A release runs its own checks.** `release.yml` is triggered by a `v*` tag
   push or a manual dispatch, neither of which is a PR, so nothing else verifies
   the tagged commit before it becomes a signed installer submitted to the App
