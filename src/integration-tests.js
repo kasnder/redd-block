@@ -1215,6 +1215,42 @@
         });
     }
 
+    async function testI6_letsGoAcknowledgesBeforeShellReconcile() {
+        const internals = getInternals();
+        const tauriAPI = getTauriAPI();
+        const warningRows = internals?.appBlockingWarningRows;
+        const letsGoButton = document.getElementById('app-blocking-lets-go-btn');
+        assertOrThrow(warningRows instanceof Map, 'I6: warning row state unavailable');
+        assertOrThrow(letsGoButton, 'I6: Let\'s go button missing');
+
+        const originalAcknowledge = tauriAPI.letsGoAcknowledge;
+        const originalReconcile = tauriAPI.reconcileBlockingWarningShell;
+        const calls = [];
+        try {
+            tauriAPI.letsGoAcknowledge = async () => {
+                calls.push('acknowledge');
+            };
+            tauriAPI.reconcileBlockingWarningShell = async () => {
+                calls.push('reconcile');
+            };
+            warningRows.clear();
+            warningRows.set(8675309, { name: 'Calculator' });
+
+            letsGoButton.click();
+            await shortWait(0);
+
+            assertOrThrow(
+                calls[0] === 'acknowledge',
+                `I6: warning shell reconciled before native acknowledgement (${calls.join(' -> ')})`,
+            );
+        } finally {
+            warningRows.clear();
+            tauriAPI.letsGoAcknowledge = originalAcknowledge;
+            tauriAPI.reconcileBlockingWarningShell = originalReconcile;
+        }
+        return { passed: true };
+    }
+
     function buildProfileTests(profile) {
         const coreTests = [
             { group: 'A', name: 'A1: Enforcement derivation path', fn: testA1_enforcementDerivationPath },
@@ -1230,7 +1266,8 @@
             { group: 'I', name: 'I2: Stop-all success restores Settings', fn: testI2_stopAllSuccessRestoresSettings },
             { group: 'I', name: 'I3: Stop and pause cancel workflows', fn: testI3_stopAndPauseCancelWorkflows },
             { group: 'I', name: 'I4: Android back closes topmost modal', fn: testI4_androidBackClosesTopmostModal },
-            { group: 'I', name: 'I5: Edit warning Pause unlocks modal', fn: testI5_editWarningPauseUnlocksModal }
+            { group: 'I', name: 'I5: Edit warning Pause unlocks modal', fn: testI5_editWarningPauseUnlocksModal },
+            { group: 'I', name: 'I6: Let\'s go acknowledges before shell reconcile', fn: testI6_letsGoAcknowledgesBeforeShellReconcile }
         ];
 
         if (profile === PROFILE_CORE) return coreTests;

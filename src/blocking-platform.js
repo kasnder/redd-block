@@ -446,7 +446,12 @@ export function setupAppBlockingWarningOverlay() {
         for (const row of appBlockingWarningRows.values()) {
             if (!row.ackedDeadlineMs) row.ackedDeadlineMs = ackedDeadlineMs;
         }
-        applyWarningOverlayPresence();
+        // `letsGoAcknowledge` owns the native AwaitingUserAck -> PreQuit
+        // transition and restores the saved window geometry. Do not ask the
+        // native shell to reconcile before that command: while the watcher
+        // still has pending acknowledgements, reconciliation deliberately
+        // leaves the expanded warning window in place.
+        applyWarningOverlayPresence({ reconcileNativeShell: false });
         renderAppBlockingClosedownBanner();
         tauriAPI
             .letsGoAcknowledge()
@@ -600,7 +605,7 @@ export function renderAppBlockingWarningOverlay() {
 // panel-mode refcount in Rust (see `emit_warning_show/_hide`), so this
 // function is purely DOM-side: overlay visibility, body class for the
 // compact-mode CSS, and resize-observer setup.
-export function applyWarningOverlayPresence() {
+export function applyWarningOverlayPresence({ reconcileNativeShell = true } = {}) {
     if (state.isIOS || state.isAndroid) return;
     const overlay = document.getElementById('app-blocking-warning-overlay');
     if (!overlay) return;
@@ -618,7 +623,7 @@ export function applyWarningOverlayPresence() {
     document.documentElement.classList.toggle('app-blocking-warning-window-mode', inWarningMode);
     document.body.classList.toggle('app-blocking-warning-window-mode', inWarningMode);
 
-    if (!inWarningMode) {
+    if (!inWarningMode && reconcileNativeShell) {
         void restoreBlockingWarningShellIfIdle();
     }
 }
