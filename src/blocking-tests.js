@@ -1598,7 +1598,10 @@
         console.log('\n🤖 Category 18: Android Payload');
         console.log('-------------------------------');
 
-        const { buildAndroidScheduleEntries: build } = window.__REDDBLOCK_INTERNALS__;
+        const {
+            buildAndroidScheduleEntries: build,
+            isAndroidAllowlistUnsupported: unsupported,
+        } = window.__REDDBLOCK_INTERNALS__;
         const saved = window.__REDDBLOCK_INTERNALS__.appData;
 
         const seg = { startHour: 9, startMinute: 0, endHour: 17, endMinute: 0, days: [] };
@@ -1607,6 +1610,14 @@
         };
 
         try {
+            (function T142() {
+                const allowMode = createMockBlocklist({ mode: 'allowlist', apps: ['com.allowed'] });
+                const blockMode = createMockBlocklist({ mode: 'blocklist', apps: ['com.blocked'] });
+                assert(unsupported(allowMode, true), 'T142: Android rejects allow-mode starts');
+                assert(!unsupported(blockMode, true), 'T142: Android still permits block-mode starts');
+                assert(!unsupported(allowMode, false), 'T142: allow mode remains supported on non-Android platforms');
+            })();
+
             (function T143() {
                 const bl = createMockBlocklist({ mode: 'blocklist', apps: ['com.x'], websites: ['x.com'] });
                 withData([bl], { schedules: [createMockSchedule(bl.id, [seg])] });
@@ -1799,13 +1810,10 @@
 
     // Which focus spaces must confirm a loosening edit with the exit challenge.
     //
-    // The pause cases are the point of this group. A paused space is one the
-    // user intends to resume, so pause -> loosen -> resume must not be a cheaper
-    // route than the challenge — and pausing is itself frictionless on flexible
-    // schedules. Every gate in the app has always been pause-INSENSITIVE; these
-    // pin that down before the gate moves behind one shared predicate, because
-    // the obvious helpers to reach for (isOneOffBlockEnforced,
-    // isScheduleSegmentActiveNow) both exempt paused and would silently open it.
+    // Pause semantics are deliberately different by type: paused one-off blocks
+    // remain gated, while a paused flexible schedule can be edited so the user
+    // does not have to stop it and remember to recreate it. Strict schedules
+    // remain gated while paused.
     function runEditFrictionGateTests() {
         console.log('\n🔒 Category 20: Edit Friction Gate');
         console.log('----------------------------------');

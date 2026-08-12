@@ -7,7 +7,7 @@
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { PROTECTED_APP_NAMES, PROTECTED_DOMAINS, isAllowlistBlocklist, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
-import { buildAndroidScheduleEntries, buildIOSScheduleEntries } from './schedule-engine.js';
+import { buildAndroidScheduleEntries, buildIOSScheduleEntries, isAndroidAllowlistUnsupported } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { acceptEula } from './blocking-platform.js';
 import { CURRENT_EULA_REVISION } from './onboarding.js';
@@ -39,6 +39,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     getNextCopyName,
     getMaxOverrideCharsForType,
     buildAndroidScheduleEntries,
+    isAndroidAllowlistUnsupported,
     buildIOSScheduleEntries,
     deriveIOSEffectiveWebsitePolicy,
     deriveIOSEffectiveAppPolicy,

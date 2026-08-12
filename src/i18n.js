@@ -106,6 +106,8 @@ export const SETTINGS_TRANSLATIONS = {
         androidAccessibilityReturnStatus:
             'Enable Digital Habits: Blocker in Accessibility, then return here.',
         androidAccessibilityOpenFailedStatusFmt: 'Could not open Accessibility settings: {error}',
+        androidAllowlistUnsupported:
+            'Allow-mode focus spaces are not supported on Android yet. Choose Block mode or use this focus space on iOS.',
         // One-time rename notice for users upgrading from ReDD Blocker
         rebrandNoticeTitleHtml:
             'ReDD Blocker is now <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
@@ -984,6 +986,8 @@ export const SETTINGS_TRANSLATIONS = {
         androidAccessibilityReturnStatus:
             'Aktiver Digital Habits: Blocker under Accessibility, og vend derefter tilbage hertil.',
         androidAccessibilityOpenFailedStatusFmt: 'Kunne ikke åbne Accessibility-indstillinger: {error}',
+        androidAllowlistUnsupported:
+            'Tilladelsestilstand er endnu ikke understøttet på Android. Vælg Blokering, eller brug dette fokusrum på iOS.',
         // One-time rename notice for users upgrading from ReDD Blocker
         rebrandNoticeTitleHtml:
             'ReDD Blocker hedder nu <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',
@@ -1826,6 +1830,7 @@ export const SETTINGS_TRANSLATIONS = {
         androidAccessibilityWaitingStatus: '等待你在无障碍设置中启用 Digital Habits: Blocker…',
         androidAccessibilityReturnStatus: '在无障碍设置中启用 Digital Habits: Blocker，然后返回此处。',
         androidAccessibilityOpenFailedStatusFmt: '无法打开无障碍设置：{error}',
+        androidAllowlistUnsupported: 'Android 目前尚不支持允许模式的专注空间。请选择阻止模式，或在 iOS 上使用此专注空间。',
         // One-time rename notice for users upgrading from ReDD Blocker
         rebrandNoticeTitleHtml:
             'ReDD Blocker 现已更名为 <span class="rebrand-onboarding-title-brand">Digital Habits: Blocker</span>',

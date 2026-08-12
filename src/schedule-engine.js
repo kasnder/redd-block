@@ -22,6 +22,11 @@ export const ANDROID_DAY_NAMES_MON0 = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSD
 
 export const ANDROID_DEFAULT_FRICTION_WORD_COUNT = 15;
 
+/** Android cannot enforce allow-mode focus spaces yet. */
+export function isAndroidAllowlistUnsupported(blocklist, isAndroid = state.isAndroid) {
+    return isAndroid === true && isAllowlistBlocklist(blocklist);
+}
+
 /**
  * Friction-gate challenge fields for the Android plugin payload.
  *
@@ -215,7 +220,9 @@ export function getSingleOccurrenceSegmentDates(schedule, segment) {
  * or the matchers in Schedules.kt), so `blockedApps` is always treated as a
  * denylist. Sending an allow-mode space would therefore block precisely the
  * apps it is meant to permit. Omitting it means such a space enforces nothing
- * on Android, which is inert rather than actively wrong.
+ * on Android, which is inert rather than actively wrong. The start flows reject
+ * new activations with a user-visible message; this omission remains a safety
+ * net for legacy data that was already persisted before the guard existed.
  *
  * Real allow-mode enforcement is a separate, much larger change: with
  * everything-but-the-list blocked, the launcher, Settings and the dialer would
@@ -232,7 +239,9 @@ export function buildAndroidScheduleEntries(now = Date.now()) {
     for (const schedule of state.appData.schedules || []) {
         if (!schedule.segments || schedule.segments.length === 0) continue;
         const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-        if (isAllowlistBlocklist(blocklist)) {
+        // This builder is Android-specific even when Tier 1 invokes it outside
+        // the platform branch, so keep the capability check explicit here.
+        if (isAndroidAllowlistUnsupported(blocklist, true)) {
             skippedAllowlistNames.push(blocklist.name || schedule.blocklistId);
             continue;
         }
