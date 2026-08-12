@@ -195,6 +195,34 @@ export const MAX_IOS_OVERRIDE_WORD_COUNT = 500;
 /** When character count >= this, preview text is frozen (no more regeneration) for random words and gibberish. */
 export const OVERRIDE_PREVIEW_TRUNCATE_AT = 50;
 
+/**
+ * Word-by-word challenge primitives. Moved here from app.js: they are pure
+ * challenge logic with no DOM or app-state dependency, and living in a leaf
+ * module lets the test harness import them without an app.js import cycle.
+ */
+export function buildWordChallengeState(text) {
+    const words = String(text || '').split(/\s+/).filter(Boolean);
+    return {
+        words,
+        currentIndex: 0,
+        typedText: ''
+    };
+}
+
+export function isMobileWordByWordChallenge(difficulty) {
+    return !!(isMobileOverrideChallengePlatform() && (difficulty?.type === 'random-words' || difficulty?.type === 'gibberish'));
+}
+
+export function getCurrentChallengeWord(challengeState) {
+    if (!challengeState || challengeState.currentIndex >= challengeState.words.length) return '';
+    return challengeState.words[challengeState.currentIndex];
+}
+
+export function getCompletedChallengeText(challengeState) {
+    if (!challengeState || challengeState.currentIndex <= 0) return '';
+    return challengeState.words.slice(0, challengeState.currentIndex).join(' ');
+}
+
 export function usesMobileWordCountForOverrideType(type) {
     return !!((state.isIOS || state.isAndroid) && (type === 'random-words' || type === 'gibberish'));
 }

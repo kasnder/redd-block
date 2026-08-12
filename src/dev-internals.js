@@ -7,6 +7,16 @@
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
 import { BLOCKLIST_LOOSEN_REASONS, PROTECTED_APP_NAMES, PROTECTED_DOMAINS, compareBlocklistStrictness, iosScreenTimeSelectionKey, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
+import {
+    buildWordChallengeState,
+    getCompletedChallengeText,
+    getCurrentChallengeWord,
+    normalizeChallengeComparableText,
+    renderChallengeReferenceText,
+    sanitizeChallengeTargetText,
+    sanitizeChallengeTypedInput,
+    shouldBlockChallengeSpaceKey,
+} from './override-challenge.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
 import { duplicateBlocklist, getNextCopyName } from './blocklists.js';
@@ -33,6 +43,15 @@ window.__REDDBLOCK_INTERNALS__ = {
     duplicateBlocklist,
     getNextCopyName,
     getMaxOverrideCharsForType,
+    // Challenge-engine primitives (characterization tests / controller suite)
+    normalizeChallengeComparableText,
+    sanitizeChallengeTypedInput,
+    sanitizeChallengeTargetText,
+    shouldBlockChallengeSpaceKey,
+    renderChallengeReferenceText,
+    buildWordChallengeState,
+    getCurrentChallengeWord,
+    getCompletedChallengeText,
     compareBlocklistStrictness,
     BLOCKLIST_LOOSEN_REASONS,
     iosScreenTimeSelectionKey,
