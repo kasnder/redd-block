@@ -2025,58 +2025,9 @@ function setupOverrideModalListeners() {
         updatePauseRestartTime();
     });
 
-    // Pause challenge input — mirror stop/override challenge UX
-    const pauseChallengeInput = document.getElementById('pause-challenge-input');
-    const pauseChallengeWordInput = document.getElementById('pause-challenge-word-input');
-    const pauseProgressBar = document.getElementById('pause-challenge-progress-bar');
-    const pauseCurrentWordEl = document.getElementById('pause-current-word');
-
-    pauseChallengeInput.addEventListener('paste', (e) => {
-        e.preventDefault();
-    });
-    pauseChallengeInput.addEventListener('input', () => {
-        const typed = applyChallengeTypedInputSanitization(pauseChallengeInput);
-        const target = state.pauseChallengeText;
-
-        let correctChars = 0;
-        let firstErrorIndex = -1;
-        for (let i = 0; i < typed.length && i < target.length; i++) {
-            if (typed[i] === target[i]) {
-                correctChars++;
-            } else {
-                firstErrorIndex = i;
-                break;
-            }
-        }
-
-        const progress = target.length > 0 ? (correctChars / target.length) * 100 : 0;
-        pauseProgressBar.style.width = `${progress}%`;
-        renderPauseChallengeText(firstErrorIndex, correctChars);
-    });
-    pauseChallengeWordInput.addEventListener('paste', (e) => {
-        e.preventDefault();
-    });
-    pauseChallengeWordInput.addEventListener('input', () => {
-        if (!state.pauseWordChallengeState) return;
-        pauseCurrentWordEl.textContent = getCurrentChallengeWord(state.pauseWordChallengeState);
-    });
-
-    pauseChallengeInput.addEventListener('keydown', (e) => {
-        if (shouldBlockChallengeSpaceKey(pauseChallengeInput, e)) {
-            e.preventDefault();
-            return;
-        }
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            proceedWithPause();
-        }
-    });
-    pauseChallengeWordInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            proceedWithPause();
-        }
-    });
+    // Pause shares the same engine; its confirm action (proceedWithPause) lives
+    // in confirm-modals.js alongside the duration controls.
+    getChallengeController('pause');
 
     const pauseDurationSection = document.querySelector('#pause-modal .pause-duration-section');
     if (pauseDurationSection && typeof ResizeObserver !== 'undefined') {
@@ -2326,39 +2277,6 @@ export function formatBlockTimeRemainingShort(totalMins) {
 }
 
 
-
-export function setPauseWordChallengeMode(enabled) {
-    document.getElementById('pause-word-progress')?.classList.toggle('hidden', !enabled);
-    document.getElementById('pause-current-word')?.classList.toggle('hidden', !enabled);
-    document.getElementById('pause-challenge-word-input')?.classList.toggle('hidden', !enabled);
-    document.getElementById('pause-challenge-input')?.classList.toggle('hidden', enabled);
-}
-
-export function renderPauseChallengeText(errorIndex = -1, cursorIndex = 0) {
-    renderChallengeReferenceText(
-        document.getElementById('pause-challenge-text'),
-        state.pauseChallengeText,
-        { errorIndex, cursorIndex }
-    );
-}
-
-export function renderPauseWordChallengeState() {
-    const progressLabelEl = document.getElementById('pause-word-progress');
-    const currentWordEl = document.getElementById('pause-current-word');
-    const wordInput = document.getElementById('pause-challenge-word-input');
-    const progressBar = document.getElementById('pause-challenge-progress-bar');
-    if (!state.pauseWordChallengeState || !progressLabelEl || !currentWordEl || !wordInput || !progressBar) return;
-    const currentWord = getCurrentChallengeWord(state.pauseWordChallengeState);
-    const completedText = getCompletedChallengeText(state.pauseWordChallengeState);
-    const targetText = completedText ? `${completedText} ${currentWord}` : currentWord;
-    progressLabelEl.textContent = `Word ${state.pauseWordChallengeState.currentIndex + 1} of ${state.pauseWordChallengeState.words.length}`;
-    currentWordEl.textContent = currentWord;
-    wordInput.value = '';
-    progressBar.style.width = state.pauseChallengeText.length > 0
-        ? `${Math.min(100, (targetText.length / state.pauseChallengeText.length) * 100)}%`
-        : '0%';
-    document.getElementById('confirm-pause-btn').disabled = !currentWord;
-}
 
 export function setOverrideAllWordChallengeMode(enabled) {
     document.getElementById('override-all-word-progress')?.classList.toggle('hidden', !enabled);
