@@ -18,7 +18,7 @@ import {
     shouldBlockChallengeSpaceKey,
 } from './override-challenge.js';
 import { createChallengeController } from './challenge-controller.js';
-import { buildAndroidScheduleEntries } from './schedule-engine.js';
+import { buildAndroidScheduleEntries, buildIOSScheduleEntries } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
 import { duplicateBlocklist, getNextCopyName } from './blocklists.js';
@@ -56,6 +56,7 @@ window.__REDDBLOCK_INTERNALS__ = {
     getCompletedChallengeText,
     createChallengeController,
     buildAndroidScheduleEntries,
+    buildIOSScheduleEntries,
     compareBlocklistStrictness,
     isAllowlistBlocklist,
     BLOCKLIST_LOOSEN_REASONS,

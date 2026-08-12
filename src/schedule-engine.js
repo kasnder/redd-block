@@ -349,62 +349,90 @@ export function buildAndroidScheduleEntries(now = Date.now()) {
     return flatEntries;
 }
 
+/**
+ * Flatten schedules into the iOS Screen Time plugin payload.
+ *
+ * Extracted from syncSchedulesToHelper so the per-entry `mode` below can be
+ * tested; the sync itself is async and talks to Tauri.
+ *
+ * Each entry carries `mode` so Swift knows whether its domains/tokens are
+ * ALLOWED or BLOCKED items — IOSPolicyResolver unions the allow-mode entries
+ * and subtracts the blocked ones. Without it every entry defaulted to blocked
+ * semantics, so an allow-mode focus space on a *schedule* blocked exactly the
+ * sites and apps it was meant to permit. (The manual/one-off path already sent
+ * mode via collectActiveIOSManualBlockPayload, so only schedules were affected.)
+ *
+ * Category tokens are deliberately still sent on allow-mode entries: Swift
+ * ignores them there (it collects categories only from non-allowlist entries),
+ * and keeping the data means nothing is lost if the space switches back.
+ */
+export function buildIOSScheduleEntries() {
+    const flatEntries = [];
+    for (const schedule of state.appData.schedules || []) {
+        if (!schedule.segments || schedule.segments.length === 0) continue;
+        const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
+        const domains = blocklist?.websites || [];
+        const iosPayload = getBlocklistIOSPayload(blocklist);
+        const blocklistEmoji = blocklist?.emoji ?? null;
+        const blocklistName = blocklist?.name ?? null;
+        const bc = blocklist?.color;
+        const blocklistColorHex = typeof bc === 'string' && bc.length > 0 ? bc : null;
+        // Tells Swift whether these domains/tokens are ALLOWED or BLOCKED items.
+        // Same convention as the manual payload: 'allowlist' or null.
+        const mode = isAllowlistBlocklist(blocklist) ? 'allowlist' : null;
+        if (isNonRepeatingSchedule(schedule)) {
+            const occurrences = resolveOneShotOccurrences(schedule);
+            occurrences.forEach((occurrence, occurrenceIdx) => {
+                flatEntries.push({
+                    id: `${schedule.id}-${occurrence.segmentIndex}-${occurrenceIdx}`,
+                    ...buildResolvedOneShotSegment(occurrence),
+                    domains,
+                    appTokenData: iosPayload.appTokenData,
+                    categoryTokenData: iosPayload.categoryTokenData,
+                    repeats: false,
+                    isPaused: !!schedule.isPaused,
+                    pauseEndTimestampMs: schedule.pauseEndTime || null,
+                    blocklistEmoji,
+                    blocklistName,
+                    blocklistColorHex,
+                    mode
+                });
+            });
+            continue;
+        }
+        for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
+            const seg = schedule.segments[segIdx];
+            const window = getIOSScheduleEntryWindow(schedule, seg);
+            flatEntries.push({
+                id: `${schedule.id}-${segIdx}`,
+                startHour: seg.startHour,
+                startMinute: seg.startMinute,
+                endHour: seg.endHour,
+                endMinute: seg.endMinute,
+                days: seg.days ? [...seg.days] : [],
+                domains,
+                appTokenData: iosPayload.appTokenData,
+                categoryTokenData: iosPayload.categoryTokenData,
+                repeats: window.repeats,
+                activeFromTimestampMs: window.activeFromTimestampMs,
+                activeUntilTimestampMs: window.activeUntilTimestampMs,
+                isPaused: !!schedule.isPaused,
+                pauseEndTimestampMs: schedule.pauseEndTime || null,
+                blocklistEmoji,
+                blocklistName,
+                blocklistColorHex,
+                mode
+            });
+        }
+    }
+
+    return flatEntries;
+}
+
 export async function syncSchedulesToHelper() {
     if (state.isIOS) {
         try {
-            const flatEntries = [];
-            for (const schedule of state.appData.schedules || []) {
-                if (!schedule.segments || schedule.segments.length === 0) continue;
-                const blocklist = state.appData.blocklists.find(bl => bl.id === schedule.blocklistId);
-                const domains = blocklist?.websites || [];
-                const iosPayload = getBlocklistIOSPayload(blocklist);
-                const blocklistEmoji = blocklist?.emoji ?? null;
-                const blocklistName = blocklist?.name ?? null;
-                const bc = blocklist?.color;
-                const blocklistColorHex = typeof bc === 'string' && bc.length > 0 ? bc : null;
-                if (isNonRepeatingSchedule(schedule)) {
-                    const occurrences = resolveOneShotOccurrences(schedule);
-                    occurrences.forEach((occurrence, occurrenceIdx) => {
-                        flatEntries.push({
-                            id: `${schedule.id}-${occurrence.segmentIndex}-${occurrenceIdx}`,
-                            ...buildResolvedOneShotSegment(occurrence),
-                            domains,
-                            appTokenData: iosPayload.appTokenData,
-                            categoryTokenData: iosPayload.categoryTokenData,
-                            repeats: false,
-                            isPaused: !!schedule.isPaused,
-                            pauseEndTimestampMs: schedule.pauseEndTime || null,
-                            blocklistEmoji,
-                            blocklistName,
-                            blocklistColorHex
-                        });
-                    });
-                    continue;
-                }
-                for (let segIdx = 0; segIdx < schedule.segments.length; segIdx++) {
-                    const seg = schedule.segments[segIdx];
-                    const window = getIOSScheduleEntryWindow(schedule, seg);
-                    flatEntries.push({
-                        id: `${schedule.id}-${segIdx}`,
-                        startHour: seg.startHour,
-                        startMinute: seg.startMinute,
-                        endHour: seg.endHour,
-                        endMinute: seg.endMinute,
-                        days: seg.days ? [...seg.days] : [],
-                        domains,
-                        appTokenData: iosPayload.appTokenData,
-                        categoryTokenData: iosPayload.categoryTokenData,
-                        repeats: window.repeats,
-                        activeFromTimestampMs: window.activeFromTimestampMs,
-                        activeUntilTimestampMs: window.activeUntilTimestampMs,
-                        isPaused: !!schedule.isPaused,
-                        pauseEndTimestampMs: schedule.pauseEndTime || null,
-                        blocklistEmoji,
-                        blocklistName,
-                        blocklistColorHex
-                    });
-                }
-            }
+            const flatEntries = buildIOSScheduleEntries();
             console.log('[syncSchedulesToHelper] iOS: Sending', flatEntries.length, 'segment entries to plugin');
             const result = await tauriAPI.setSchedulesPlugin(flatEntries);
             if (!result.success) {

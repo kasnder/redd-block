@@ -5,7 +5,7 @@ import { getChallengeController } from './challenge-controller.js';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
-import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isBlockAlwaysOn } from './blocklist-utils.js';
+import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn } from './blocklist-utils.js';
 import { formatOverrideMaxDifficultyHint, getMaxOverrideCharsForType, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, usesMobileWordCountForOverrideType } from './override-challenge.js';
 import { isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
@@ -2211,7 +2211,8 @@ async function runProceedWithBlock() {
                             blockId: block.id,
                             domains: Array.from(blocklist?.websites || []),
                             appTokenData: iosPayload.appTokenData,
-                            categoryTokenData: iosPayload.categoryTokenData
+                            categoryTokenData: iosPayload.categoryTokenData,
+                            mode: isAllowlistBlocklist(blocklist) ? 'allowlist' : null
                         });
                         const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-end-' + block.id, block.endTime);
                         if (res && res.success === false) {
@@ -3380,7 +3381,10 @@ export async function proceedWithPause() {
                         blockId: state.pauseBlockId,
                         domains: blocklist?.websites || [],
                         appTokenData: iosPayload.appTokenData,
-                        categoryTokenData: iosPayload.categoryTokenData
+                        categoryTokenData: iosPayload.categoryTokenData,
+                        // Without this the re-applied state treats an allow-mode
+                        // block's allowed items as blocked ones.
+                        mode: isAllowlistBlocklist(blocklist) ? 'allowlist' : null
                     });
                     const res = await tauriAPI.screentimeRegisterOneOffActivity('redd-block-resume-' + state.pauseBlockId, block.pauseEndTime);
                     if (res && res.success === false) {
