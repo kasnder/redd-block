@@ -31,12 +31,12 @@ import {
     cloneIOSScreenTimeSelection,
     hasUsableIOSScreenTimeSelection,
     formatIOSScreenTimeSelectionLabel,
-    getBlocklistModalLockedApps,
     blocklistNeedsIOSSelectionRefresh,
     ensureIOSBlocklistSelectionReady,
     normalizeBlocklist,
     collectActiveIOSManualBlockPayload,
     isQuickStartBlocklist,
+    compareBlocklistStrictness,
     QUICK_START_EMOJI,
 } from './blocklist-utils.js';
 import { openInstalledAppsPicker } from './apps-picker.js';
@@ -92,8 +92,8 @@ import {
     syncScheduleOverlayCustomiseEditorState, syncScheduleOverlayCustomiseTitle,
     toggleSchedulePanelOverlayDropdown,
 } from './schedule-overlay.js';
-import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, deselectBlocklist, handleBlocklistSelect, handlePauseBlockButtonClick, openBlocklistModal, openPauseModal, openResumeConfirmation, proceedWithBlock, proceedWithPause, proceedWithSchedule, proceedWithScheduleEdit, refreshSelectedBlocklistUi, renderScheduleConfirmSegments, setBtnActionLabel, setOverrideCountMaxMode, setStartBlockBtnLeadingIcon, setStartConfirmPrimaryLabel, startBlock, syncAllStopBtnLabelFits, syncOverrideCountUi, syncPauseDurationRowLayout, updateOverridePreview, updatePauseRestartTime, openOverrideModal, openScheduleOverrideModal, showScheduleConfirmModal, showScheduleEditConfirmModal, syncStopBtnLabelFit, setStartBtnBlocklistInfo } from './confirm-modals.js';
-import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, undoDelete, deleteBlocklist, clearPendingScheduleDraft, pendingDelete, saveBlocklistOrderFromDOM, getBlocklistScheduleDraft, saveBlocklistScheduleDraft } from './blocklists.js';
+import { applyModalBlocklistTint, applyOverrideTypeUi, closeBlocklistModal, closeOverrideModal, closePauseModal, closeScheduleConfirmModal, closeStartBlockConfirmModal, deselectBlocklist, handleBlocklistSelect, handlePauseBlockButtonClick, openBlocklistModal, openPauseModal, openResumeConfirmation, proceedWithBlock, proceedWithPause, proceedWithSchedule, proceedWithScheduleEdit, refreshSelectedBlocklistUi, renderScheduleConfirmSegments, setBtnActionLabel, setOverrideCountMaxMode, setStartBlockBtnLeadingIcon, setStartConfirmPrimaryLabel, startBlock, syncAllStopBtnLabelFits, syncOverrideCountUi, syncPauseDurationRowLayout, updateOverridePreview, updatePauseRestartTime, openOverrideModal, openBlocklistUnlockChallenge, cloneOverrideDifficulty, openScheduleOverrideModal, showScheduleConfirmModal, showScheduleEditConfirmModal, syncStopBtnLabelFit, setStartBtnBlocklistInfo } from './confirm-modals.js';
+import { renderBlocklists, autoSelectSoleBlocklist, closeAllBlocklistMenus, truncateBlocklistName, setupBlocklistsImportExportButtons, duplicateBlocklist, getNextCopyName, undoDelete, deleteBlocklist, clearPendingScheduleDraft, pendingDelete, saveBlocklistOrderFromDOM, getBlocklistScheduleDraft, saveBlocklistScheduleDraft, isBlocklistEditFrictionRequired } from './blocklists.js';
 import {
     getSelectedBlocklistModalMode,
     getBlocklistCreateKind,
@@ -102,6 +102,7 @@ import {
     syncModalAppPlaceholder,
     syncModalWebsitePlaceholder,
     updateAllowlistScopeHints,
+    syncBlocklistUnlockHint,
     updateBlocklistModalModeLabels,
 } from './list-mode.js';
 import { countIOSScreenTimeSelectionItems } from './list-presentation.js';
@@ -1648,27 +1649,51 @@ function setupModalListeners() {
         closeBlocklistModal();
     });
 
-    // Save / Quick-start primary button
-    document.getElementById('save-blocklist-btn').addEventListener('click', async () => {
+    /**
+     * Read the modal form into a candidate blocklist.
+     *
+     * `dryRun` skips every side effect (validation styling, flushing pending
+     * inputs, normalizing fields in place, alerts) so the live "this loosens the
+     * block" hint can evaluate exactly what Save would produce. Hint and save
+     * MUST read the form through this one function — two readers would
+     * eventually disagree, and "no challenge needed" followed by a challenge is
+     * the worst failure this feature has.
+     *
+     * @returns {{candidate: object, isQuickCreate: boolean}|null} null if validation failed.
+     */
+    function buildBlocklistPayloadFromModal({ dryRun = false } = {}) {
         const isQuickCreate = !state.editingBlocklistId && getBlocklistCreateKind() === 'quick-start';
         const nameInput = document.getElementById('blocklist-name');
         const name = isQuickCreate
             ? tSettings('quickStartDefaultName')
             : truncateBlocklistName(nameInput.value.trim());
         const nameEmpty = !isQuickCreate && !name;
-        if (nameEmpty) {
-            nameInput.classList.add('input-error');
-        } else {
-            nameInput.classList.remove('input-error');
+        if (!dryRun) {
+            if (nameEmpty) {
+                nameInput.classList.add('input-error');
+            } else {
+                nameInput.classList.remove('input-error');
+            }
         }
 
         // Auto-confirm any pending website input using the same validation flow as Enter/Space.
+        // In dry-run we can't call the confirm helper (it mutates modalWebsites and
+        // flashes error UI), so mirror it through the pure processWebsiteInput —
+        // otherwise the hint would miss a domain the user typed but never
+        // committed with Enter, which in allow mode is exactly a loosening.
         let websiteInvalid = false;
+        let pendingWebsites = [];
         const pendingWebsiteRaw = modalWebsiteInput.value.trim();
         if (pendingWebsiteRaw) {
-            const result = confirmModalWebsiteInputValue();
-            if (result?.hadProtected) return;
-            if (result?.websiteInvalid) websiteInvalid = true;
+            if (dryRun) {
+                const preview = processWebsiteInput(pendingWebsiteRaw);
+                if (preview.hadProtected || preview.websiteInvalid) return null;
+                pendingWebsites = preview.toAdd.filter(w => !modalWebsites.includes(w));
+            } else {
+                const result = confirmModalWebsiteInputValue();
+                if (result?.hadProtected) return null;
+                if (result?.websiteInvalid) websiteInvalid = true;
+            }
         }
 
         const overrideType = isQuickCreate
@@ -1676,44 +1701,50 @@ function setupModalListeners() {
             : document.getElementById('override-type').value;
         const customTextArea = document.getElementById('custom-override-text');
         const customText = isQuickCreate ? '' : normalizeCustomOverrideText(customTextArea.value);
-        if (!isQuickCreate) customTextArea.value = customText;
+        if (!isQuickCreate && !dryRun) customTextArea.value = customText;
         const customEmpty = !isQuickCreate && overrideType === 'custom' && !customText;
         const customErrorEl = document.getElementById('custom-override-text-error');
-        if (customEmpty) {
-            customTextArea.classList.add('input-error');
-            if (customErrorEl) {
-                customErrorEl.textContent = tSettings('customOverrideEmptyError');
-                customErrorEl.classList.remove('hidden');
+        if (!dryRun) {
+            if (customEmpty) {
+                customTextArea.classList.add('input-error');
+                if (customErrorEl) {
+                    customErrorEl.textContent = tSettings('customOverrideEmptyError');
+                    customErrorEl.classList.remove('hidden');
+                }
+            } else {
+                customTextArea.classList.remove('input-error');
+                customErrorEl?.classList.add('hidden');
             }
-        } else {
-            customTextArea.classList.remove('input-error');
-            customErrorEl?.classList.add('hidden');
         }
 
-        if (nameEmpty || websiteInvalid || customEmpty) return;
+        if (nameEmpty || websiteInvalid || customEmpty) return null;
 
-        if (!isQuickCreate) nameInput.value = name;
+        if (!isQuickCreate && !dryRun) nameInput.value = name;
 
+        // Pending app-input text counts towards the candidate either way; only
+        // the commit into modalApps is a side effect.
         const pendingApp = modalAppInput.value.trim();
-        if (pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp)) {
-            pushModalUndo('app', () => {
-                const i = modalApps.indexOf(pendingApp);
-                if (i !== -1) modalApps.splice(i, 1);
-                window.renderModalTags();
-            });
-            modalApps.push(pendingApp);
+        const pendingAppIsNew = pendingApp && !isProtectedApp(pendingApp) && !modalApps.includes(pendingApp);
+        if (!dryRun) {
+            if (pendingAppIsNew) {
+                pushModalUndo('app', () => {
+                    const i = modalApps.indexOf(pendingApp);
+                    if (i !== -1) modalApps.splice(i, 1);
+                    window.renderModalTags();
+                });
+                modalApps.push(pendingApp);
+            }
             modalAppInput.value = '';
-            window.renderModalTags();
-        } else {
-            modalAppInput.value = '';
+            if (pendingAppIsNew) window.renderModalTags();
         }
+        const candidateApps = (dryRun && pendingAppIsNew) ? [...modalApps, pendingApp] : [...modalApps];
 
         if (isQuickCreate
-            && modalWebsites.length === 0
-            && modalApps.length === 0
+            && modalWebsites.length + pendingWebsites.length === 0
+            && candidateApps.length === 0
             && !modalIOSScreenTimeSelection) {
-            alert(tSettings('quickStartNeedItems'));
-            return;
+            if (!dryRun) alert(tSettings('quickStartNeedItems'));
+            return null;
         }
 
         const mode = getSelectedBlocklistModalMode();
@@ -1726,7 +1757,7 @@ function setupModalListeners() {
             : (maxDifficultyChecked
                 ? getMaxOverrideCharsForType(overrideType)
                 : normalizeOverrideCount(overrideCountInput.value, overrideType));
-        if (!isQuickCreate) overrideCountInput.value = overrideCount;
+        if (!isQuickCreate && !dryRun) overrideCountInput.value = overrideCount;
         const selectedSwatch = document.querySelector('.color-swatch.selected');
         const color = isQuickCreate
             ? '#B8D1DE'
@@ -1767,8 +1798,8 @@ function setupModalListeners() {
             mode,
             color,
             emoji,
-            websites: [...modalWebsites],
-            apps: [...modalApps],
+            websites: [...modalWebsites, ...pendingWebsites],
+            apps: candidateApps,
             iosScreenTimeSelection: cloneIOSScreenTimeSelection(modalIOSScreenTimeSelection),
             showItemDetails,
             alwaysShowInSchedule,
@@ -1783,6 +1814,11 @@ function setupModalListeners() {
             blocklist.isQuickStart = true;
         }
 
+        return { candidate: blocklist, isQuickCreate };
+    }
+
+    /** Persist the candidate and re-apply enforcement. Assumes any gate already passed. */
+    async function commitBlocklistSave(blocklist, { isQuickCreate }) {
         if (state.editingBlocklistId) {
             const idx = state.appData.blocklists.findIndex(bl => bl.id === state.editingBlocklistId);
             if (idx !== -1) {
@@ -1804,16 +1840,6 @@ function setupModalListeners() {
             s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0
         );
 
-        if (hasActiveBlock || hasActiveSchedule) {
-            // Awaited, not fired and forgotten. On Android syncSchedulesToHelper
-            // is the only path that pushes edited apps/websites to Kotlin
-            // (updateBlockedApps is a no-op there), so racing it leaves a
-            // just-removed app still enforced until the next sync.
-            await updateHostsFile();
-            await syncSchedulesToHelper();
-            await updateBlockedApps();
-        }
-
         // Keep live preview while editing, but don't revert after a confirmed save.
         state.blocklistModalPreviewSnapshot = null;
         const wasNewBlocklist = !state.editingBlocklistId;
@@ -1830,6 +1856,21 @@ function setupModalListeners() {
         renderWeekBlocks(); // Refresh calendar so colour / emoji / name changes propagate
         renderNowBlockingRow(); // Title-bar chips read emoji/name from freshly saved blocklist
         renderScheduleAlwaysOnRow();
+
+        // Awaited (they used not to be): on Android syncSchedulesToHelper is the
+        // ONLY path that pushes edited apps/websites to Kotlin — updateBlockedApps
+        // is a no-op there — so racing it against the re-render leaves the just
+        // removed app still enforced. Done after the modal closes so the UI stays
+        // instant while the IPC serializes.
+        if (hasActiveBlock || hasActiveSchedule) {
+            try {
+                await updateHostsFile();
+                await syncSchedulesToHelper();
+                await updateBlockedApps();
+            } catch (e) {
+                console.warn('[save-blocklist] re-applying enforcement failed:', e);
+            }
+        }
 
         if (isQuickCreate) {
             startBlock();
@@ -1852,11 +1893,66 @@ function setupModalListeners() {
                 handleBlocklistSelect({ target: dropdown });
             }
         }
+    }
+
+    /**
+     * Does this save need the exit challenge first?
+     * @returns {object|null} gate descriptor, or null to save straight away.
+     */
+    function evaluateBlocklistSaveGate(candidate) {
+        if (!state.editingBlocklistId) return null;                 // creating: never gated
+        const prev = state.appData.blocklists.find(bl => bl.id === state.editingBlocklistId);
+        if (!prev) return null;
+        // Recomputed here, not at modal-open time: a block can end (or a segment
+        // begin) while the modal sits open.
+        if (!isBlocklistEditFrictionRequired(prev.id)) return null;
+        const comparison = compareBlocklistStrictness(prev, candidate);
+        if (!comparison.loosens) return null;
+        return {
+            blocklistForDisplay: prev,
+            // SECURITY: the challenge is generated from the PERSISTED difficulty,
+            // never from the form. The difficulty fields are editable now, so
+            // reading them here would let anyone set "3 random words", delete
+            // every site, and save — collapsing the whole enforcement model into
+            // a five-second exercise. Snapshotted before commitBlocklistSave
+            // runs, because that replaces blocklists[idx] by reference and
+            // detaches `prev` from the store.
+            difficulty: cloneOverrideDifficulty(prev.overrideDifficulty, 10),
+            progressColor: prev.color,
+            comparison,
+        };
+    }
+
+    // Save / Quick-start primary button
+    document.getElementById('save-blocklist-btn').addEventListener('click', async () => {
+        const saveBtn = document.getElementById('save-blocklist-btn');
+        if (saveBtn?.disabled) return;
+        const built = buildBlocklistPayloadFromModal();
+        if (!built) return;
+
+        const gate = evaluateBlocklistSaveGate(built.candidate);
+        if (!gate) {
+            if (saveBtn) saveBtn.disabled = true;
+            try {
+                await commitBlocklistSave(built.candidate, built);
+            } finally {
+                if (saveBtn) saveBtn.disabled = false;
+            }
+            return;
+        }
+
+        // Stack the challenge over the still-open edit modal. Closing it first
+        // would wipe editingBlocklistId, the undo stack and the pending tag
+        // arrays — every in-flight edit would be silently discarded.
+        openBlocklistUnlockChallenge(gate, () => commitBlocklistSave(built.candidate, built));
     });
 
     // Store references for modal functions. Keep both the refactor-era getter
     // and the original direct array bridge so extracted modules like the app
     // picker still share the same mutable selection state.
+    // Bridged like the other modal helpers (see module conventions in AGENTS.md):
+    // list-mode.js needs to read the pending form without importing this closure.
+    window.buildBlocklistPayloadFromModal = buildBlocklistPayloadFromModal;
     window.getModalApps = () => modalApps;
     window.lockedWebsites = [];
     window.lockedApps = [];
@@ -1943,6 +2039,7 @@ function setupModalListeners() {
             true,
         );
         updateAllowlistScopeHints(modalWebsites.length, appCount);
+        syncBlocklistUnlockHint();
     };
     window.getModalAllowlistScopeCounts = () => ({
         websites: modalWebsites.length,
@@ -2050,6 +2147,20 @@ function setupOverrideModalListeners() {
         const result = getChallengeController('override').handleConfirm();
         // A correct but non-final word: the controller already advanced the UI.
         if (result.status !== 'ok') return;
+
+        // Confirming an edit that loosens a running space. Checked before the
+        // stop-a-block branch below, whose guard (overrideBlockId ||
+        // overrideScheduleId) is deliberately false in this mode.
+        if (state.overrideChallengePurpose === 'blocklist-edit-unlock') {
+            const onConfirm = state.overrideConfirmCallback;
+            closeOverrideModal(); // clears purpose + callback before running it
+            try {
+                await onConfirm?.();
+            } catch (e) {
+                console.error('[blocklist-edit-unlock] save failed:', e);
+            }
+            return;
+        }
 
         // Stop a running block, or tear down a schedule.
         if (state.overrideBlockId || window.overrideScheduleId) {
@@ -3143,7 +3254,6 @@ export function applySettingsLanguage() {
             );
         }
     }
-    setText('active-blocklist-warning-text', tSettings('activeBlocklistWarning'));
     setText('blocklist-name-label', tSettings('name'));
     updateBlocklistModalModeLabels(getSelectedBlocklistModalMode());
     setText('override-difficulty-label', tSettings('overrideDifficulty'));

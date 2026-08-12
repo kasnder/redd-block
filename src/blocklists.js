@@ -6,7 +6,7 @@ import { ask, message, open as openDialog, save as saveDialog } from '@tauri-app
 import { readTextFile, writeTextFile } from '@tauri-apps/plugin-fs';
 import { escapeHtml, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt } from './i18n.js';
-import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isBlockAlwaysOn, isQuickStartBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist, QUICK_START_EMOJI } from './blocklist-utils.js';
+import { cloneIOSScreenTimeSelection, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, iosScreenTimeSelectionKey, isBlockAlwaysOn, isQuickStartBlocklist, isScreenTimeSummaryEntry, normalizeBlocklist, QUICK_START_EMOJI } from './blocklist-utils.js';
 import { isOneOffBlockEnforced, isSchedulePausedNow } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { handleNowBlockingPause, handleNowBlockingStop, render, renderNowBlockingRow, renderScheduleVisibilityChips } from './render.js';
@@ -241,14 +241,10 @@ export function contentKey(blocklistId) {
     if (!bl) return '';
     const w = [...(bl.websites || [])].sort();
     const a = [...getBlocklistRegularApps(bl)].sort();
-    const iosSelection = getBlocklistIOSScreenTimeSelection(bl);
-    return JSON.stringify({
-        w,
-        a,
-        iosAppTokens: [...(iosSelection?.applicationTokens || [])].sort(),
-        iosCategoryTokens: [...(iosSelection?.categoryTokens || [])].sort(),
-        iosSummary: iosSelection?.summaryLabel || ''
-    });
+    // Shares its Screen Time serialization with compareBlocklistStrictness so the
+    // two notions of "same selection" cannot drift apart.
+    const ios = iosScreenTimeSelectionKey(getBlocklistIOSScreenTimeSelection(bl));
+    return JSON.stringify({ w, a, ios });
 }
 
 export function sameBlocklistContent(idA, idB) { return contentKey(idA) === contentKey(idB); }
@@ -330,6 +326,7 @@ export function isBlocklistEditFrictionRequired(blocklistId, now = Date.now()) {
     if (!schedule) return false;
     return !canEditScheduleBetweenBlocks(schedule, new Date(now));
 }
+
 
 export function clearPendingScheduleDraft(blocklistId) {
     if (!blocklistId || !state.appData.settings) return;

@@ -1159,17 +1159,6 @@
                     <p id="blocklist-modal-mode-desc" class="blocklist-modal-mode-desc hidden"></p>
                 </div>
 
-                <div id="active-blocklist-warning" class="warning-banner hidden">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
-                        aria-hidden="true">
-                        <circle cx="12" cy="12" r="10"></circle>
-                        <line x1="12" y1="16" x2="12" y2="12"></line>
-                        <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                    </svg>
-                    <span id="active-blocklist-warning-text">This focus space is active. Some settings are locked.</span>
-                </div>
-
                 <div class="form-group" id="blocklist-name-group">
                     <label for="blocklist-name" id="blocklist-name-label">Name</label>
                     <input type="text" id="blocklist-name" maxlength="60"
@@ -1464,6 +1453,7 @@
                 </div>
 
                 <div class="modal-buttons">
+                    <p id="blocklist-unlock-hint" class="blocklist-unlock-hint hidden" aria-live="polite"></p>
                     <button id="cancel-blocklist-btn" class="modal-btn cancel-btn">Cancel</button>
                     <button id="save-blocklist-btn" class="modal-btn primary-btn">Save</button>
                 </div>

@@ -5,7 +5,7 @@ import { getChallengeController } from './challenge-controller.js';
 import { tauriAPI } from './tauri-api.js';
 import { escapeHtml, cleanUrlForDisplay, getContrastTextColor, getEnteringChipColor } from './utils.js';
 import { tSettings, tSettingsFmt, getSettingsLanguage, weekdayAbbrevMon0List, weekdayLetterMon0List } from './i18n.js';
-import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistModalLockedApps, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn } from './blocklist-utils.js';
+import { ALWAYS_ON_END_TIME, ensureIOSBlocklistSelectionReady, getBlocklistIOSPayload, getBlocklistIOSScreenTimeSelection, getBlocklistRegularApps, isAllowlistBlocklist, isBlockAlwaysOn } from './blocklist-utils.js';
 import { formatOverrideMaxDifficultyHint, getMaxOverrideCharsForType, getMinOverrideCountForType, getOverrideEstimatedMinutes, getOverridePreviewText, isMobileOverrideChallengePlatform, normalizeCustomOverrideText, normalizeOverrideCount, usesMobileWordCountForOverrideType } from './override-challenge.js';
 import { isSchedulePausedNow, resolveOneShotOccurrences, syncActiveBlocksToHelper, syncSchedulesToHelper } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
@@ -27,6 +27,7 @@ import {
 import { getBlocklistDisplayApps, websiteWord } from './list-presentation.js';
 import {
     setBlocklistModalMode,
+    syncBlocklistUnlockHint,
     setBlocklistCreateKind,
     syncBlocklistCreateKindUi,
     setConfirmModalBlockingLabel,
@@ -284,19 +285,29 @@ export function formatStopBlockSubtitle(block) {
     return tSettingsFmt('stopBlockSubtitleFmt', { remaining });
 }
 
-export function populateOverrideConfirmModalContent(blocklist, { block = null, isSchedule = false } = {}) {
+export function populateOverrideConfirmModalContent(blocklist, {
+    block = null,
+    isSchedule = false,
+    titleKey = 'stopFocusSpaceTitle',
+    instructionKey = 'overrideInstruction',
+    confirmKey = 'stopBlock',
+    subtitleHtml = null,
+} = {}) {
     if (!blocklist) return;
 
     setStartConfirmRoomChip(blocklist, OVERRIDE_CONFIRM_ROOM_CHIP_IDS);
 
     const titleEl = document.getElementById('override-modal-title');
-    if (titleEl) titleEl.textContent = tSettings('stopFocusSpaceTitle');
+    if (titleEl) titleEl.textContent = tSettings(titleKey);
+
+    const instructionEl = document.getElementById('override-modal-instruction');
+    if (instructionEl) instructionEl.textContent = tSettings(instructionKey);
 
     const subtitleEl = document.getElementById('override-confirm-subtitle');
     if (subtitleEl) {
-        subtitleEl.innerHTML = isSchedule
+        subtitleEl.innerHTML = subtitleHtml ?? (isSchedule
             ? tSettings('stopScheduleSubtitle')
-            : formatStopBlockSubtitle(block);
+            : formatStopBlockSubtitle(block));
     }
 
     setConfirmModalBlockingLabel(blocklist, 'override-confirm-blocking-label');
@@ -308,7 +319,7 @@ export function populateOverrideConfirmModalContent(blocklist, { block = null, i
         document.getElementById('override-confirm-blocking-row'),
     );
 
-    setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
+    setStartConfirmPrimaryLabel('confirm-override-btn', tSettings(confirmKey));
 }
 
 export function formatPauseBlockSubtitle(blocklist, block, { isSchedule = false, isScheduleInactive = false } = {}) {
@@ -2598,110 +2609,29 @@ export function openBlocklistModal(blocklist = null, options = {}) {
         }
     }
 
-    // Check if active (block or schedule)
-    const now = Date.now();
-    const hasActiveBlock = blocklist?.id && state.appData.activeBlocks.some(
-        b => b.blocklistId === blocklist.id && b.startTime <= now && b.endTime > now
-    );
-    const scheduleForBlocklist = blocklist?.id && state.appData.schedules
-        ? state.appData.schedules.find(s => s.blocklistId === blocklist.id && s.segments && s.segments.length > 0)
-        : null;
-    const hasActiveSchedule = !!scheduleForBlocklist;
-    // Hard lock when a one-off is running, or a schedule is running without
-    // between-blocks editing. One definition, in blocklists.js, so the rule
-    // cannot drift from whatever else comes to depend on it.
-    const isActive = isBlocklistEditFrictionRequired(blocklist?.id, now);
-
-    const warningEl = document.getElementById('active-blocklist-warning');
-    const modeInputs = document.getElementById('blocklist-modal').querySelectorAll('.radio-option');
+    // Nothing is locked while a block runs any more. Tightening edits (rename,
+    // recolour, add an app) save silently; only edits that make the block easier
+    // to get around are gated, and that is decided at save time by
+    // compareBlocklistStrictness — see the #save-blocklist-btn handler.
     const overrideInputs = [
         document.getElementById('override-type'),
         document.getElementById('override-count'),
         document.getElementById('custom-override-text'),
         document.getElementById('override-max-difficulty-checkbox')
     ];
-    const maxDifficultyWrap = document.getElementById('override-max-difficulty-wrap');
+    overrideInputs.forEach(el => el.disabled = false);
 
-    // Get override elements for styling
-    const overrideTypeSelect = document.getElementById('override-type');
-    const overrideCountInput = document.getElementById('override-count');
-    const overrideCountWrapperEl = document.getElementById('override-count-wrapper');
-    const overrideMethodRowEl = document.getElementById('override-method-row');
-    const overridePreviewBlockEl = document.getElementById('override-preview-block');
-    const overrideTimeEstimateEl = document.getElementById('override-count-time-estimate');
+    const maxDifficultyOn = document.getElementById('override-max-difficulty-checkbox')?.checked;
+    document.getElementById('override-count-minus')?.toggleAttribute('disabled', !!maxDifficultyOn);
+    document.getElementById('override-count-plus')?.toggleAttribute('disabled', !!maxDifficultyOn);
 
-    // Mode stays locked whenever any block/schedule is running.
-    if (hasActiveBlock || hasActiveSchedule) {
-        modeInputs.forEach(el => el.classList.add('disabled'));
-    } else {
-        modeInputs.forEach(el => el.classList.remove('disabled'));
-    }
+    window.setModalData(
+        blocklist?.websites || [],
+        getBlocklistRegularApps(blocklist),
+        getBlocklistIOSScreenTimeSelection(blocklist)
+    );
 
-    if (isActive) {
-        warningEl.classList.remove('hidden');
-        overrideInputs.forEach(el => el.disabled = true);
-
-        // Style override type dropdown (like repeat dropdown)
-        if (overrideTypeSelect) {
-            overrideTypeSelect.classList.add('form-select-disabled');
-        }
-
-        // Style override count input (like repeat dropdown)
-        if (overrideCountInput) {
-            overrideCountInput.classList.add('form-input-disabled');
-        }
-
-        if (overrideTimeEstimateEl) {
-            overrideTimeEstimateEl.classList.add('time-estimate-disabled');
-        }
-        if (overrideMethodRowEl) overrideMethodRowEl.classList.add('blocklist-active-locked');
-        if (overrideCountWrapperEl) overrideCountWrapperEl.classList.add('blocklist-active-locked');
-        if (maxDifficultyWrap) maxDifficultyWrap.classList.add('max-difficulty-disabled', 'blocklist-active-locked');
-        if (overridePreviewBlockEl) overridePreviewBlockEl.classList.add('blocklist-active-locked');
-        document.getElementById('override-count-minus')?.setAttribute('disabled', '');
-        document.getElementById('override-count-plus')?.setAttribute('disabled', '');
-
-        // Pass existing items as locked
-        window.setModalData(
-            blocklist.websites || [],
-            getBlocklistRegularApps(blocklist),
-            getBlocklistIOSScreenTimeSelection(blocklist),
-            blocklist.websites || [],
-            getBlocklistModalLockedApps(blocklist)
-        );
-    } else {
-        warningEl.classList.add('hidden');
-        overrideInputs.forEach(el => el.disabled = false);
-
-        // Remove disabled styling
-        if (overrideTypeSelect) {
-            overrideTypeSelect.classList.remove('form-select-disabled');
-        }
-        if (overrideCountInput) {
-            overrideCountInput.classList.remove('form-input-disabled');
-        }
-        if (overrideTimeEstimateEl) {
-            overrideTimeEstimateEl.classList.remove('time-estimate-disabled');
-        }
-        if (overrideMethodRowEl) overrideMethodRowEl.classList.remove('blocklist-active-locked');
-        if (overrideCountWrapperEl) overrideCountWrapperEl.classList.remove('blocklist-active-locked');
-        if (maxDifficultyWrap) maxDifficultyWrap.classList.remove('max-difficulty-disabled', 'blocklist-active-locked');
-        if (overridePreviewBlockEl) overridePreviewBlockEl.classList.remove('blocklist-active-locked');
-        const maxDifficultyOn = document.getElementById('override-max-difficulty-checkbox')?.checked;
-        document.getElementById('override-count-minus')?.toggleAttribute('disabled', !!maxDifficultyOn);
-        document.getElementById('override-count-plus')?.toggleAttribute('disabled', !!maxDifficultyOn);
-
-        window.setModalData(
-            blocklist?.websites || [],
-            getBlocklistRegularApps(blocklist),
-            getBlocklistIOSScreenTimeSelection(blocklist),
-            [],
-            []
-        );
-    }
-
-    // Re-apply max-difficulty grey-out for count when blocklist is not active (above else branch removes it)
-    if (!isActive && document.getElementById('override-max-difficulty-checkbox')?.checked) {
+    if (maxDifficultyOn) {
         setOverrideCountMaxMode(true);
     }
 
@@ -2727,6 +2657,10 @@ export function openBlocklistModal(blocklist = null, options = {}) {
     }
 
     document.getElementById('blocklist-modal').classList.remove('hidden');
+    // Clear any hint left over from a previous edit (nothing is pending yet).
+    syncBlocklistUnlockHint();
+    // Clear any hint left over from a previous edit (nothing is pending yet).
+    syncBlocklistUnlockHint();
 }
 
 // Close blocklist modal
@@ -2822,14 +2756,50 @@ export function openOverrideModal(blockId) {
     initializeOverrideModalChallenge(difficulty, blocklist?.color);
 }
 
+/**
+ * Same challenge, different verdict: confirm an edit that makes a *running*
+ * focus space easier to get around.
+ *
+ * Reuses #override-modal rather than cloning it (the codebase already has three
+ * near-copies of this UI). overrideBlockId / overrideScheduleId stay null so no
+ * stop-a-block branch can fire; the purpose sentinel routes the confirm handler.
+ * The modal is stacked over the still-open edit sheet — it comes later in the
+ * DOM at the same z-index tier, so it paints on top and ESC / Android back
+ * resolve to it first.
+ *
+ * `difficulty` MUST be the persisted one — see evaluateBlocklistSaveGate.
+ */
+export function openBlocklistUnlockChallenge({ blocklistForDisplay, difficulty, progressColor }, onConfirm) {
+    if (!blocklistForDisplay) return;
+    delete window.overrideScheduleId;
+    state.overrideBlockId = null;
+    state.overrideBlocklistIdForHelper = null;
+    state.overrideChallengePurpose = 'blocklist-edit-unlock';
+    state.overrideConfirmCallback = onConfirm;
+
+    populateOverrideConfirmModalContent(blocklistForDisplay, {
+        titleKey: 'unlockEditsTitle',
+        instructionKey: 'unlockEditsInstruction',
+        confirmKey: 'unlockEditsConfirmBtn',
+        subtitleHtml: tSettingsFmt('unlockEditsSubtitleFmt', {
+            name: escapeHtml(blocklistForDisplay.name || ''),
+        }),
+    });
+    initializeOverrideModalChallenge(difficulty, progressColor ?? blocklistForDisplay.color);
+}
+
 // Close override modal
 export function closeOverrideModal() {
     document.getElementById('override-modal').classList.add('hidden');
     state.overrideBlockId = null;
     state.overrideBlocklistIdForHelper = null;
+    state.overrideChallengePurpose = null;
+    state.overrideConfirmCallback = null;
     getChallengeController('override').reset();
     delete window.overrideScheduleId;
     setStartConfirmPrimaryLabel('confirm-override-btn', tSettings('stopBlock'));
+    const instructionEl = document.getElementById('override-modal-instruction');
+    if (instructionEl) instructionEl.textContent = tSettings('overrideInstruction');
     const confirmBtn = document.getElementById('confirm-override-btn');
     if (confirmBtn) confirmBtn.disabled = false;
 }
@@ -3463,6 +3433,14 @@ export function updateOverridePreview() {
 
     previewEl.textContent = previewText;
     previewEl.title = previewText;
+
+    // Convergence point for every exit-difficulty edit (type, count, steppers,
+    // max toggle, custom text), so one hook covers them all.
+    syncBlocklistUnlockHint();
+
+    // Convergence point for every exit-difficulty edit (type, count, steppers,
+    // max toggle, custom text), so one hook covers them all.
+    syncBlocklistUnlockHint();
 }
 
 export function syncOverrideCountUi(type) {

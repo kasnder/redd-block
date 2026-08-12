@@ -2446,6 +2446,250 @@
     }
 
     // ========================================
+    // CATEGORY 15: EDIT STRICTNESS COMPARATOR (T63-T95)
+    // ========================================
+
+    // compareBlocklistStrictness decides whether saving an edit to a *running*
+    // focus space needs the exit challenge. Tightening edits must stay free;
+    // anything that makes the block easier to get around must be caught.
+    function runBlocklistStrictnessTests() {
+        console.log('\n🔒 Category 15: Edit Strictness Comparator');
+        console.log('------------------------------------------');
+
+        const { compareBlocklistStrictness: cmp, BLOCKLIST_LOOSEN_REASONS: R } = window.__REDDBLOCK_INTERNALS__;
+
+        const block = (o = {}) => createMockBlocklist({ mode: 'blocklist', websites: [], apps: [], ...o });
+        const allow = (o = {}) => createMockBlocklist({ mode: 'allowlist', websites: [], apps: [], ...o });
+        const sel = (appTokens = [], categoryTokens = []) => ({
+            applicationTokens: [...appTokens],
+            categoryTokens: [...categoryTokens],
+            applicationCount: appTokens.length,
+            categoryCount: categoryTokens.length,
+            summaryLabel: `${appTokens.length} selected (Screen Time)`,
+        });
+
+        // ---- Block mode ----
+        (function T63() {
+            const a = block({ websites: ['a.com'], apps: ['slack'] });
+            assert(cmp(a, { ...a }).loosens === false, 'T63: identical blocklists do not loosen');
+        })();
+
+        (function T64() {
+            const a = block({ websites: ['a.com'] });
+            assert(cmp(a, { ...a, websites: ['a.com', 'b.com'] }).loosens === false, 'T64: adding a blocked website is tightening');
+            assert(cmp(a, { ...a, apps: ['slack'] }).loosens === false, 'T64: adding a blocked app is tightening');
+        })();
+
+        (function T65() {
+            const a = block({ websites: ['a.com', 'b.com'] });
+            const r = cmp(a, { ...a, websites: ['a.com'] });
+            assert(r.loosens === true, 'T65: removing a blocked website loosens');
+            assertEqual(r.primaryReasonCode, R.WEBSITES_REMOVED, 'T65: reason is websites-removed');
+            assert(r.reasons[0].items.includes('b.com'), 'T65: removed item is reported');
+        })();
+
+        (function T66() {
+            const a = block({ apps: ['slack', 'discord'] });
+            const r = cmp(a, { ...a, apps: ['slack'] });
+            assert(r.loosens === true, 'T66: removing a blocked app loosens');
+            assertEqual(r.primaryReasonCode, R.APPS_REMOVED, 'T66: reason is apps-removed');
+        })();
+
+        (function T67() {
+            const a = block({ websites: ['a.com', 'b.com'] });
+            assert(cmp(a, { ...a, websites: ['b.com', 'a.com'] }).loosens === false, 'T67: reordering does not loosen');
+        })();
+
+        (function T68() {
+            const a = block({ websites: ['reddit.com'] });
+            assert(cmp(a, { ...a, websites: ['Reddit.com'] }).loosens === false, 'T68: case-insensitive comparison');
+            assert(cmp(a, { ...a, websites: ['  reddit.com  '] }).loosens === false, 'T68: whitespace-insensitive comparison');
+        })();
+
+        (function T69() {
+            const a = block({ websites: ['a.com'] });
+            assert(cmp(a, { ...a, websites: ['a.com', 'a.com'] }).loosens === false, 'T69: duplicate entry does not loosen');
+        })();
+
+        (function T70() {
+            const a = block({ websites: ['a.com'] });
+            const r = cmp(a, { ...a, websites: [] });
+            assert(r.loosens === true, 'T70: emptying a blocklist loosens');
+            assertEqual(r.primaryReasonCode, R.WEBSITES_REMOVED, 'T70: reported as removal, not scope-opened');
+        })();
+
+        // ---- Allow mode (rules invert) ----
+        (function T71() {
+            const a = allow({ websites: ['a.com', 'b.com'] });
+            assert(cmp(a, { ...a, websites: ['a.com'] }).loosens === false, 'T71: removing an allowed website is tightening');
+        })();
+
+        (function T72() {
+            const a = allow({ websites: ['a.com'] });
+            const r = cmp(a, { ...a, websites: ['a.com', 'b.com'] });
+            assert(r.loosens === true, 'T72: adding an allowed website loosens');
+            assertEqual(r.primaryReasonCode, R.WEBSITES_ALLOWED_ADDED, 'T72: reason is websites-allowed-added');
+        })();
+
+        // The one a naive subset check gets backwards: an empty allow list means
+        // "everything is allowed", so it is the widest scope, not the narrowest.
+        (function T73() {
+            const a = allow({ websites: ['a.com'] });
+            const r = cmp(a, { ...a, websites: [] });
+            assert(r.loosens === true, 'T73: emptying an allow list loosens (everything becomes allowed)');
+            assertEqual(r.primaryReasonCode, R.WEBSITES_ALLOW_SCOPE_OPENED, 'T73: reason is websites-allow-scope-opened');
+        })();
+
+        (function T74() {
+            const a = allow({ websites: [] });
+            assert(cmp(a, { ...a, websites: ['a.com'] }).loosens === false, 'T74: empty → restricted allow list is tightening');
+        })();
+
+        (function T75() {
+            const a = allow({ websites: [] });
+            assert(cmp(a, { ...a }).loosens === false, 'T75: an always-empty allow category is not a false positive');
+        })();
+
+        (function T76() {
+            const a = allow({ websites: ['a.com'], apps: ['slack'] });
+            const r = cmp(a, { ...a, websites: [] });
+            assert(r.loosens === true, 'T76: websites and apps are evaluated independently');
+            assertEqual(r.reasons.length, 1, 'T76: untouched apps produce no reason');
+            assertEqual(r.reasons[0].category, 'websites', 'T76: only the websites category is reported');
+        })();
+
+        (function T77() {
+            const a = allow({ apps: ['slack'] });
+            const r = cmp(a, { ...a, apps: [] });
+            assert(r.loosens === true, 'T77: emptying the allowed apps loosens');
+            assertEqual(r.primaryReasonCode, R.APPS_ALLOW_SCOPE_OPENED, 'T77: reason is apps-allow-scope-opened');
+        })();
+
+        (function T78() {
+            // On iOS the allowed apps live in Screen Time tokens, so an empty
+            // `apps` array does not by itself open the scope.
+            const a = allow({ apps: ['slack'], iosScreenTimeSelection: sel(['tok1']) });
+            const r = cmp(a, { ...a, apps: [] });
+            assert(r.loosens === false, 'T78: apps scope stays closed while Screen Time tokens remain');
+        })();
+
+        // ---- Mode ----
+        (function T79() {
+            const a = block({ websites: ['a.com'] });
+            const r = cmp(a, { ...a, mode: 'allowlist' });
+            assert(r.loosens === true, 'T79: switching mode loosens');
+            assertEqual(r.primaryReasonCode, R.MODE_CHANGED, 'T79: reason is mode-changed');
+            assertEqual(r.reasons.length, 1, 'T79: mode change short-circuits the set comparison');
+        })();
+
+        (function T80() {
+            const a = block({ websites: ['a.com'] });
+            delete a.mode;
+            assert(cmp(a, { ...a, mode: 'blocklist' }).loosens === false, 'T80: missing mode normalizes to blocklist');
+        })();
+
+        // ---- iOS Screen Time selection ----
+        (function T81() {
+            const a = block({ iosScreenTimeSelection: sel(['t1', 't2']) });
+            assert(cmp(a, { ...a, iosScreenTimeSelection: sel(['t2', 't1']) }).loosens === false, 'T81: token order is irrelevant');
+        })();
+
+        (function T82() {
+            const a = block({ iosScreenTimeSelection: sel(['t1', 't2']) });
+            const r = cmp(a, { ...a, iosScreenTimeSelection: sel(['t1']) });
+            assert(r.loosens === true, 'T82: removing a Screen Time token loosens');
+            assertEqual(r.primaryReasonCode, R.IOS_SELECTION_CHANGED, 'T82: reason is ios-selection-changed');
+        })();
+
+        (function T83() {
+            const a = block({ iosScreenTimeSelection: sel(['t1']) });
+            const drifted = { ...sel(['t1']), applicationCount: 99 };
+            assert(cmp(a, { ...a, iosScreenTimeSelection: drifted }).loosens === false, 'T83: derived counts are excluded');
+        })();
+
+        (function T84() {
+            // A selection iOS can no longer enforce is not protecting anything,
+            // so repairing it must not cost a challenge.
+            const stale = { ...sel([]), requiresReselection: true };
+            const a = block({ iosScreenTimeSelection: stale });
+            assert(cmp(a, { ...a, iosScreenTimeSelection: sel(['t1']) }).loosens === false, 'T84: healing an unenforceable selection is free');
+        })();
+
+        (function T85() {
+            const a = block({ iosScreenTimeSelection: null });
+            assert(cmp(a, { ...a, iosScreenTimeSelection: sel(['t1']) }).loosens === true, 'T85: null → real selection is a change');
+        })();
+
+        // ---- Exit difficulty (any change gates, by design) ----
+        (function T86() {
+            const a = block({ overrideDifficulty: { type: 'random-words', count: 50 } });
+            const r = cmp(a, { ...a, overrideDifficulty: { type: 'random-words', count: 20 } });
+            assert(r.loosens === true, 'T86: lowering the exit difficulty loosens');
+            assertEqual(r.primaryReasonCode, R.DIFFICULTY_CHANGED, 'T86: reason is difficulty-changed');
+        })();
+
+        (function T87() {
+            const a = block({ overrideDifficulty: { type: 'random-words', count: 50 } });
+            assert(cmp(a, { ...a, overrideDifficulty: { type: 'random-words', count: 100 } }).loosens === true, 'T87: raising it also gates (no "increases are free" rule)');
+            assert(cmp(a, { ...a, overrideDifficulty: { type: 'custom', count: 50, customText: 'x' } }).loosens === true, 'T87: changing type gates');
+            assert(cmp(a, { ...a, overrideDifficulty: { type: 'random-words', count: 50, maxDifficulty: true } }).loosens === true, 'T87: toggling max difficulty gates');
+        })();
+
+        (function T88() {
+            // countBeforeMax / typeBeforeMax are UI-restore bookkeeping only.
+            const a = block({ overrideDifficulty: { type: 'random-words', count: 50, countBeforeMax: 10, typeBeforeMax: 'gibberish' } });
+            const b = { ...a, overrideDifficulty: { type: 'random-words', count: 50, countBeforeMax: 99, typeBeforeMax: 'custom' } };
+            assert(cmp(a, b).loosens === false, 'T88: bookkeeping fields are ignored');
+        })();
+
+        (function T89() {
+            const a = block({ overrideDifficulty: { type: 'random-words', count: 50 } });
+            assert(cmp(a, { ...a, overrideDifficulty: { type: 'random-words', count: '50' } }).loosens === false, 'T89: count is compared numerically');
+        })();
+
+        // ---- Cosmetic ----
+        (function T90() {
+            const a = block({ websites: ['a.com'] });
+            const b = {
+                ...a,
+                name: 'Renamed',
+                color: '#123456',
+                emoji: '🎯',
+                showItemDetails: !a.showItemDetails,
+                alwaysShowInSchedule: false,
+                isQuickStart: true,
+            };
+            const r = cmp(a, b);
+            assert(r.loosens === false, 'T90: cosmetic-only edits never loosen');
+            assertEqual(r.reasons.length, 0, 'T90: no reasons for cosmetic edits');
+        })();
+
+        // ---- Guards ----
+        (function T91() {
+            const a = block({ websites: ['a.com'] });
+            assert(cmp(null, a).loosens === false, 'T91: missing previous blocklist is not a loosening');
+            assert(cmp(a, null).loosens === false, 'T91: missing candidate is not a loosening');
+        })();
+
+        (function T92() {
+            // The legacy "N apps selected (Screen Time)" summary shares the apps
+            // array but is not an app name.
+            const a = block({ apps: ['slack', '3 selected (Screen Time)'] });
+            const r = cmp(a, { ...a, apps: ['slack'] });
+            assert(r.loosens === false, 'T92: Screen Time summary entries are not treated as removed apps');
+        })();
+
+        (function T93() {
+            // Several loosenings at once: the hint should name the worst.
+            const a = allow({ websites: ['a.com'], overrideDifficulty: { type: 'random-words', count: 50 } });
+            const r = cmp(a, { ...a, websites: [], overrideDifficulty: { type: 'random-words', count: 5 } });
+            assert(r.loosens === true, 'T93: multiple loosenings are all detected');
+            assert(r.reasons.length >= 2, 'T93: each loosening gets its own reason');
+            assertEqual(r.primaryReasonCode, R.WEBSITES_ALLOW_SCOPE_OPENED, 'T93: most severe reason is reported first');
+        })();
+    }
+
+    // ========================================
     // MAIN TEST RUNNER
     // ========================================
 
@@ -2476,6 +2720,7 @@
             runEditFrictionGateTests();
             runChallengePrimitiveTests();
             runChallengeControllerTests();
+            runBlocklistStrictnessTests();
         } catch (error) {
             console.error('❌ Test suite crashed:', error);
         }
@@ -2503,7 +2748,8 @@
         runIOSSchedulePayloadTests,
         runEditFrictionGateTests,
         runChallengePrimitiveTests,
-        runChallengeControllerTests
+        runChallengeControllerTests,
+        runBlocklistStrictnessTests
     };
 
     console.log('🧪 ReddBlock Blocking Tests loaded. Press Cmd+Shift+T to run tests.');

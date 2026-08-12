@@ -1093,7 +1093,7 @@ export async function onAndroidResumed() {
 }
 
 // Dedicated close functions for modals where blindly re-adding .hidden
-// would skip cleanup (resetting state.editingBlocklistId, state.challengeText, etc.).
+// would skip cleanup (resetting state.editingBlocklistId, the challenge controller, etc.).
 // Modals not listed here (app-picker-modal's close is a local closure,
 // settings-modal has no dedicated close fn) fall back to a plain hide —
 // an acceptable degradation (stale state clears on next legitimate
