@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
 #[cfg(not(target_os = "ios"))]
 use tauri::WebviewWindow;
+use tauri::{AppHandle, Manager};
 
 /// App data structure - matches the Electron version exactly
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -171,7 +171,10 @@ impl Default for AppData {
 }
 
 fn get_per_user_data_path(app: &AppHandle) -> PathBuf {
-    let app_data_dir = app.path().app_data_dir().expect("Failed to get app data dir");
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .expect("Failed to get app data dir");
     app_data_dir.join("redd-block-data.json")
 }
 
@@ -200,10 +203,7 @@ fn get_windows_legacy_shared_dirs() -> Vec<PathBuf> {
 /// missing. Never overwrites an existing primary file; never deletes
 /// legacy folders. Used by the Windows ProgramData rebrand migration
 /// and covered by unit tests with temp dirs.
-pub(crate) fn copy_shared_storage_forward(
-    primary_dir: &std::path::Path,
-    legacy_dirs: &[PathBuf],
-) {
+pub(crate) fn copy_shared_storage_forward(primary_dir: &std::path::Path, legacy_dirs: &[PathBuf]) {
     if let Err(e) = fs::create_dir_all(primary_dir) {
         log::warn!(
             "windows shared storage migration: failed to create {}: {e}",
@@ -250,7 +250,6 @@ fn migrate_windows_shared_storage_copy() {
         &get_windows_legacy_shared_dirs(),
     );
 }
-
 
 #[cfg(not(target_os = "ios"))]
 fn should_use_shared_data_path() -> bool {
@@ -430,9 +429,8 @@ pub(crate) fn write_data_file_atomic(
 /// Ensure the parent directory for the data file exists.
 fn ensure_data_dir(path: &std::path::Path) -> Result<(), String> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|e| {
-            format!("Failed to create data directory {:?}: {}", parent, e)
-        })?;
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create data directory {:?}: {}", parent, e))?;
     }
     Ok(())
 }
@@ -512,7 +510,11 @@ fn normalize_eula_state(data: &mut AppData) -> bool {
     }
 
     if settings.eula_accepted_at.is_none() {
-        if let Some(raw_accepted_at) = settings.extra.get("eulaAcceptedAt").and_then(|value| value.as_u64()) {
+        if let Some(raw_accepted_at) = settings
+            .extra
+            .get("eulaAcceptedAt")
+            .and_then(|value| value.as_u64())
+        {
             settings.eula_accepted_at = Some(raw_accepted_at);
             changed = true;
         }
@@ -558,9 +560,11 @@ pub fn load_data(app: AppHandle) -> Result<AppData, String> {
         if let Some(source_path) = find_per_user_data(&app) {
             if source_path == data_path {
                 let content = fs::read_to_string(&source_path).map_err(|e| e.to_string())?;
-                let mut data: AppData = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+                let mut data: AppData =
+                    serde_json::from_str(&content).map_err(|e| e.to_string())?;
                 if normalize_eula_state(&mut data) {
-                    let migrated = serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
+                    let migrated =
+                        serde_json::to_string_pretty(&data).map_err(|e| e.to_string())?;
                     write_data_file_atomic(&source_path, migrated.as_bytes())
                         .map_err(|e| e.to_string())?;
                 }
@@ -643,7 +647,9 @@ fn preserve_backend_settings(data_path: &std::path::Path, data: &mut AppData) {
     };
     for key in BACKEND_MANAGED_SETTING_KEYS {
         if let Some(value) = disk_settings.get(*key) {
-            data.settings.extra.insert((*key).to_string(), value.clone());
+            data.settings
+                .extra
+                .insert((*key).to_string(), value.clone());
         } else {
             data.settings.extra.remove(*key);
         }
@@ -655,7 +661,9 @@ fn preserve_backend_settings(data_path: &std::path::Path, data: &mut AppData) {
 #[cfg(not(any(target_os = "ios", target_os = "android")))]
 pub fn set_window_size(window: WebviewWindow, width: f64, height: f64) -> Result<(), String> {
     use tauri::LogicalSize;
-    window.set_size(LogicalSize::new(width, height)).map_err(|e| e.to_string())?;
+    window
+        .set_size(LogicalSize::new(width, height))
+        .map_err(|e| e.to_string())?;
     window.center().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -771,7 +779,11 @@ mod shared_storage_migration_tests {
         let primary = root.join("Digital Habits Blocker");
         let legacy = root.join("ReDD Blocker");
         fs::create_dir_all(&legacy).unwrap();
-        fs::write(legacy.join("redd-block-data.json"), b"{\"from\":\"legacy\"}").unwrap();
+        fs::write(
+            legacy.join("redd-block-data.json"),
+            b"{\"from\":\"legacy\"}",
+        )
+        .unwrap();
 
         copy_shared_storage_forward(&primary, &[legacy.clone()]);
 
@@ -812,7 +824,11 @@ mod shared_storage_migration_tests {
         let redd_block = root.join("ReDD Block");
         fs::create_dir_all(&redd_blocker).unwrap();
         fs::create_dir_all(&redd_block).unwrap();
-        fs::write(redd_blocker.join("redd-block-data.json"), b"from-redd-blocker").unwrap();
+        fs::write(
+            redd_blocker.join("redd-block-data.json"),
+            b"from-redd-blocker",
+        )
+        .unwrap();
         fs::write(redd_block.join("redd-block-data.json"), b"from-redd-block").unwrap();
 
         copy_shared_storage_forward(&primary, &[redd_blocker, redd_block]);

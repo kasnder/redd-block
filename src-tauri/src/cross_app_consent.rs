@@ -237,9 +237,7 @@ pub fn clear_fda_marker_on_safari_plist_denied() {
     if !user_chose_to_grant_safari_fda() {
         return;
     }
-    log::warn!(
-        "safari-fda: extension plist PermissionDenied — marking FDA revoked"
-    );
+    log::warn!("safari-fda: extension plist PermissionDenied — marking FDA revoked");
     let Some(path) = safari_fda_marker_path() else {
         return;
     };

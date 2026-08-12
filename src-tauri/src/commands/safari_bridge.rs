@@ -105,13 +105,12 @@ pub fn open_safari_extension_settings() -> Result<(), String> {
         log::warn!(
             "SafariServices showPreferencesForExtension failed, trying AppleScript fallback"
         );
-        super::browser_ext::open_safari_extensions_settings_applescript()
-            .map_err(|e| {
-                format!(
-                    "Could not open Safari extension settings automatically ({e}). \
+        super::browser_ext::open_safari_extensions_settings_applescript().map_err(|e| {
+            format!(
+                "Could not open Safari extension settings automatically ({e}). \
                      Open Safari → Settings → Extensions manually."
-                )
-            })
+            )
+        })
     }
     #[cfg(not(target_os = "macos"))]
     {

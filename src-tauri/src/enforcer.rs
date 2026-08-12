@@ -20,12 +20,10 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use crate::profile_scan::{self, BrowserStatus, ProfileStatus};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
-#[cfg(any(target_os = "macos", target_os = "windows"))]
-
-
-use crate::profile_scan::{self, BrowserStatus, ProfileStatus};
 
 const TICK: Duration = Duration::from_secs(5);
 const TICK_FAST: Duration = Duration::from_secs(1);
@@ -558,9 +556,9 @@ fn maybe_escalate_browser_kill(state: &Arc<Mutex<EnforcerState>>, key: BrowserKe
         .lock()
         .ok()
         .and_then(|s| {
-            s.closing.get(&key).map(|c| {
-                c.quit_dispatched && c.quit_started.elapsed() >= HARD_KILL_AFTER
-            })
+            s.closing
+                .get(&key)
+                .map(|c| c.quit_dispatched && c.quit_started.elapsed() >= HARD_KILL_AFTER)
         })
         .unwrap_or(false);
     if should_kill {
@@ -732,25 +730,40 @@ fn diagnose_issue(b: &BrowserStatus) -> ExtensionIssue {
         if b.profiles.iter().any(|p| !p.installed) {
             return ExtensionIssue::Missing;
         }
-        if b.profiles.iter().any(|p| p.enabled == Some(false) || p.enabled.is_none()) {
+        if b.profiles
+            .iter()
+            .any(|p| p.enabled == Some(false) || p.enabled.is_none())
+        {
             return ExtensionIssue::Disabled;
         }
         if b.profiles.iter().any(|p| p.private_browsing == Some(false)) {
             return ExtensionIssue::Private;
         }
-        if b.profiles.iter().any(|p| p.website_access_all != Some(true)) {
+        if b.profiles
+            .iter()
+            .any(|p| p.website_access_all != Some(true))
+        {
             return ExtensionIssue::WebsiteAccess;
         }
         return ExtensionIssue::Unknown;
     }
     // Standard Chromium / Firefox: check the default profile.
-    let def = b.profiles.iter().find(|p| p.is_default).or_else(|| b.profiles.first());
+    let def = b
+        .profiles
+        .iter()
+        .find(|p| p.is_default)
+        .or_else(|| b.profiles.first());
     match def {
         Some(p) => {
-            if !p.installed { ExtensionIssue::Missing }
-            else if p.enabled != Some(true) { ExtensionIssue::Disabled }
-            else if p.private_browsing == Some(false) { ExtensionIssue::Private }
-            else { ExtensionIssue::Unknown }
+            if !p.installed {
+                ExtensionIssue::Missing
+            } else if p.enabled != Some(true) {
+                ExtensionIssue::Disabled
+            } else if p.private_browsing == Some(false) {
+                ExtensionIssue::Private
+            } else {
+                ExtensionIssue::Unknown
+            }
         }
         None => {
             // No profiles at all — likely can't read the extension state
@@ -779,20 +792,20 @@ fn compliance_issue(
     scan: &profile_scan::ScanResult,
     is_running: bool,
 ) -> Option<ExtensionIssue> {
-        #[cfg(target_os = "macos")]
-        {
-            if key.uses_automation_on_macos(app) {
-                if let Some(browser) = key.to_web_automation() {
-                    let cached = watcher_automation_cache(app, browser);
-                    if crate::web_automation::automation_denied_for_enforcement(
-                        browser, cached, is_running,
-                    ) {
-                        return Some(ExtensionIssue::Automation);
-                    }
+    #[cfg(target_os = "macos")]
+    {
+        if key.uses_automation_on_macos(app) {
+            if let Some(browser) = key.to_web_automation() {
+                let cached = watcher_automation_cache(app, browser);
+                if crate::web_automation::automation_denied_for_enforcement(
+                    browser, cached, is_running,
+                ) {
+                    return Some(ExtensionIssue::Automation);
                 }
-                return None;
             }
+            return None;
         }
+    }
     let b = key.for_status(scan);
     #[cfg(target_os = "macos")]
     if key == BrowserKey::Safari && b.needs_fda_access {
@@ -845,11 +858,7 @@ fn running_browsers() -> std::collections::HashSet<BrowserKey> {
     let mut sys = System::new();
     // We only match on process names — skip the default CPU/memory/disk/
     // exe refresh that `refresh_processes` does for every process.
-    sys.refresh_processes_specifics(
-        ProcessesToUpdate::All,
-        true,
-        ProcessRefreshKind::nothing(),
-    );
+    sys.refresh_processes_specifics(ProcessesToUpdate::All, true, ProcessRefreshKind::nothing());
     let mut out = std::collections::HashSet::new();
     for &key in BrowserKey::enforced() {
         for name in key.process_names() {
@@ -936,7 +945,10 @@ fn dispatch_browser_quit(key: BrowserKey) {
 
     for name in key.process_names() {
         log::info!("enforcer: requesting graceful close of {name} (taskkill /T)");
-        match hidden_command("taskkill").args(["/IM", name, "/T"]).output() {
+        match hidden_command("taskkill")
+            .args(["/IM", name, "/T"])
+            .output()
+        {
             Ok(out) => log::debug!(
                 "enforcer: taskkill /IM {name} /T -> exit {:?}",
                 out.status.code()

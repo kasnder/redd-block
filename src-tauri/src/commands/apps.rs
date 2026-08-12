@@ -31,7 +31,8 @@ pub async fn open_app_picker(app: tauri::AppHandle) -> Result<Vec<String>, Strin
     #[cfg(target_os = "linux")]
     let default_path = std::path::Path::new("/usr/share/applications");
 
-    let files = app.dialog()
+    let files = app
+        .dialog()
         .file()
         .set_title("Select Applications to Block")
         .set_directory(default_path)
@@ -93,15 +94,14 @@ fn list_installed_apps_windows() -> Result<Vec<InstalledApp>, String> {
 
     // System-wide Start Menu
     if let Ok(programdata) = std::env::var("ProgramData") {
-        let system_start = PathBuf::from(programdata)
-            .join("Microsoft\\Windows\\Start Menu\\Programs");
+        let system_start =
+            PathBuf::from(programdata).join("Microsoft\\Windows\\Start Menu\\Programs");
         collect_lnk_files(&system_start, &mut lnk_paths);
     }
 
     // Per-user Start Menu
     if let Ok(appdata) = std::env::var("APPDATA") {
-        let user_start = PathBuf::from(appdata)
-            .join("Microsoft\\Windows\\Start Menu\\Programs");
+        let user_start = PathBuf::from(appdata).join("Microsoft\\Windows\\Start Menu\\Programs");
         collect_lnk_files(&user_start, &mut lnk_paths);
     }
 
@@ -128,12 +128,11 @@ fn list_installed_apps_windows() -> Result<Vec<InstalledApp>, String> {
                 let target = std::path::Path::new(&target_path);
                 // Only include .exe targets
                 match target.extension().and_then(|e| e.to_str()) {
-                    Some(ext) if ext.eq_ignore_ascii_case("exe") => {
-                        target.file_stem()
-                            .unwrap_or(OsStr::new(""))
-                            .to_string_lossy()
-                            .to_string()
-                    }
+                    Some(ext) if ext.eq_ignore_ascii_case("exe") => target
+                        .file_stem()
+                        .unwrap_or(OsStr::new(""))
+                        .to_string_lossy()
+                        .to_string(),
                     _ => continue, // Skip non-exe shortcuts (e.g., URLs, folders)
                 }
             }
@@ -162,7 +161,11 @@ fn list_installed_apps_windows() -> Result<Vec<InstalledApp>, String> {
     }
 
     // Sort alphabetically by display name
-    apps.sort_by(|a, b| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()));
+    apps.sort_by(|a, b| {
+        a.display_name
+            .to_lowercase()
+            .cmp(&b.display_name.to_lowercase())
+    });
 
     Ok(apps)
 }
@@ -185,30 +188,30 @@ fn collect_lnk_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
 #[cfg(target_os = "windows")]
 fn resolve_lnk_target(lnk_path: &std::path::Path) -> Option<String> {
     use windows::core::GUID;
+    use windows::core::HSTRING;
+    use windows::Win32::Storage::FileSystem::WIN32_FIND_DATAW;
     use windows::Win32::System::Com::{
-        CoCreateInstance, CoInitializeEx, CoUninitialize,
-        IPersistFile, STGM,
-        CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED,
+        CoCreateInstance, CoInitializeEx, CoUninitialize, IPersistFile, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED, STGM,
     };
     use windows::Win32::UI::Shell::IShellLinkW;
-    use windows::Win32::Storage::FileSystem::WIN32_FIND_DATAW;
-    use windows::core::HSTRING;
 
     // COM needs to be initialized on this thread
-    unsafe { let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED); }
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+    }
 
     let result = unsafe {
         // CLSID_ShellLink = {00021401-0000-0000-C000-000000000046}
         let clsid_shell_link = GUID::from_values(
-            0x00021401, 0x0000, 0x0000,
+            0x00021401,
+            0x0000,
+            0x0000,
             [0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46],
         );
 
-        let shell_link: IShellLinkW = CoCreateInstance(
-            &clsid_shell_link,
-            None,
-            CLSCTX_INPROC_SERVER,
-        ).ok()?;
+        let shell_link: IShellLinkW =
+            CoCreateInstance(&clsid_shell_link, None, CLSCTX_INPROC_SERVER).ok()?;
 
         let persist_file: IPersistFile = windows::core::Interface::cast(&shell_link).ok()?;
 
@@ -217,13 +220,14 @@ fn resolve_lnk_target(lnk_path: &std::path::Path) -> Option<String> {
 
         let mut target_buf = [0u16; 260]; // MAX_PATH
         let mut find_data = WIN32_FIND_DATAW::default();
-        shell_link.GetPath(
-            &mut target_buf,
-            &mut find_data,
-            0,
-        ).ok()?;
+        shell_link
+            .GetPath(&mut target_buf, &mut find_data, 0)
+            .ok()?;
 
-        let len = target_buf.iter().position(|&c| c == 0).unwrap_or(target_buf.len());
+        let len = target_buf
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(target_buf.len());
         let target = String::from_utf16_lossy(&target_buf[..len]);
 
         if target.is_empty() {
@@ -233,7 +237,9 @@ fn resolve_lnk_target(lnk_path: &std::path::Path) -> Option<String> {
         }
     };
 
-    unsafe { CoUninitialize(); }
+    unsafe {
+        CoUninitialize();
+    }
     result
 }
 
@@ -242,19 +248,47 @@ fn resolve_lnk_target(lnk_path: &std::path::Path) -> Option<String> {
 fn should_filter_out(display_name: &str) -> bool {
     let lower = display_name.to_lowercase();
     let filtered = [
-        "uninstall", "setup", "installer", "update", "updater",
-        "repair", "remove", "readme", "license", "help",
-        "component services", "computer management", "event viewer",
-        "performance monitor", "registry editor", "disk cleanup",
-        "task manager", "resource monitor", "system configuration",
-        "print management", "odbc data", "character map",
-        "steps recorder", "recovery", "windows memory",
-        "system information", "windows fax", "iscsicpl",
-        "dfrgui", "magnify", "narrator", "on-screen keyboard",
-        "voice access", "accessibility", "administrative tools",
+        "uninstall",
+        "setup",
+        "installer",
+        "update",
+        "updater",
+        "repair",
+        "remove",
+        "readme",
+        "license",
+        "help",
+        "component services",
+        "computer management",
+        "event viewer",
+        "performance monitor",
+        "registry editor",
+        "disk cleanup",
+        "task manager",
+        "resource monitor",
+        "system configuration",
+        "print management",
+        "odbc data",
+        "character map",
+        "steps recorder",
+        "recovery",
+        "windows memory",
+        "system information",
+        "windows fax",
+        "iscsicpl",
+        "dfrgui",
+        "magnify",
+        "narrator",
+        "on-screen keyboard",
+        "voice access",
+        "accessibility",
+        "administrative tools",
         // Internal / dev tools
-        "visual studio installer", "developer command",
-        "x86_64", "x64", "arm64",
+        "visual studio installer",
+        "developer command",
+        "x86_64",
+        "x64",
+        "arm64",
     ];
     filtered.iter().any(|f| lower.contains(f))
 }
@@ -264,10 +298,25 @@ fn should_filter_out(display_name: &str) -> bool {
 fn should_filter_process(process_name: &str) -> bool {
     let lower = process_name.to_lowercase();
     let filtered = [
-        "explorer", "cmd", "powershell", "pwsh", "conhost",
-        "redd-block", "reddblock", "setup", "uninstall", "update",
-        "msiexec", "mmc", "dxdiag", "regedit", "taskmgr",
-        "control", "systeminfo", "msconfig", "winver",
+        "explorer",
+        "cmd",
+        "powershell",
+        "pwsh",
+        "conhost",
+        "redd-block",
+        "reddblock",
+        "setup",
+        "uninstall",
+        "update",
+        "msiexec",
+        "mmc",
+        "dxdiag",
+        "regedit",
+        "taskmgr",
+        "control",
+        "systeminfo",
+        "msconfig",
+        "winver",
     ];
     filtered.iter().any(|f| lower == *f)
 }
@@ -297,7 +346,8 @@ fn list_installed_apps_macos() -> Result<Vec<InstalledApp>, String> {
                         continue;
                     }
                     seen.insert(lower);
-                    let process_name = macos_bundle_executable(&path).unwrap_or_else(|| name.to_string());
+                    let process_name =
+                        macos_bundle_executable(&path).unwrap_or_else(|| name.to_string());
                     apps.push(InstalledApp {
                         display_name: name.to_string(),
                         process_name,
@@ -307,7 +357,11 @@ fn list_installed_apps_macos() -> Result<Vec<InstalledApp>, String> {
         }
     }
 
-    apps.sort_by(|a, b| a.display_name.to_lowercase().cmp(&b.display_name.to_lowercase()));
+    apps.sort_by(|a, b| {
+        a.display_name
+            .to_lowercase()
+            .cmp(&b.display_name.to_lowercase())
+    });
     Ok(apps)
 }
 
@@ -325,9 +379,14 @@ fn macos_bundle_executable(app_path: &std::path::Path) -> Option<String> {
 fn should_filter_macos(name: &str) -> bool {
     let lower = name.to_lowercase();
     let filtered = [
-        "uninstall", "installer", "migration assistant",
-        "directory utility", "disk utility", "system preferences",
-        "system settings", "system information",
+        "uninstall",
+        "installer",
+        "migration assistant",
+        "directory utility",
+        "disk utility",
+        "system preferences",
+        "system settings",
+        "system information",
     ];
     filtered.iter().any(|f| lower.contains(f))
 }

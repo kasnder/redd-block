@@ -192,11 +192,9 @@ pub fn register(app: &tauri::App) {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
         let handle = app.handle().clone();
-        std::thread::spawn(move || {
-            loop {
-                sync_blocked_apps_from_disk(&handle);
-                std::thread::sleep(Duration::from_secs(2));
-            }
+        std::thread::spawn(move || loop {
+            sync_blocked_apps_from_disk(&handle);
+            std::thread::sleep(Duration::from_secs(2));
         });
     }
 }
