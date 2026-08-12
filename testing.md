@@ -38,7 +38,7 @@ No single tier is sufficient on its own. **Website blocking enforcement** (macOS
 
 ## What runs in CI
 
-Every suite except Tier 2 is gated on pull requests to `main`:
+Every suite is gated on pull requests to `main`:
 
 | Workflow | Job | Runs | Trigger |
 | --- | --- | --- | --- |
@@ -46,6 +46,7 @@ Every suite except Tier 2 is gated on pull requests to `main`:
 | `ci.yml` | Tier 1 logic tests | `npm run test:tier1` — `runBlockingTests()` in headless Chromium | every PR |
 | `rust-ci.yml` | Rust unit tests | `cargo test --lib` on `macos-latest` | `src-tauri/**` changes |
 | `android-ci.yml` | Android debug APK | debug APK build, then `:tauri-plugin-android-blocker:testDebugUnitTest` | `src/**`, `src-tauri/**`, plugin, build config |
+| `e2e-ci.yml` | Tier 2 (macOS + Windows) | `runIntegrationTests('full')` against a real built app over WebDriver | Tier 2 sources, `e2e/**`, `vite.config.js` |
 
 Notes on the two non-obvious choices:
 
@@ -61,10 +62,10 @@ Notes on the two non-obvious choices:
   `:tauri-android` and `:tauri-plugin-android-blocker` to the build. Gradle
   cannot configure the project until the Tauri CLI has written it.
 
-**Tier 2 in CI is in progress** (`e2e-ci.yml`, Windows): it drives the real
-Tauri command layer, so it needs a running native app rather than a headless
-browser page. See "Tier 2 under WebDriver" below. Running it by hand from the
-app's dev console remains the primary path until that job is proven green.
+**Tier 2 runs in CI** (`e2e-ci.yml`) against a real built app, because it drives
+the actual Tauri command layer and cannot run on a bare page like Tier 1. See
+"Tier 2 under WebDriver" below. Running it by hand from the dev console still
+works and is unchanged.
 
 ---
 
@@ -269,11 +270,13 @@ Three things make this work, and all three are easy to trip over:
   dev console. The spec only waits for the harness, starts the run, polls, and
   fails on any failed case — the same contract `run-tier1-headless.mjs` has
   with Tier 1.
-- **The driver provider is platform-dependent.** Windows uses `external`
-  (`tauri-driver`, no app-side dependency) — build with `npm run build:e2e-app`.
-  macOS has no WKWebView driver, so the app serves WebDriver itself via the
-  `embedded` provider; build with `npm run build:e2e-app:mac`, which adds the
-  `e2e-webdriver` Cargo feature.
+- **Both platforms use the embedded WebDriver server.** The app serves
+  WebDriver itself via the `e2e-webdriver` Cargo feature, so there is no
+  external driver to install. Windows originally used `external`
+  (`tauri-driver` + msedgedriver), which is the path Tauri's CI guide
+  documents, but it never established a session on a runner — `POST /session`
+  timed out at 180 s, twice, with the suite never starting. The embedded server
+  was already green on macOS, so both jobs share it.
 
 **`e2e-webdriver` must never ship.** It compiles an HTTP automation server into
 the binary, and in a released blocker that is a remote-control bypass of every

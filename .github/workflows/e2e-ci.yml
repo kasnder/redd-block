@@ -3,10 +3,10 @@
 # attached to the real app's webview. Unlike Tier 1 this exercises the actual
 # Tauri command layer.
 #
-# Windows first: Tauri's WebDriver CI guide documents the Linux and Windows
-# `tauri-driver` path, and only Windows is viable here (the app does not build
-# on Linux). macOS needs the newer embedded-server provider and an app-side
-# plugin, and is not wired up yet.
+# Both jobs use the embedded WebDriver server (the `e2e-webdriver` Cargo
+# feature), which is debug-only by construction — lib.rs fails to compile if it
+# is ever combined with a release profile. Linux is not covered because the app
+# does not build there.
 #
 # Tier 2 mutates real state — it writes the data file and drives the block
 # pipeline. That is exactly why it stays manual locally and belongs on a
@@ -52,10 +52,10 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
-      # Drives the platform's webview via msedgedriver, which is preinstalled
-      # on windows-latest images.
-      - name: Install tauri-driver
-        run: cargo install tauri-driver --locked
+      # No tauri-driver: the app serves WebDriver itself via the
+      # `e2e-webdriver` feature. tauri-driver is the documented Windows path
+      # but never established a session here (POST /session timed out at
+      # 180 s, twice), while the embedded server was already green on macOS.
       # --config swaps beforeBuildCommand to the e2e Vite mode so the built
       # binary embeds a bundle that still contains the test runners.
       - name: Build app under test
@@ -86,12 +86,10 @@ jobs:
         with:
           workspaces: src-tauri
       - run: npm ci
-      # No tauri-driver here: macOS has no WKWebView driver, so the app itself
-      # serves WebDriver via the `e2e-webdriver` feature. That feature is
-      # debug-only by construction — lib.rs fails to compile if it is ever
-      # combined with a release profile.
-      - name: Build app under test (embedded WebDriver)
-        run: npm run build:e2e-app:mac
+      # macOS has no WKWebView driver at all, so the embedded server is the
+      # only option here — and now the shared one.
+      - name: Build app under test
+        run: npm run build:e2e-app
       - name: Run Tier 2
         run: npm run test:tier2
       - name: Upload WDIO logs

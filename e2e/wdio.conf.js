@@ -11,13 +11,12 @@
  * src-tauri/tauri.e2e.conf.json): the default build strips the test runners out
  * of the bundle, so `runIntegrationTests` would not exist in the webview.
  *
- * Driver providers, per Tauri's WebDriver docs:
- *   - Windows/Linux → 'external' (tauri-driver + the platform's webview driver).
- *     No app-side dependency.
- *   - macOS → 'embedded', which requires the `tauri-plugin-wdio-webdriver`
- *     crate compiled into the binary. That plugin must stay behind a Cargo
- *     feature and out of shipped builds: an embedded remote-control server
- *     inside a blocker app is a bypass surface.
+ * Both platforms use the embedded WebDriver server, which requires the
+ * `tauri-plugin-wdio-webdriver` crate compiled in via the `e2e-webdriver`
+ * Cargo feature. That feature must stay out of shipped builds — an embedded
+ * remote-control server inside a blocker app is a bypass surface — so it is
+ * off by default and `lib.rs` fails to compile if it is ever combined with a
+ * release profile.
  */
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -75,10 +74,14 @@ function resolveAppBinary() {
     );
 }
 
-// 'external' drives tauri-driver, which does not support macOS; the embedded
-// server is what makes macOS possible at all.
-const driverProvider = process.env.E2E_DRIVER_PROVIDER
-    || (process.platform === 'darwin' ? 'embedded' : 'external');
+// Embedded on every platform. Windows started on 'external' (tauri-driver +
+// msedgedriver) because that is the path Tauri's CI guide documents, but it
+// never established a session there — POST /session to :4444 timed out after
+// 180 s, twice, with the suite never running. The embedded server was already
+// green on macOS and the plugin lists WebView2 as fully supported, so both
+// jobs now use the mechanism that demonstrably works. That also drops the
+// `cargo install tauri-driver` step and leaves one code path to reason about.
+const driverProvider = process.env.E2E_DRIVER_PROVIDER || 'embedded';
 
 export const config = {
     runner: 'local',
