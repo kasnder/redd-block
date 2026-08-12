@@ -2,7 +2,7 @@
 // Extracted from app.js during allowlist-refactoring phase 2.
 import { tSettings, tSettingsFmt } from './i18n.js';
 import { state } from './state.js';
-import { BLOCKLIST_LOOSEN_REASONS, compareBlocklistStrictness } from './blocklist-utils.js';
+import { BLOCKLIST_LOOSEN_REASONS, compareBlocklistStrictness, isAllowlistBlocklist } from './blocklist-utils.js';
 import { isBlocklistEditFrictionRequired } from './blocklists.js';
 
 const ALLOWLIST_SCOPE_LOCK_ICON = `<svg class="allowlist-scope-hint-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>`;
@@ -126,7 +126,7 @@ export function syncBlocklistCreateKindUi(opts = {}) {
 }
 
 export function isBlocklistAllowlistMode(blocklist) {
-    return blocklist?.mode === 'allowlist';
+    return isAllowlistBlocklist(blocklist);
 }
 
 export function getStartConfirmBlockingLabel(blocklist) {

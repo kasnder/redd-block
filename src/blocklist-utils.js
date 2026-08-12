@@ -244,8 +244,13 @@ function itemsMissingFrom(items, otherSet) {
     return out;
 }
 
+/** Canonical mode test. Anything that is not explicitly 'allowlist' is a blocklist. */
+export function isAllowlistBlocklist(blocklist) {
+    return blocklist?.mode === 'allowlist';
+}
+
 function normalizeBlocklistMode(blocklist) {
-    return blocklist?.mode === 'allowlist' ? 'allowlist' : 'blocklist';
+    return isAllowlistBlocklist(blocklist) ? 'allowlist' : 'blocklist';
 }
 
 /**

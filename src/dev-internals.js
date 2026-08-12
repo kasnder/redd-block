@@ -6,7 +6,7 @@
 // never rename them.
 import { state } from './state.js';
 import { tauriAPI } from './tauri-api.js';
-import { BLOCKLIST_LOOSEN_REASONS, PROTECTED_APP_NAMES, PROTECTED_DOMAINS, compareBlocklistStrictness, iosScreenTimeSelectionKey, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
+import { BLOCKLIST_LOOSEN_REASONS, PROTECTED_APP_NAMES, PROTECTED_DOMAINS, compareBlocklistStrictness, iosScreenTimeSelectionKey, isAllowlistBlocklist, isProtectedApp, isProtectedDomain } from './blocklist-utils.js';
 import {
     buildWordChallengeState,
     getCompletedChallengeText,
@@ -18,6 +18,7 @@ import {
     shouldBlockChallengeSpaceKey,
 } from './override-challenge.js';
 import { createChallengeController } from './challenge-controller.js';
+import { buildAndroidScheduleEntries } from './schedule-engine.js';
 import { saveData, updateHostsFile } from './persistence.js';
 import { render } from './render.js';
 import { duplicateBlocklist, getNextCopyName } from './blocklists.js';
@@ -54,7 +55,9 @@ window.__REDDBLOCK_INTERNALS__ = {
     getCurrentChallengeWord,
     getCompletedChallengeText,
     createChallengeController,
+    buildAndroidScheduleEntries,
     compareBlocklistStrictness,
+    isAllowlistBlocklist,
     BLOCKLIST_LOOSEN_REASONS,
     iosScreenTimeSelectionKey,
     deriveIOSEffectiveWebsitePolicy,
