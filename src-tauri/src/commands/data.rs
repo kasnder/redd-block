@@ -279,18 +279,16 @@ pub(crate) fn import_shared_data_into_per_user(
         return false;
     }
 
-    if let Some(parent) = dest.parent() {
-        if let Err(e) = fs::create_dir_all(parent) {
-            log::warn!(
-                "shared data import: failed to create {}: {e}",
-                parent.display()
-            );
+    let contents = match fs::read(&src) {
+        Ok(contents) => contents,
+        Err(e) => {
+            log::warn!("shared data import: failed to read {}: {e}", src.display());
             return false;
         }
-    }
+    };
 
-    match fs::copy(&src, dest) {
-        Ok(_) => {
+    match write_data_file_atomic(dest, &contents) {
+        Ok(()) => {
             log::info!(
                 "shared data import: copied {} -> {} (this account now has its own blocklist)",
                 src.display(),
@@ -300,7 +298,7 @@ pub(crate) fn import_shared_data_into_per_user(
         }
         Err(e) => {
             log::warn!(
-                "shared data import: failed to copy {} -> {}: {e}",
+                "shared data import: failed to copy {} -> {} atomically: {e}",
                 src.display(),
                 dest.display()
             );
@@ -792,11 +790,12 @@ fn wipe_path(path: &PathBuf) {
 
 #[cfg(test)]
 mod shared_storage_import_tests {
-    use super::{
-        canonical_data_path_static, import_shared_data_into_per_user, per_user_data_path_from,
-        per_user_data_path_static, DATA_FILE_NAME,
-    };
+    #[cfg(not(feature = "system-test"))]
+    use super::{canonical_data_path_static, per_user_data_path_static};
+    use super::{import_shared_data_into_per_user, per_user_data_path_from, DATA_FILE_NAME};
     use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::path::{Path, PathBuf};
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -884,6 +883,38 @@ mod shared_storage_import_tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn import_atomically_replaces_destination_without_copying_shared_permissions() {
+        let root = temp_root("atomic");
+        let shared = root.join("shared");
+        let src = write_shared(&shared, b"live-shared");
+        fs::set_permissions(&src, fs::Permissions::from_mode(0o777)).unwrap();
+
+        let dest_dir = root.join("per-user");
+        fs::create_dir_all(&dest_dir).unwrap();
+        let dest = dest_dir.join(DATA_FILE_NAME);
+        fs::write(&dest, b"stale-per-user").unwrap();
+        age(&dest, 60);
+        let original_inode = fs::metadata(&dest).unwrap().ino();
+
+        assert!(import_shared_data_into_per_user(&dest, &[shared]));
+
+        let imported = fs::metadata(&dest).unwrap();
+        assert_ne!(
+            imported.ino(),
+            original_inode,
+            "atomic replacement must swap in a new file"
+        );
+        assert_eq!(
+            imported.permissions().mode() & 0o111,
+            0,
+            "import must not copy executable/shared source permissions"
+        );
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "live-shared");
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     fn prefers_the_first_shared_dir_that_has_the_file() {
         // Primary first, then the rebranded legacy ProgramData folders.
@@ -915,6 +946,7 @@ mod shared_storage_import_tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[cfg(not(feature = "system-test"))]
     #[test]
     fn resolver_never_returns_a_machine_wide_path() {
         // The regression guard for the shared-storage resolver: there is one
